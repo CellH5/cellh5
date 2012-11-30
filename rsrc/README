@@ -1,0 +1,8 @@
+To generate the R Vignette for CellH5 open console and type
+
+$ R CMD Sweave readCellH5.Rnw
+$ pdflatex readCellH5.tex
+
+To extract the R code use
+
+$ R CMD Stangle readCellH5.Rnw
