@@ -38,7 +38,7 @@ from PyQt4 import QtGui, QtCore
 # cecog imports:
 #
 from cecog.io.dataprovider import File
-import cecog.gui.cellbroser_core
+import cecog.gui.cellbrowser_core
 
 #-------------------------------------------------------------------------------
 # constants:
@@ -98,17 +98,18 @@ class EventPCAPlugin(FigureCanvas):
     def _run_pca(self):
         self.feature_matrix = []
         self.item_colors = []
-        for position_key in self.data_provider.positions:
-            position = self.data_provider[position_key]
-            events = position.get_objects('event')
-            for t in events:
-                item_features = t.item_features 
-                if item_features is not None:
-                    self.feature_matrix.append(item_features)
-                    
-                item_colors = t.item_colors 
-                if item_colors is not None:
-                    self.item_colors.extend(item_colors)
+        for well_key in self.data_provider.positions:
+            for pos_key in self.data_provider.positions[well_key]:
+                position = self.data_provider.get_position(well_key, pos_key)
+                events = position.get_events()
+                for t in events:
+                    item_features = t.item_features 
+                    if item_features is not None:
+                        self.feature_matrix.append(item_features)
+                        
+                    item_colors = t.item_colors 
+                    if item_colors is not None:
+                        self.item_colors.extend(item_colors)
     
         print 'number ofevents', len(self.feature_matrix)
         self.feature_matrix = numpy.concatenate(self.feature_matrix)

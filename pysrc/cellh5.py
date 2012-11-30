@@ -12,29 +12,30 @@
 #-------------------------------------------------------------------------------
 # standard library imports:
 #
+
 import numpy
-import matplotlib.pyplot as mpl
 import h5py
 import collections
 import functools
 import base64
 import zlib
-import time
+import os
+import unittest
+
+import matplotlib
+matplotlib.use('Qt4Agg')
+import matplotlib.pyplot as mpl
+
 from collections import defaultdict
 
-try:
-    import vigra
-except ImportError:
-    print 'VIGRA is not installed. Please, install from source of download binary at http://www.lfd.uci.edu/~gohlke/pythonlibs/'
 
 #-------------------------------------------------------------------------------
 # Constants:
 #
-
 GALLERY_SIZE = 100    
 
 #-------------------------------------------------------------------------------
-# Functions:
+# Helpers:
 # 
  
 class memoize(object):
@@ -148,8 +149,8 @@ class CH5Position(object):
             
             if bb_corrected:
                 bb = self['feature'][object_]['center'][ind]
-                crack[:,0] -= bb[0] - GALLERY_SIZE/2
-                crack[:,1] -= bb[1] - GALLERY_SIZE/2 
+                crack[:,0] -= bb['x'] - GALLERY_SIZE/2 
+                crack[:,1] -= bb['y'] - GALLERY_SIZE/2 
                 crack.clip(0, GALLERY_SIZE)
                 
             crack_list.append(crack)
@@ -171,17 +172,19 @@ class CH5Position(object):
         if not isinstance(index, (list, tuple)):
             index = (index,)
         image_list = []
+        channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_]
         for ind in index:
             time_idx = self['object'][object_][ind]['time_idx']
             cen1 = self['feature'][object_]['center'][ind]
             image = numpy.zeros((GALLERY_SIZE,GALLERY_SIZE))
-            channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_]
+            
             tmp_img = self['image'] \
                              ['channel'] \
                              [channel_idx, time_idx, 0,
                               max(0, cen1[1]-GALLERY_SIZE/2):min(1040,cen1[1]+GALLERY_SIZE/2), 
                               max(0, cen1[0]-GALLERY_SIZE/2):min(1389,cen1[0]+GALLERY_SIZE/2)]
-            image[:tmp_img.shape[0],:tmp_img.shape[1]] = tmp_img
+                             
+            image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
             image_list.append(image)
         return numpy.concatenate(image_list, axis=1)
     
@@ -345,16 +348,16 @@ class CH5Position(object):
         if len(next_p_idx) == 0:
             return [None]
         else:
-            def all_paths_of_tree(id):
-                found_ids = dset_tracking['obj_idx2'][(dset_tracking['obj_idx1']==id).nonzero()[0]]
+            def all_paths_of_tree(id_):
+                found_ids = dset_tracking['obj_idx2'][(dset_tracking['obj_idx1']==id_).nonzero()[0]]
                 
                 if len(found_ids) == 0:
-                    return [[id]]
+                    return [[id_]]
                 else:
                     all_paths_ = []
                     for out_id in found_ids:
                         for path_ in all_paths_of_tree(out_id):
-                            all_paths_.append([id] + path_)
+                            all_paths_.append([id_] + path_)
         
                     return all_paths_ 
                 
@@ -434,13 +437,13 @@ class CH5File(object):
         for w in sorted(self.wells):
             self.positions[w] = self._get_group_members('/sample/0/plate/%s/experiment/%s/position/' % (self.plate, w))
                                                         
-#        print 'Plate', self.plate
-#        print 'Positions', self.positions
         self._position_group = {}
         for w, pos_list in self.positions.items():
             for p in pos_list:
-                #print '/sample/0/plate/%s/experiment/%s/position/%s' % (self.plate, w, p)
-                self._position_group[(w,p)] = CH5File.POSITION_CLS(self.plate, w, p, self._file_handle['/sample/0/plate/%s/experiment/%s/position/%s' % (self.plate, w, p)], self)
+                try:
+                    self._position_group[(w,p)] = CH5File.POSITION_CLS(self.plate, w, p, self._file_handle['/sample/0/plate/%s/experiment/%s/position/%s' % (self.plate, w, p)], self)
+                except KeyError:
+                    print 'CellH5 Warning: Position', (w,p), 'could not be loaded...'
         self.current_pos = self._position_group.values()[0]
         
     def get_position(self, well, pos):
@@ -472,17 +475,21 @@ class CH5File(object):
         self._file_handle.close()    
     
     
-import unittest
+
 
 class CH5TestBase(unittest.TestCase):
     def setUp(self):
-        self.fh = CH5File('0038-cs.h5')
+        data_filename = '../data/0038.hdfd5'
+        if not os.path.exists(data_filename):
+            raise IOError("No CellH5 test data found in 'cellh5/data'. Please refer to the instructions in 'cellh5/data/README'")
+        self.fh = CH5File(data_filename)
         self.well_str = '0'
         self.pos_str = self.fh.positions[self.well_str][0]
         self.pos = self.fh.get_position(self.well_str, self.pos_str)
         
     def tearDown(self):
         self.fh.close()
+        
 class TestCH5Basic(CH5TestBase): 
     def testGallery(self):
         a1 = self.pos.get_gallery_image(1)
@@ -498,7 +505,7 @@ class TestCH5Basic(CH5TestBase):
         event = self.pos.track_first(5)
         a1 = self.pos.get_gallery_image(tuple(event))
         a2 = self.pos.get_gallery_image(tuple(event), 'secondary__expanded')
-#        vigra.impex.writeImage(a1.swapaxes(1,0), 'c:/Users/sommerc/Desktop/bla.png')
+#        vigra.impex.writeImage(a1.swapaxes(1,0), 'c:/Users/sommerc/Desktop/bar.png')
 #        vigra.impex.writeImage(a2.swapaxes(1,0), 'c:/Users/sommerc/Desktop/foo.png')
         
     def testGallery3(self):
@@ -515,7 +522,7 @@ class TestCH5Basic(CH5TestBase):
     def testGallery4(self):
         event = self.pos.get_events()[42]
         a1 = self.pos.get_gallery_image(tuple(event))
-#        vigra.impex.writeImage(a1.swapaxes(1,0), 'c:/Users/sommerc/Desktop/blub.png')   
+#        vigra.impex.writeImage(a1.swapaxes(1,0), 'c:/Users/sommerc/Desktop/bar.png')   
               
     def testClassNames(self):
         for x in ['inter', 'pro', 'earlyana']:

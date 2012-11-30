@@ -13,25 +13,15 @@ __all__ = []
 #-------------------------------------------------------------------------------
 # standard library imports:
 #
-import os
 import zlib
 import base64
 
 #-------------------------------------------------------------------------------
 # extension module imports:
 #
-import h5py, \
-       numpy, \
-       vigra, \
-       random
-
+import numpy
 import time as timing
 
-#-------------------------------------------------------------------------------
-# cecog imports:
-#
-from cecog.io.dataprovider import TerminalObjectItem, \
-                                  ObjectItem
 
 #-------------------------------------------------------------------------------
 # constants:
@@ -73,6 +63,146 @@ def MixIn(pyClass, mixInClass, makeAncestor=0):
                 if type(member) is types.MethodType:
                     member = member.im_func
                 setattr(pyClass, name, member)
+                
+class ObjectItemBase(object):
+    def __init__(self, id, parent):
+        self.id = id
+        self.parent = parent
+        self.name = parent.name
+        self.compute_features()
+        
+    def compute_features(self):
+        pass
+        
+    def get_position(self):
+        return self.parent.position
+    
+    def get_plate(self):
+        return self.parent.position.plate
+    
+    def get_child_objects_type(self):
+        return self.parent.get_object_type_of_children()
+        
+    @property
+    def idx(self):
+        return self.id - 1
+    
+    def is_terminal(self):
+        return isinstance(self, TerminalObjectItem)
+    
+    def children(self):
+        if not hasattr(self, '_children'):
+            self._children = self.get_children_paths()[0]
+        return self._children
+
+    def _get_children_nodes(self):
+        if not hasattr(self, '_children_nodes'):
+            child_entries = self.parent.object_np_cache['child_ids'][self.id]
+            if len(child_entries) == 0:
+                return []
+            result = numpy.zeros(child_entries.shape[0]+1, dtype=numpy.uint32)
+            result[0] = child_entries[0,0]
+            result[1:] = child_entries[:,2]
+            self._children_nodes = map(lambda id: self.get_child_objects_type()(id, self.sub_objects()), result)
+        return self._children_nodes
+            
+    
+    def get_siblings(self):
+        if self.name in self.get_position().relation_cross:
+            res = {}
+            for sibling in self.get_position().relation_cross[self.name]:
+                sibling_object_name = sibling['to']
+                sibling_object_relation = sibling['cache']
+                res[sibling_object_name] = self.get_position().get_objects(sibling_object_name).get(sibling_object_relation[self.idx][2])
+            return res[sibling_object_name]
+        
+        
+    def _find_edges(self, id, expansion=None, max_length=5, reverse=False):
+        if expansion is None:
+            expansion = []
+        ind1 = 0
+        ind2 = 2
+        if reverse:
+            ind1, ind2 = ind2, ind1
+        tmp = numpy.where(self.parent.object_np_cache['relation'][:, ind1] == id)[0]
+        if len(tmp) > 0 and max_length > 0:
+            next_id = self.parent.object_np_cache['relation'][tmp[0], ind2]
+            expansion.append(next_id)
+            return self._find_edges(next_id, expansion, max_length-1, reverse)
+        else:
+            if reverse:
+                expansion.reverse()
+            return expansion
+        
+    def get_children_paths(self):
+        child_list = self._get_children_nodes()
+        child_id_list = [x.id for x in child_list]
+        if len(child_id_list) == 0:
+            return [None]
+        else:
+            head_id = child_list[0].id
+            
+            def all_paths_of_tree(id):
+                found_ids = numpy.where(self.parent.object_np_cache['relation'][:, 0] == id)[0]
+                out_all_ids = [self.parent.object_np_cache['relation'][found_id, 2] for found_id in found_ids]
+                out_ids = [out_id for out_id in out_all_ids if out_id in child_id_list]
+                
+                if len(out_ids) == 0:
+                    return [[id]]
+                else:
+                    all_paths_ = []
+                    for out_id in out_ids:
+                        for path_ in all_paths_of_tree(out_id):
+                            all_paths_.append([id] + path_)
+    
+                    return all_paths_ 
+                
+            res = all_paths_of_tree(head_id)
+            for i, r in enumerate(res):
+                res[i] = [self.get_child_objects_type()(id, self.sub_objects()) for id in r]
+            
+            return res
+        
+    def get_children_expansion(self, max_length=5):
+        child_list = self.get_children_paths()[0]
+        front_id = child_list[0].id
+        back_id = child_list[-1].id
+        
+        succs = self._find_edges(back_id, max_length=max_length)
+        pred  = self._find_edges(front_id, max_length=max_length, reverse=True)
+        
+        result = pred + [x.id for x in child_list] + succs
+        
+        return map(lambda id: self.get_child_objects_type()(id, self.sub_objects()), result)
+                
+    def sub_objects(self):
+        return self.get_position().get_objects(self.get_position().sub_objects[self.name])
+    
+    def __getitem__(self, key):
+        return self._features[key]
+    
+    def __setitem__(self, key, value):
+        if not hasattr(self, '_features'):
+            self._features = {}
+        self._features[key] = value
+
+class ObjectItem(ObjectItemBase):
+    def __init__(self, obj_id, parent):
+        ObjectItemBase.__init__(self, obj_id, parent)
+    
+class TerminalObjectItem(ObjectItemBase):
+    def __init__(self, obj_id, object_cache):
+        ObjectItemBase.__init__(self, obj_id, object_cache)
+        
+    def _get_children_nodes(self):
+        raise RuntimeError('Terminal objects have no childs')
+    
+    @property
+    def local_id(self):
+        return self.parent.object_np_cache['child_ids'][self.id][0][0]
+    @property
+    def _local_idx(self):
+        return self.parent.object_np_cache['child_ids'][self.id][0][1:3] # time, idx
 
 class CellTerminalObjectItemMixin(object):
     BOUNDING_BOX_SIZE = 100

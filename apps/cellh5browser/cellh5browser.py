@@ -8,12 +8,12 @@
                         See trunk/LICENSE.txt for details.
                  See trunk/AUTHORS.txt for author contributions.
 """
-import time as timeit
 __all__ = []
 
 #-------------------------------------------------------------------------------
-# standard library imports:
+# library imports:
 #
+
 import sip
 # set PyQt API version to 2.0
 try:
@@ -24,13 +24,8 @@ except:
     print 'Warning: Could not set Qt API to versoin 2'
 
 from PyQt4 import QtGui, QtCore
-import zlib
-import base64
 
 
-#-------------------------------------------------------------------------------
-# extension module imports:
-#
 import random
 import getopt
 import qimage2ndarray
@@ -41,31 +36,113 @@ import time as timing
 
 from functools import partial
 #-------------------------------------------------------------------------------
-# cecog imports:
+# cellh5 imports:
 #
-from cecog.gui.imageviewer import HoverPolygonItem
-from cecog.io.hdfcore import CH5File, GALLERY_SIZE
-import cecog.io.hdfcore
-
-from cecog.gui.cellbroser_core import TerminalObjectItem, ObjectItem
-from pdk.datetimeutils import StopWatch
-from cecog.gui.cellbrowser_plugins import EventPCAPlugin
-
+from cellh5 import CH5File, GALLERY_SIZE
 
 
 #-------------------------------------------------------------------------------
-# constants:
+# helpers:
 #
 
+class ItemHoverMixin:
+    SCALE = 1.1
+    def __init__(self):
+        self._old_pen = self.pen()
 
-#-------------------------------------------------------------------------------
-# functions:
-#
+    def set_pen_color(self, color):
+        self._old_pen.setColor(color)
+        pen = self.pen()
+        pen.setColor(color)
+        self.setPen(pen)
 
+    def hoverEnterEvent(self, ev):
+        pen = self.pen()
+        self._old_pen = pen
+        new_pen = QtGui.QPen(pen)
+        new_pen.setWidth(3)
+        new_pen.setStyle(QtCore.Qt.SolidLine)
+        self.setPen(new_pen)
+        QtGui.QGraphicsItem.hoverEnterEvent(self, ev)
 
+    def hoverLeaveEvent(self, ev):
+        self.setPen(self._old_pen)
+        QtGui.QGraphicsItem.hoverLeaveEvent(self, ev)
 
+class HoverPolygonItem(QtGui.QGraphicsPolygonItem, ItemHoverMixin):
+    def __init__(self, polygon):
+        QtGui.QGraphicsPolygonItem.__init__(self, polygon)
+        ItemHoverMixin.__init__(self)
 
+class ProgressDialog(QtGui.QProgressDialog):
+    targetFinished = QtCore.pyqtSignal()
+    targetSetValue = QtCore.pyqtSignal(int)
+    '''
+    inherited QProgressDialog to ...
+       ... ignore the ESC key during dialog exec_()
+       ... to provide mechanism to show the dialog only
+           while a target function is running
+    '''
+    def setCancelButton(self, cancelButton):
+        self.hasCancelButton = cancelButton is not None
+        super(ProgressDialog, self).setCancelButton(cancelButton)
+
+    def keyPressEvent(self, event):
+        if event.key() != QtCore.Qt.Key_Escape or getattr(self, 'hasCancelButton', False):
+            QtGui.QProgressDialog.keyPressEvent(self, event)
+
+    def setTarget(self, target, *args, **options):
         
+        self._target = target
+        self._args = args
+        self._options = options
+
+    def getTargetResult(self):
+        return getattr(self, '_target_result', None)
+
+    def _onSetValue(self, value):
+        self.setValue(value)
+
+    def exec_(self, finished=None, started=None, passDialog=False):
+        dlg_result = None
+        self.targetSetValue.connect(self._onSetValue)
+        if hasattr(self, '_target'):
+            t = QtCore.QThread()
+            if finished is None:
+                finished = self.close
+            t.finished.connect(finished)
+            if started is not None:
+                t.started.connect(started)
+
+            def foo():
+                # optional passing of this dialog instance to the target function
+                if passDialog:
+                    t.result = self._target(self, *self._args, **self._options)
+                else:
+                    t.result = self._target(*self._args, **self._options)
+                self.targetFinished.emit()
+
+            t.result = None
+            t.run = foo
+            t.start()
+            dlg_result = super(QtGui.QProgressDialog, self).exec_()
+            t.wait()
+            self._target_result = t.result
+        else:
+            dlg_result = super(QtGui.QProgressDialog, self).exec_()
+        return dlg_result
+
+def waitingProgressDialog(msg, parent=None, target=None, range=(0,0)):
+    dlg = ProgressDialog(parent, QtCore.Qt.CustomizeWindowHint | QtCore.Qt.WindowTitleHint)
+    dlg.setWindowModality(QtCore.Qt.WindowModal)
+    dlg.setLabelText(msg)
+    dlg.setWindowTitle('Please wait...')
+    dlg.setCancelButton(None)
+    dlg.setRange(*range)
+    if target is not None:
+        dlg.setTarget(target)
+    return dlg
+   
 class ZoomedQGraphicsView(QtGui.QGraphicsView):  
     def wheelEvent(self, event):
         keys = QtGui.QApplication.keyboardModifiers()
@@ -89,8 +166,9 @@ class ZoomedQGraphicsView(QtGui.QGraphicsView):
 class PositionThumbnailBase(QtGui.QLabel):
     item_length = 10
     item_height = 2
-    css = 'background-color: transparent; font: white;'
-    
+    css = r'QLabel {background-color: transparent; font: white;; border-style:solid; border-width:1px; border-color:#050505;}' \
+          r'QLabel:hover {border-color: #adadad; ; border-width:3px;}' \
+          r'QToolTip {color: black;}'
     
     def __init__(self, parent=None):
         QtGui.QLabel.__init__(self, parent)
@@ -103,7 +181,7 @@ class PositionThumbnailBase(QtGui.QLabel):
         self.parent.clicked.emit(self.position_key)
         
 class PositionThumbnailEvents(PositionThumbnailBase):
-    item_length = 12
+    item_length = 10
     item_height = 1
     name = 'Standard'
     
@@ -142,7 +220,7 @@ class PositionThumbnailEvents(PositionThumbnailBase):
 
             self.setPixmap(thumbnail_pixmap)
             self.setStyleSheet(self.css)
-            self.setToolTip('%s %s %s %s' % position_key)
+            self.setToolTip('Double-click to open position %s' % position_key[-1])
             self.setMinimumHeight(self.height)
         else:
             self.setText('No thumbnail\navailable...')
@@ -151,33 +229,30 @@ class PositionThumbnailEvents(PositionThumbnailBase):
         QtGui.QLabel.mouseDoubleClickEvent(self, *args, **kwargs)
         self.parent.clicked.emit(self.position_key)
         
-class PositionThumbnailEvents2(PositionThumbnailBase):
-    item_length = 10
-    item_height = 2
-    name = 'Metaphase count'
-    
-    def __init__(self, position_key, position, parent=None):
-        PositionThumbnailBase.__init__(self, parent)
-        self.parent = parent
-        self.position_key = position_key
-        
-        events = position.get_objects('event')
-        cnt = 0
-        for event in events:
-            for pp in event.children():
-                if pp.predicted_class == 3:
-                    cnt += 1
-                
-        self.setText('Metaphase count:<br/> <span style=" font-size:32pt; font-weight:600; color: white;">%03d</span>' % cnt)
-            
-        self.setToolTip('Sample %s\nPlate %s \nExperiment %s\nPosition %s' % position_key)
-    
-    def mouseDoubleClickEvent(self, *args, **kwargs):
-        QtGui.QLabel.mouseDoubleClickEvent(self, *args, **kwargs)
-        self.parent.clicked.emit(self.position_key)
-        
-        
-    
+#class PositionThumbnailEvents2(PositionThumbnailBase):
+#    item_length = 10
+#    item_height = 2
+#    name = 'Metaphase count'
+#    
+#    def __init__(self, position_key, position, parent=None):
+#        PositionThumbnailBase.__init__(self, parent)
+#        self.parent = parent
+#        self.position_key = position_key
+#        
+#        events = position.get_objects('event')
+#        cnt = 0
+#        for event in events:
+#            for pp in event.children():
+#                if pp.predicted_class == 3:
+#                    cnt += 1
+#                
+#        self.setText('Metaphase count:<br/> <span style=" font-size:32pt; font-weight:600; color: white;">%03d</span>' % cnt)
+#            
+#        self.setToolTip('Sample %s\nPlate %s \nExperiment %s\nPosition %s' % position_key)
+#    
+#    def mouseDoubleClickEvent(self, *args, **kwargs):
+#        QtGui.QLabel.mouseDoubleClickEvent(self, *args, **kwargs)
+#        self.parent.clicked.emit(self.position_key)
             
 class TrackletThumbnailList(QtGui.QWidget):
     css = '''background-color: transparent; 
@@ -186,29 +261,36 @@ class TrackletThumbnailList(QtGui.QWidget):
              min-width: 10em; 
           '''
     clicked = QtCore.pyqtSignal(tuple)
-    
     def __init__(self, data_provider, ThumbClass=None, parent=None):
         QtGui.QWidget.__init__(self, parent)
+        self.conainterLayout = QtGui.QVBoxLayout()
+        
         self.main_layout = QtGui.QHBoxLayout()
         
         if ThumbClass is None:
             ThumbClass = PositionThumbnailEvents
         
-        
-        for well_key, pos_keys in data_provider.positions.items():
-            for pos_key in pos_keys:
-                tn_position = ThumbClass(('0', '0', well_key, pos_key), data_provider.get_position(well_key, pos_key), self)
-                tn_widget = QtGui.QWidget(self)
-                tn_layout = QtGui.QVBoxLayout()
-                tn_layout.addWidget(QtGui.QLabel('%s_%s' % (well_key, pos_key)))
-                tn_layout.addWidget(tn_position)
-                tn_layout.addStretch()
-                tn_widget.setLayout(tn_layout)
-                self.main_layout.addWidget(tn_widget)
+        if data_provider is not None:
+            for well_key, pos_keys in data_provider.positions.items():
+                for pos_key in pos_keys:
+                    tn_position = ThumbClass(('0', '0', well_key, pos_key), data_provider.get_position(well_key, pos_key), self)
+                    tn_widget = QtGui.QWidget(self)
+                    tn_layout = QtGui.QVBoxLayout()
+                    tn_layout.addWidget(QtGui.QLabel('%s' % pos_key))
+                    tn_layout.addWidget(tn_position)
+                    tn_layout.addStretch()
+                    tn_widget.setLayout(tn_layout)
+                    self.main_layout.addWidget(tn_widget)
             
-        self.main_layout.addStretch()
-        self.setLayout(self.main_layout)
+        self.main_layout.addStretch()        
 
+        self.conainterLayout.addWidget(QtGui.QLabel('Positions'))
+        self.dummyWidget = QtGui.QWidget()
+        self.dummyWidget.setLayout(self.main_layout)
+        self.conainterLayout.addWidget(self.dummyWidget)
+        self.conainterLayout.addStretch()
+
+        self.setLayout(self.conainterLayout)
         self.setStyleSheet(self.css)
         
     def paintEvent(self, event):
@@ -314,9 +396,7 @@ class TrackletBrowser(QtGui.QWidget):
 #            temp.clicked.connect(lambda state, x=tf.name: self.sortTracksByFeature(x))
 #            self.btns_sort.append(temp)
 #            self.view_hud_btn_layout.addWidget(temp)
-            
-        
-        
+                  
         # Galleries
         gb2 = QtGui.QGroupBox('Galleries')
         gb2_layout = QtGui.QVBoxLayout()
@@ -369,10 +449,7 @@ class TrackletBrowser(QtGui.QWidget):
         gb2.setLayout(gb2_layout)
         self.view_hud_btn_layout.addWidget(gb2)
         
-        self.view_hud_btn_layout.addStretch()
-        
-        
-        
+        self.view_hud_btn_layout.addStretch()  
         self.view.setDragMode(self.view.ScrollHandDrag)
         
     def cb_change_gallery_view(self, type):
@@ -393,8 +470,7 @@ class TrackletBrowser(QtGui.QWidget):
             for ti in self._root_items:
                 ti.set_bar_view(type)
             self.update_()
-            
-        
+             
         
     def cb_select_trajectories(self, type):
         if type == 'all':
@@ -423,18 +499,27 @@ class TrackletBrowser(QtGui.QWidget):
         self._root_items = []
         events = position.get_events()
         
-        for kk, event in enumerate(events):
-            g_event = EventGraphicsItem(kk, event, position)
-            g_event.setHandlesChildEvents(False)
-            self.scene.addItem(g_event)
-            self._root_items.append(g_event)
-            
-        print '  Loading events took %5.2f' % (timing.time() - tic)
+        self.dlg = waitingProgressDialog('Rendering gallery images...', self, None, (0, len(events)))
+        events = position.get_events()
+        
+        def load_events(dlg, events):
+            for kk, event in enumerate(events):
+                g_event = EventGraphicsItem(kk, event, position)
+                g_event.setHandlesChildEvents(False)
+                self._root_items.append(g_event)
+                dlg.setValue(kk)
+        
+        self.dlg.setTarget(load_events, events)
+        self.dlg.exec_(passDialog=True) 
+        
+        for g_event in self._root_items:
+            self.scene.addItem(g_event) 
             
         self.GraphicsItemLayouter = EventGraphicsLayouter(self)
-            
         self.update_()
+
         self.position = position
+        
         print '  Total Rendering of position took %5.2f' % (timing.time() - tic)
     
     def cb_change_vertical_alignment(self, index): 
@@ -452,10 +537,11 @@ class TrackletBrowser(QtGui.QWidget):
         if self.thumbnails_scroll is not None:
             print 'remove_thumbnail()'
             self.main_layout.removeWidget(self.thumbnails_scroll)
-            self.thumbnails_scroll.hide()
-            self.thumbnails.hide()
-            del self.thumbnails_scroll
-            del self.thumbnails
+            if self.thumbnails is not  None:
+                self.thumbnails_scroll.hide()
+                self.thumbnails.hide()
+                del self.thumbnails_scroll
+                del self.thumbnails
             
     def make_thumbnails(self, ThumbClass=None):
         self.remove_thumbnails()
@@ -468,8 +554,8 @@ class TrackletBrowser(QtGui.QWidget):
         self.thumbnails.clicked.connect(self.show_position)
         self.thumbnails_scroll.setWidget(self.thumbnails)
         
-        self.thumbnails_scroll.setMaximumHeight(200)
-        self.thumbnails_scroll.setMinimumHeight(200)
+        self.thumbnails_scroll.setMaximumHeight(220)
+        self.thumbnails_scroll.setMinimumHeight(220)
         
         self.main_layout.addWidget(self.thumbnails_scroll)
         
@@ -479,8 +565,7 @@ class TrackletBrowser(QtGui.QWidget):
     
     def update_(self):
         self.GraphicsItemLayouter()
-        
-     
+
     def sortTracks(self):   
         for new_row, perm_idx in enumerate(self._permutation):
             self._root_items[perm_idx].moveToRow(new_row)
@@ -600,9 +685,6 @@ class GraphicsObjectItem(GraphicsObjectItemBase):
         self.object_item = object_item
         self.position = position
         
-    
-    
-    
 class EventGraphicsItem(GraphicsObjectItem):
     def __init__(self, idx, object_item, position, parent=None):
         GraphicsObjectItem.__init__(self, object_item, position, parent)
@@ -650,12 +732,7 @@ class EventGraphicsItem(GraphicsObjectItem):
                 o.set_bar_view('top')
         elif type == 'secondary intensity':
             self.bar_feature_item.setVisible(True)
-        
-            
-        
-            
-            
-            
+                
     @property
     def width(self):
         return self.sub_items[1].width#sum([x.width for x in self.sub_items])
@@ -695,10 +772,7 @@ class EventGraphicsItem(GraphicsObjectItem):
         
         g_item = QtGui.QGraphicsPixmapItem(pixmap)
         return g_item
-    
-
-        
-             
+               
 class GraphicsTerminalObjectItem(GraphicsObjectItemBase):
     def __init__(self, text, position, parent=None):
         GraphicsObjectItemBase.__init__(self, parent=None)
@@ -725,10 +799,8 @@ class CellGraphicsItemSettings(object):
         self.gallery_image_max = 255
         self.show_contours = True
         self.show_class_bar = True
-        
         self.color = 0
-        
-        
+                
 class CellGraphicsItem(GraphicsTerminalObjectItem):
     PREDICTION_BAR_HEIGHT = 4
     PREDICTION_BAR_X_PADDING = 0
@@ -853,7 +925,7 @@ class CellGraphicsTextItem(QtGui.QGraphicsTextItem, GraphicsTerminalObjectItem):
 class MainWindow(QtGui.QMainWindow):
     def __init__(self, filename=None, parent=None):
         QtGui.QMainWindow.__init__(self, parent)
-        self.setStyleSheet('background-color: qlineargradient(x1: 0, y1: 0, x2: 500, y2: 500, stop: 0 #444444, stop: 1 #0A0A0A);') 
+        self.setStyleSheet('background-color: qlineargradient(x1: 0, y1: 0, x2: 500, y2: 500, stop: 0 #444444, stop: 1 #0A0A0A); color: white;') 
         self.setGeometry(100,100,1200,800)
         self.setWindowTitle('CellH5Browser')
         
@@ -868,9 +940,33 @@ class MainWindow(QtGui.QMainWindow):
         export_menu = self.menuBar().addMenu('&Export')
         plugin_menu = self.menuBar().addMenu('&Plugin')
         
-        pca_comopute = QtGui.QAction('PCA Plots', self)
-        pca_comopute.triggered.connect(self.cb_compute_pca)
-        plugin_menu.addAction(pca_comopute)
+        self.menuBar().setStyleSheet('''
+        QMenuBar {
+             background-color: qlineargradient(x1: 0, y1: 0, x2: 500, y2: 500, stop: 0 #444444, stop: 1 #0A0A0A);
+             color = #dddddd;
+         }
+         QMenuBar::item {
+
+             background: transparent;
+         }
+         QMenuBar::item:selected { /* when selected using mouse or keyboard */
+             color: #a8a8a8;
+         }
+
+         QMenuBar::item:hover {
+             color: #ff0000;
+         }    
+        QMenu::item {
+        color: #a8a8a8;
+        }
+        QMenu::item:selected {
+        color: white;
+        } 
+''')
+        
+        #pca_comopute = QtGui.QAction('PCA Plots', self)
+        #pca_comopute.triggered.connect(self.cb_compute_pca)
+        #plugin_menu.addAction(pca_comopute)
         
         exportSceneAction = QtGui.QAction('Export scene to file', self)
         exportSceneAction.triggered.connect(self.cb_export_scene_to_file)
@@ -927,7 +1023,7 @@ class MainWindow(QtGui.QMainWindow):
                                             max=1000)
         if ok:
             GALLERY_SIZE = val
-            cecog.io.hdfcore.GALLERY_SIZE = GALLERY_SIZE
+            cecog.io.cellh5.GALLERY_SIZE = GALLERY_SIZE
             self.tracklet_widget.data_provider.current_pos.clear_cache()
             self.tracklet_widget.show_position(self.tracklet_widget._current_position_key)
         
@@ -938,42 +1034,26 @@ class MainWindow(QtGui.QMainWindow):
         if filename:                                              
             self.tracklet_widget.open_file(filename)  
             
-            
-
+class NullDevice():
+    def write(self, s):
+        pass            
       
 def main():
+    sys.stderr = NullDevice()
+    sys.stdout = NullDevice()
     app = QtGui.QApplication(sys.argv) 
     file, _ = getopt.getopt(sys.argv[1:], 'f:')
     if len(file) == 1:
         file = file[0][1]
     else:
-        file = r'V:\ChristophSommer\cecog_data\Analysis\exp911\hdf5\_all_positions.h5'
+        file = r'C:\Users\sommerc\data\cellh5_demo\0013.hdf5'
         
-    mainwindow = MainWindow(file)
+    sys.stderr 
+    mainwindow = MainWindow()
     mainwindow.show()
     app.exec_()
-    
-#def test():
-#    # read tracking information
-#    tic = timeit.time()
-##    f = File('C:/Users/sommerc/data/Chromatin-Microtubles/Analysis/H2b_aTub_MD20x_exp911_2_channels_nozip/dump/_all_positions.hdf5')
-#    f = File('C:/Users/sommerc/data/Chromatin-Microtubles/Analysis/H2b_aTub_MD20x_exp911_2_channels_nozip/dump_save/two_positions.hdf5')
-#    pos = f[f.positions[0]]
-#    track = pos.get_objects('event')
-#    feature_matrix = []
-#    for t in track.iter_random(50):
-#        item_features = t.item_features 
-#        if item_features is not None:
-#            feature_matrix.append(item_features)
-#    
-#    feature_matrix = numpy.concatenate(feature_matrix)
-#    print feature_matrix.shape
-#            
-#    print timeit.time() - tic, 'seconds'
-    
         
 if __name__ == "__main__":
     main()
-#    test()
 
 
