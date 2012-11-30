@@ -64,7 +64,7 @@ myprint <- function(L) {
 \section{Read global definitions}
 The file is opened for reading.
 <<openfile>>=
-file = H5Fopen("./0038.hdf5")
+file = H5Fopen("../data/0038.hdf5")
 @
 There are two main groups:
 \begin{enumerate}
