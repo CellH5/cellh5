@@ -1,0 +1,283 @@
+%\VignetteIndexEntry{readHDF5}
+%\VignettePackage{readHDF5}
+%\VignetteKeywords{readHDF5}
+
+\documentclass[10pt,a4paper]{article}
+
+\RequirePackage{amsfonts,amsmath,amstext,amssymb,amscd}
+\usepackage{graphicx}
+\usepackage{verbatim}
+\usepackage{hyperref}
+\usepackage{color}
+\usepackage{subfig}
+\definecolor{darkblue}{rgb}{0.2,0.0,0.4}
+
+\topmargin -1.5cm
+\oddsidemargin -0cm   % read Lamport p.163
+\evensidemargin -0cm  % same as oddsidemargin but for left-hand pages
+\textwidth 17cm
+\textheight 24.5cm
+\parindent0em
+
+\newcommand{\lib}[1]{{\mbox{\normalfont\textsf{#1}}}}
+\newcommand{\file}[1]{{\mbox{\normalfont\textsf{'#1'}}}}
+\newcommand{\R}{{\mbox{\normalfont\textsf{R}}}}
+\newcommand{\Rfunction}[1]{{\mbox{\normalfont\texttt{#1}}}}
+\newcommand{\Robject}[1]{{\mbox{\normalfont\texttt{#1}}}}
+\newcommand{\Rpackage}[1]{{\mbox{\normalfont\textsf{#1}}}}
+\newcommand{\Rclass}[1]{{\mbox{\normalfont\textit{#1}}}}
+\newcommand{\code}[1]{{\mbox{\normalfont\texttt{#1}}}}            
+            \newcommand{\email}[1]{\mbox{\href{mailto:#1}{\textcolor{darkblue}{\normalfont{#1}}}}}
+\newcommand{\web}[2]{\mbox{\href{#2}{\textcolor{darkblue}{\normalfont{#1}}}}}
+                
+%\SweaveOpts{echo=FALSE,keep.source=TRUE,eps=FALSE,results=hide,term=FALSE}
+\SweaveOpts{keep.source=TRUE,eps=FALSE}
+                
+\begin{document}
+\title{CellH5: A format for data exchange in high-content screening\\Supplemental Information:\\Use case for the R-interface of the CellH5 format}
+
+\author{Christoph Sommer, Michael Held, Bernd Fischer, Wolfgang Huber and Daniel Gerlich}
+
+\maketitle
+
+\section{Introduction and prerequisits}
+The \R/bioconductor-package \code{rhdf5} with version 2.1.4 or later has to be installed. After installation you can load the libraries.
+<<loadLibraries>>=
+library(rhdf5)
+library(grid)
+@
+
+A convenience function for nicer printing of the \code{data.frame} resulting from \code{h5ls}. I will update this in future versions of \Rpackage{rhdf5}.
+<<myprint>>=
+myprint <- function(L) {
+  I = which((substr(L$group, nchar(L$group), nchar(L$group)) == "/") 
+            & (nchar(L$group) == 1))
+  L$group[I] = ""
+  L$name = sprintf("%s/%s",L$group,L$name)
+  L$group = NULL
+  L$dclass[L$otype == "H5I_GROUP"] = "group"
+  L$otype = NULL
+  print(L, right=FALSE)
+}
+@
+
+\section{Read global definitions}
+The file is opened for reading.
+<<openfile>>=
+file = H5Fopen("./0038.hdf5")
+@
+There are two main groups:
+\begin{enumerate}
+\item the definition for global definitions and
+\item sample containing the screen structure and the actual data
+\end{enumerate}
+The global definitions contain the definition of object classes, feature sets, and classifiers used in the file. List the file content of the global definitions and read the global definitions.
+<<readGlobalDefinitions>>=
+def = H5Gopen(h5loc=file, name="/definition")
+myprint(h5ls(def))
+GlobalDefinition = h5read(file, name="/definition")
+@
+
+The content of the Global definitions starts with an explanation of the image channels and label images from image segmentation (region).
+<<globalDefinitions>>=
+GlobalDefinition$image
+@
+There are six object classes. two that relate to the segmented image regions (nucleus and cell), and the others are relations between these objects: cellToNucleus assigns the nuclei to the cell bodies, tracking relates nuclei from one time frame to the other, and events extracts short mitotic events over about 20 frames. alternativeevent is an alternative coding for the same events.
+<<objects>>=
+GlobalDefinition$object
+@
+The features derived for the subsequent object classes are defined in the next section. The first three feature sets are
+<<features>>=
+GlobalDefinition$feature$primary__primary$center
+GlobalDefinition$feature$primary__primary$bounding_box
+head(GlobalDefinition$feature$primary__primary$object_features)
+head(GlobalDefinition$feature$primary__primary$crack_contour)
+@
+The output of a classifier is a feature set as well. It is just extracted by a special class of feature extraction functions, i.e. a classifier. 
+<<features2>>=
+GlobalDefinition$feature$primary__primary$object_classification$classifier
+GlobalDefinition$feature$primary__primary$object_classification$class_labels
+head(GlobalDefinition$feature$primary__primary$object_classification$features)
+@
+\section{The data of position 0038}
+We have one position (one well, one experiment, ...) in the file.
+List the content of the HDF5 file for positions 0038.
+<<readPos>>=
+pos = H5Gopen(h5loc=file, 
+    name="/sample/0/plate/H2b_aTub_MD20x_exp911/experiment/0/position/0038")
+myprint(h5ls(pos))
+@
+\subsection{Read an image}
+We read the image at time point 1
+<<readImage>>=
+Img1 = h5read(pos, name="image/channel", index= list(NULL,NULL,1,1,1))[,,1,1,1]
+Img2 = h5read(pos, name="image/channel", index= list(NULL,NULL,1,1,2))[,,1,1,1]
+@
+A convenience function to convert the image to a raster image (for grid.raster).
+<<toRaster>>=
+toRaster = function(x, cuts=-1:255+0.5, 
+                    colors = colorRampPalette(c("black","white"))(256)) {
+  cux =cut(x,cuts,include.lowest = TRUE, labels=FALSE)
+  rv = x
+  rv[] = colors[cux]
+  return(rv)
+}
+@
+Print part of the images to a file.
+<<printImages>>=
+pdf(file="Img1.pdf")
+grid.raster(toRaster(t(Img1[400:600,400:600])))
+dev.off()
+pdf(file="Img2.pdf")
+grid.raster(toRaster(t(Img2[400:600,400:600])))
+dev.off()
+@
+\begin{center}
+\includegraphics[width=0.3\textwidth]{Img1.pdf}
+\includegraphics[width=0.3\textwidth]{Img2.pdf}
+\end{center}
+\subsection{Print the tracking graph}
+To read the tracking graph, we first read the tracking graph and the centers of the cells.
+<<readTrackingGraph>>=
+Tracking = h5read(pos, name="object/tracking")
+head(Tracking)
+Nucleus = h5read(pos, name="object/primary__primary")
+head(Nucleus)
+Center = h5read(pos, name="feature/primary__primary/center")
+head(Center)
+@
+Now lets plot it. We plot the first image.
+<<tracking>>=
+png(file="tracking.png", width=1390, height=1040)
+vp = viewport(xscale=c(1,1390), yscale=c(1040,1))
+pushViewport(vp)
+grid.raster(toRaster(t(Img1)))
+@
+On top of the image a white circle is plotted for each center of nucleus. Note that indexing starts with 0 on \code{C} and with 1 on \R. Therefore a one is added to the indizes. Can later be solved by a proper interface.
+<<tracking2>>=
+I = which(Nucleus[Tracking[,1]+1,"time_idx"] == 0)
+grid.circle(x=unit(Center[Tracking[I,1]+1,"x"], "native"), 
+            y=unit(Center[Tracking[I,1]+1,"y"], "native"),
+            r = unit(5,"native"), gp = gpar(fill="white"))
+@
+Next a line is plotted between nucleus center of each pair of connected nuclei. The color of the line is chosen according to the time.
+<<tracking3>>=
+grid.polyline(x=unit(c(Center[Tracking[,1]+1, "x"],
+                      Center[Tracking[,2]+1, "x"]),"native"),
+             y=unit(c(Center[Tracking[,1]+1, "y"],
+                      Center[Tracking[,2]+1, "y"]),"native"),
+             id = c(1:nrow(Tracking),1:nrow(Tracking)),
+             gp = gpar(col=rainbow(206)[Nucleus[Tracking[,1]+1,"time_idx"]+1])
+             )
+popViewport()
+dev.off()
+@
+\begin{center}
+\includegraphics[width=\textwidth]{tracking.png}
+\end{center}
+\subsection{Compute histogram over the cell cycle states}
+Read the classification results and compute the a histogram of the cell cycle states.
+<<mitoticIndex>>=
+Nucleus = h5read(pos, name="object/primary__primary")
+len_labels = length(
+  GlobalDefinition$feature$primary__primary$object_classification$class_labels$name)
+ClassLabel = h5read(pos, "feature/primary__primary/object_classification/prediction")
+ClassLabel = factor(ClassLabel$label_idx, levels = 0:(len_labels-1))
+levels(ClassLabel) = 
+  GlobalDefinition$feature$primary__primary$object_classification$class_labels$name
+X = t(sapply(tapply(ClassLabel,Nucleus$time_idx,function(x){table(x)}),
+    function(x) { x[1:len_labels] } ))
+@
+Plot the histogram over the cell cycle states over time.
+<<plotMitoticIndex>>=
+class_colors = 
+  GlobalDefinition$feature$primary__primary$object_classification$class_labels$color
+pdf(file="mitoticIndex.pdf",width=9)
+plot(X[,1],col=class_colors[1],lwd=3,ylim=range(X),type="l",
+     xlab="time",ylab="number of cells")
+for (i in 2:len_labels) {
+  lines(X[,i],col=class_colors[i],lwd=3)
+}
+legend("topleft",colnames(X),inset=0.01, fill=class_colors)
+dev.off()
+@
+\includegraphics[width=0.7\textwidth]{mitoticIndex.pdf}
+\subsection{Show mitotic events}
+As another example, we can extract the mitotic events from the images. First, the event table and coordinates are read.
+<<showMitoticEvents>>=
+Event = h5read(pos, name="object/event")
+head(Event)
+Nucleus = h5read(pos, name="object/primary__primary")
+Nucleus = Nucleus[Event$idx1+1,]
+Box = h5read(pos, name="feature/primary__primary/bounding_box")
+Box = Box[Event$idx1+1,]
+@
+The maximum box for the first five events is computed and the split events are summarized.
+<<showMitoticEvents2>>=
+ID = sort(unique(Event$obj_id)) + 1
+Box2 = matrix(NA_real_,nr=4, nc=0)
+Time2 = ID2 = c()
+N = 5
+for (i in ID[1:N]) {
+  I = which(Event$obj_id == i)
+  box_ = rep(0L,4)
+  center_ = rep(0L,2)
+  box_[1] = min(Box[I,1])
+  box_[2] = max(Box[I,2])
+  box_[3] = min(Box[I,3])
+  box_[4] = max(Box[I,4])
+  R = range(Nucleus$time_idx[I])
+  Box2 = cbind(Box2, matrix(box_,nr=4, nc=diff(R)+1))
+  print(R)
+  Time2 = c(Time2, R[1]:R[2])
+  ID2 = c(ID2, rep(i, diff(R)+1))
+}
+@
+Gallery images are extracted from the file. We can directly subset the reading functions.
+<<showMitoticEvents3>>=
+GalleryImages = list()
+for (i in 1:length(Time2)) {
+  GalleryImages[[i]] = h5read(pos, name="image/channel", 
+                index=list(Box2[1,i]:Box2[2,i],Box2[3,i]:Box2[4,i],1,Time2[i]+1,1))[,,1,1,1]
+}
+@
+Now the images can be printed.
+<<showMitoticEvents4>>=
+W = (max(Box2[2,] - Box2[1,])+3)
+H = (max(Box2[4,] - Box2[3,])+3)
+print(W)
+print(H)
+png(file="mitoticEvents.png", width=21*W,height=5*H)
+vp = viewport(layout=grid.layout(nrow=N,ncol=21,
+                                 widths=rep(W,21),heights=rep(H,N),respect=TRUE))
+pushViewport(vp)
+for (i in 1:N) {
+  I = which(ID2 == i)
+  for (j in 1:21) {
+    vp2 = viewport(layout.pos.row=i,layout.pos.col=j, 
+                   xscale=c(0.5,W+0.5),yscale=c(0.5,W+0.5))
+    pushViewport(vp2)
+    grid.rect(gp=gpar(col=NA,fill="gray10"))
+    grid.raster(toRaster(t(GalleryImages[[I[j]]])),
+                width=unit(nrow(GalleryImages[[I[j]]]),"native"),
+                height=unit(ncol(GalleryImages[[I[j]]]),"native"))
+    popViewport()
+  }
+}
+popViewport()
+dev.off()
+@
+\includegraphics[width=\textwidth]{mitoticEvents.png}
+\section{Close the file}
+Close the HDF5 file and release resources.
+<<closeHDF5file>>=
+H5Gclose(pos)
+H5Gclose(def)
+H5Fclose(file)
+@
+
+<<sessionInfo>>=
+sessionInfo()
+@
+
+\end{document}
