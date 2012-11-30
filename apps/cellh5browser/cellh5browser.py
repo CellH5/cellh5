@@ -38,7 +38,7 @@ from functools import partial
 #-------------------------------------------------------------------------------
 # cellh5 imports:
 #
-from cellh5 import CH5File, GALLERY_SIZE
+from cellh5 import CH5File, GALLERY_SIZE, VERSION, ICON_FILE
 
 
 #-------------------------------------------------------------------------------
@@ -927,7 +927,8 @@ class MainWindow(QtGui.QMainWindow):
         QtGui.QMainWindow.__init__(self, parent)
         self.setStyleSheet('background-color: qlineargradient(x1: 0, y1: 0, x2: 500, y2: 500, stop: 0 #444444, stop: 1 #0A0A0A); color: white;') 
         self.setGeometry(100,100,1200,800)
-        self.setWindowTitle('CellH5Browser')
+        self.setWindowTitle('CellH5Browser %s' % VERSION)
+        self.setWindowIcon(QtGui.QIcon(ICON_FILE))
         
         self.mnu_open = QtGui.QAction('&Open', self)
         self.mnu_open.triggered.connect(self.open_file)

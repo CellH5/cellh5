@@ -28,12 +28,13 @@ import matplotlib.pyplot as mpl
 
 from collections import defaultdict
 
-
 #-------------------------------------------------------------------------------
 # Constants:
 #
 VERSION_NUM = (1,0)
-VERSION = ".".join(map(str,VERSION_NUM))
+VERSION = '.'.join(map(str, VERSION_NUM))
+
+ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 
 GALLERY_SIZE = 100    
 
@@ -482,7 +483,7 @@ class CH5File(object):
 
 class CH5TestBase(unittest.TestCase):
     def setUp(self):
-        data_filename = os.path.join(os.path.split(__file__)[0], '../data/0038.hdf5')
+        data_filename = '../data/0038.hdfd5'
         if not os.path.exists(data_filename):
             raise IOError("No CellH5 test data found in 'cellh5/data'. Please refer to the instructions in 'cellh5/data/README'")
         self.fh = CH5File(data_filename)
