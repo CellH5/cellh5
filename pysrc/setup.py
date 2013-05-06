@@ -1,18 +1,13 @@
 """
-                           The CellCognition Project
-        Copyright (c) 2006 - 2012 Michael Held, Christoph Sommer
-                      Gerlich Lab, ETH Zurich, Switzerland
-                              www.cellcognition.org
+    The CellH5 Project
+    Copyright (c) 2012 - 2013 Christoph Sommer, Michael Held, Bernd Fischer
+    Gerlich Lab, IMBA Vienna, Huber Lab, EMBL Heidelberg
+    www.cellh5.org
 
-              CellCognition is distributed under the LGPL License.
-                        See trunk/LICENSE.txt for details.
-                 See trunk/AUTHORS.txt for author contributions.
+    CellH5 is distributed under the LGPL License.
+    See LICENSE.txt for details.
+    See AUTHORS.txt for author contributions.
 """
-
-__author__ = 'Michael Held'
-__date__ = '$Date$'
-__revision__ = '$Rev$'
-__source__ = '$URL$'
 
 #-------------------------------------------------------------------------------
 # standard library imports:
