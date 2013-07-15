@@ -116,14 +116,19 @@ class CH5Position(object):
         self.plate = plate
         self.well = well
         self.pos = pos
-        self.grp_pos = grp_pos
+        self.grp_pos_path = grp_pos
         self.definitions = parent
+        
+    @property
+    def grp_pos(self):
+        with h5py.File(self.definitions.filename, 'r') as f:
+            return f[self.grp_pos_path]
         
     def __getitem__(self, key):
         return self.grp_pos[key]
     
     def get_tracking(self):
-        return self.grp_pos['object']['tracking'].value
+        return self['object']['tracking'].value
     
     def _get_tracking_lookup(self, obj_idx='obj_idx1'):
         dset_tracking_idx1 = self.get_tracking()[obj_idx]
@@ -161,10 +166,16 @@ class CH5Position(object):
  
         return crack_list
     
+    def has_object_entries(self, object_='primary__primary'):
+        return len(self['object'][object_]) > 0
+    
     def get_object_features(self, object_='primary__primary'):
-        return self['feature'] \
+        if len(self['feature'][object_]['object_features']) > 0:
+            return self['feature'] \
                    [object_] \
                    ['object_features'].value
+        else:
+            return []
                    
                    
     def get_image(self, t, c, z=0):
@@ -434,6 +445,7 @@ class CH5CachedPosition(CH5Position):
 class CH5File(object):
     POSITION_CLS = CH5CachedPosition
     def __init__(self, filename, mode='r'):
+        self.filename = filename
         self._file_handle = h5py.File(filename, mode)
         self.plate = self._get_group_members('/sample/0/plate/')[0]
         self.wells = self._get_group_members('/sample/0/plate/%s/experiment/' % self.plate)
@@ -445,13 +457,19 @@ class CH5File(object):
         for w, pos_list in self.positions.items():
             for p in pos_list:
                 try:
-                    self._position_group[(w,p)] = CH5File.POSITION_CLS(self.plate, w, p, self._file_handle['/sample/0/plate/%s/experiment/%s/position/%s' % (self.plate, w, p)], self)
+                    self._position_group[(w,p)] = CH5File.POSITION_CLS(self.plate, w, p, '/sample/0/plate/%s/experiment/%s/position/%s' % (self.plate, w, p), self)
                 except KeyError:
                     print 'CellH5 Warning: Position', (w,p), 'could not be loaded...'
+
         self.current_pos = self._position_group.values()[0]
         
     def get_position(self, well, pos):
         return self._position_group[(well, pos)]
+    
+    def iter_positions(self):
+        for w, pos_list in self.positions.items():
+            for p in pos_list:
+                yield w, p, self._position_group[(w,p)] 
     
     def set_current_pos(self, well, pos):
         self.current_pos = self.get_position(well, pos)
