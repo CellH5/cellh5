@@ -1030,7 +1030,7 @@ class MainWindow(QtGui.QMainWindow):
     
         
     def open_file(self):
-        filename = str(QtGui.QFileDialog.getOpenFileName(self, 'Open hdf5 file', '.', 'hdf5 files (*.h5  *.hdf5)'))  
+        filename = str(QtGui.QFileDialog.getOpenFileName(self, 'Open hdf5 file', '.', 'hdf5 files (*.h5  *.hdf5 *.ch5)'))  
         if filename:                                              
             self.tracklet_widget.open_file(filename)  
             

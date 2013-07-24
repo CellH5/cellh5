@@ -125,7 +125,9 @@ class CH5Position(object):
             return f[self.grp_pos_path]
         
     def __getitem__(self, key):
-        return self.grp_pos[key]
+        with h5py.File(self.definitions.filename, 'r') as f:
+            return f[self.grp_pos_path][key]
+        #return self.grp_pos[key]
     
     def get_tracking(self):
         return self['object']['tracking'].value
