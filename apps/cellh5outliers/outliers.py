@@ -110,6 +110,7 @@ class OutlierDetection(object):
 			ch5_pos = ch5_file.get_position(well, site)
 			
 			feature_matrix = ch5_pos.get_object_features()
+			a = ch5_pos.get_object_table('primary__primary')
 			
 			object_count = len(feature_matrix)
 			object_counts.append(object_count)
@@ -392,7 +393,7 @@ class OutlierTest(object):
 if __name__ == "__main__":
 	ot = OutlierTest()
 	
-	#ot.setup(rows=None)
+	ot.setup(rows=None)
 	#ot.load_last('testing_13-07-23-12-47_g0.0050_n0.0500.pkl')
 	ot.load_last()
 	a = ot.od.make_hit_list()

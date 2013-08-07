@@ -28,6 +28,8 @@ import matplotlib.pyplot as mpl
 
 from collections import defaultdict
 
+import pandas
+
 #-------------------------------------------------------------------------------
 # Constants:
 #
@@ -127,7 +129,6 @@ class CH5Position(object):
     def __getitem__(self, key):
         with h5py.File(self.definitions.filename, 'r') as f:
             return f[self.grp_pos_path][key]
-        #return self.grp_pos[key]
     
     def get_tracking(self):
         return self['object']['tracking'].value
@@ -443,7 +444,8 @@ class CH5CachedPosition(CH5Position):
     def clear_cache(self):
         if hasattr(self, '_memoize__cache'):
             self._memoize__cache = {}
-    
+     
+      
 class CH5File(object):
     POSITION_CLS = CH5CachedPosition
     def __init__(self, filename, mode='r'):
@@ -466,7 +468,7 @@ class CH5File(object):
         self.current_pos = self._position_group.values()[0]
         
     def get_position(self, well, pos):
-        return self._position_group[(well, pos)]
+        return self._position_group[(well, str(pos))]
     
     def iter_positions(self):
         for w, pos_list in self.positions.items():
@@ -496,14 +498,36 @@ class CH5File(object):
         return self._file_handle['/definition/object']
     
     def close(self):
-        self._file_handle.close()    
-    
-    
+        self._file_handle.close()   
 
+class CH5MappedFile(CH5File):
+    def read_mapping(self, mapping_file, sites=None, rows=None, cols=None):
+        self.mapping_file = mapping_file
+        self.mapping = pandas.read_csv(self.mapping_file, sep='\t')
+        
+        if sites is not None:
+            self.mapping = self.mapping[self.mapping['Site'].isin(sites)]
+        if rows is not None:
+            self.mapping = self.mapping[self.mapping['Row'].isin(rows)]
+        if cols is not None:
+            self.mapping = self.mapping[self.mapping['Column'].isin(cols)]
+        
+        self.mapping.reset_index(inplace=True)
+
+    def _get_mapping_field_of_pos(self, well, pos, field):
+        return self.mapping[(self.mapping['Well'] == str(well)) & (self.mapping['Site'] == int(pos))][field].iloc[0]
+        
+    def get_group_of_pos(self, well, pos):
+        return self._get_mapping_field_of_pos(well, pos, 'Group')
+    
+    def get_treatment_of_pos(self, well, pos, treatment_column=None):
+        if treatment_column is None:
+            treatment_column = ['siRNA ID', 'Gene Symbol']
+        return self._get_mapping_field_of_pos(well, pos, treatment_column)
 
 class CH5TestBase(unittest.TestCase):
     def setUp(self):
-        data_filename = '../data/0038.hdfd5'
+        data_filename = '../data/0038.ch5'
         if not os.path.exists(data_filename):
             raise IOError("No CellH5 test data found in 'cellh5/data'. Please refer to the instructions in 'cellh5/data/README'")
         self.fh = CH5File(data_filename)

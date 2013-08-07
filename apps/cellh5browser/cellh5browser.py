@@ -1039,8 +1039,8 @@ class NullDevice():
         pass            
       
 def main():
-    sys.stderr = NullDevice()
-    sys.stdout = NullDevice()
+    #sys.stderr = NullDevice()
+    #sys.stdout = NullDevice()
     app = QtGui.QApplication(sys.argv) 
     file, _ = getopt.getopt(sys.argv[1:], 'f:')
     if len(file) == 1:
