@@ -109,7 +109,8 @@ class CellFateAnalysis(object):
     def __init__(self, ch5_file, mapping_file, events_before_frame=500, onset_frame=0):
         # 108 frames = 12h
         self.mcellh5 = cellh5.CH5MappedFile(ch5_file)
-        self.mcellh5.read_mapping(mapping_file, rows=("E"), cols=(3,5,8,11))
+        #self.mcellh5.read_mapping(mapping_file, rows=("E"), cols=(3,5,8,11))
+        self.mcellh5.read_mapping(mapping_file, rows=None, cols=None)
         
         self.class_colors = self.mcellh5.class_definition('primary__primary')['color']
         self.class_names = self.mcellh5.class_definition('primary__primary')['name']
@@ -502,18 +503,22 @@ class CellFateAnalysis(object):
         for w, p in self.tracks:
             bins = numpy.zeros((21,), dtype=numpy.int32)
             cnt = 0
-            f = pylab.figure(figsize=(8,12))
+            f = pylab.figure(figsize=(12,7))
             ax = pylab.gca()
             for t in self.tracks[(w,p)]['track_ids']:
                 onset_id = t[4]
                 onset_time = int(self.mcellh5.get_position(w,str(p)).get_time_idx(onset_id))
                 bins[onset_time/20]+=1
                 
-            pylab.bar(range(0,420,20), bins, 0.7, color='w')
-                
-            ax.set_title('%s_%s -- %s'% (w, p, self.mcellh5.get_treatment_of_pos(w, p)[0]))
+            pylab.bar(range(0,420,20), bins, 16, color='w')
+            treatment = self.mcellh5.get_treatment_of_pos(w, p)[0]
+            ax.set_title('%s_%s - %s'% (w, p, treatment ))
             ax.set_xlabel('Time [frames]')
             ax.set_ylabel('Mitotic Onset [count]')
+            ax.set_xlim(0,420)
+            ax.set_ylim(0,50)
+            treatment = treatment.replace('/','_')
+            f.savefig('proliferation_hist_%s_%s_%s.pdf' % (w,p, treatment))
             
             
             
