@@ -28,6 +28,8 @@ import matplotlib
 from hmmpytk import hmm_faster
 from matplotlib.numerix import Matrix
 
+from matplotlib.backends.backend_pdf import PdfPages
+
 def matrix_to_dict(matrix):
     d = {}
     for row in range(matrix.shape[0]):
@@ -106,10 +108,11 @@ class ColorPicker(object):
             return c
 
 class CellFateAnalysis(object):
-    def __init__(self, ch5_file, mapping_file, events_before_frame=500, onset_frame=0):
+    def __init__(self, ch5_file, mapping_file, events_before_frame=108, onset_frame=0):
         # 108 frames = 12h
         self.mcellh5 = cellh5.CH5MappedFile(ch5_file)
-        #self.mcellh5.read_mapping(mapping_file, rows=("E"), cols=(3,5,8,11))
+        
+        #self.mcellh5.read_mapping(mapping_file, rows=("D"), cols=(3,5,8,11))
         self.mcellh5.read_mapping(mapping_file, rows=None, cols=None)
         
         self.class_colors = self.mcellh5.class_definition('primary__primary')['color']
@@ -434,7 +437,7 @@ class CellFateAnalysis(object):
     def _has_death_in_interphase(self, track_str):
         MIN_INTER_LEN = 1
         MIN_APO_AFTER_MITOSIS = 1
-        MITOSIS_PATTERN = r'^1+[1,2]+1{%d,}3{%d}' % (MIN_INTER_LEN, MIN_APO_AFTER_MITOSIS)
+        MITOSIS_PATTERN = r'^1+2+1{%d,}3{%d}' % (MIN_INTER_LEN, MIN_APO_AFTER_MITOSIS)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         if second_mitosis_re is not None:
             start = 0
@@ -443,8 +446,7 @@ class CellFateAnalysis(object):
         return None       
                     
     def _has_no_second_mitosis_no_death(self, track_str):
-        MIN_MITOSIS_LEN = 3
-        MITOSIS_PATTERN = r'^1+2{%d,}1*$' % (MIN_MITOSIS_LEN, )
+        MITOSIS_PATTERN = r'^1+2+1+[1,2]1+[1,2]1+$' 
         no_second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         if no_second_mitosis_re is not None:
             start = 0
@@ -454,14 +456,13 @@ class CellFateAnalysis(object):
                     
                 
     def _has_second_mitosis(self, track_str, phase_after):
-        MIN_PHASE_BEFORE_MITOSIS = 3
-        MIN_MITOSIS_LEN = 4
+        MIN_INTER_LEN=20
+        MIN_MITOSIS_LEN = 3
         MIN_PHASE_AFTER_MITOSIS = 1
-        #print track_str
-        MITOSIS_PATTERN = r'^1+2{%d,}1{%d,}2{%d,}%d{%d}' % (MIN_MITOSIS_LEN, MIN_PHASE_BEFORE_MITOSIS, MIN_MITOSIS_LEN, phase_after, MIN_PHASE_AFTER_MITOSIS)
+        MITOSIS_PATTERN = r'^1+2+1{%d,}2{%d,}%d{%d}' % (MIN_INTER_LEN, MIN_MITOSIS_LEN, phase_after, MIN_PHASE_AFTER_MITOSIS)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         
-        MITOSIS_PATTERN_2 = r'^1+2{%d,}1{%d,}2{%d,}' % (MIN_MITOSIS_LEN, MIN_PHASE_BEFORE_MITOSIS, MIN_MITOSIS_LEN)
+        MITOSIS_PATTERN_2 = r'^1+2+1{%d,}2{%d,}' % (MIN_INTER_LEN, MIN_MITOSIS_LEN)
         second_mitosis_re_2 = re.search(MITOSIS_PATTERN_2, track_str)
         
         MITOSIS_PATTERN_3 = '2+3+$'
@@ -471,6 +472,7 @@ class CellFateAnalysis(object):
             start = 0
             end = second_mitosis_re.end()
             return track_str[start:end]
+        
         elif (second_mitosis_re_2 is not None) and (phase_after==1):
             start = 0
             end = second_mitosis_re_2.end()
@@ -480,10 +482,8 @@ class CellFateAnalysis(object):
             start = 0
             end = second_mitosis_re_3.end()
             return track_str[start:end]
-            
-            
+        
         return None
-    
     
     
     def _plot_line(self, line, line_height, cmap, ax):
@@ -491,15 +491,15 @@ class CellFateAnalysis(object):
         old_l_idx = 0
         for l_idx, l1 in enumerate(line[1:]):
             if l1 != old_l:
-                ax.plot([old_l_idx, l_idx], [line_height, line_height], color=self.cmap(int(old_l)), linewidth=2)
+                ax.plot([old_l_idx, l_idx], [line_height, line_height], color=self.cmap(int(old_l)), linewidth=3)
                 old_l = l1
                 old_l_idx = l_idx
         ax.plot([old_l_idx, l_idx+1], [line_height, line_height], color=self.cmap(int(l1)), linewidth=2)
       
     
-              
-                
+                   
     def plot_proliferaton_timing_histogram(self):
+        pp = PdfPages('proliferation_ctrl.pdf')
         for w, p in self.tracks:
             bins = numpy.zeros((21,), dtype=numpy.int32)
             cnt = 0
@@ -518,8 +518,9 @@ class CellFateAnalysis(object):
             ax.set_xlim(0,420)
             ax.set_ylim(0,50)
             treatment = treatment.replace('/','_')
-            f.savefig('proliferation_hist_%s_%s_%s.pdf' % (w,p, treatment))
-            
+            pylab.savefig(pp, format='pdf')
+            pylab.clf()
+        pp.close()
             
             
             
@@ -539,6 +540,7 @@ class CellFateAnalysis(object):
             y_len = re.search(r"2+", y).end()
             return cmp(x_len, y_len)
         
+        pp = PdfPages("%s.pdf", title)
         
         for w, p in self.tracks:
             cnt = 0
@@ -587,7 +589,9 @@ class CellFateAnalysis(object):
             ax.set_title('%s_%s -- %s'% (w, p, self.mcellh5.get_treatment_of_pos(w, p)[0]) )
             ax.set_xlabel('Time [frame]')
             ax.set_yticklabels([])
-            f.savefig('%s_%s.pdf' % (w,p))
+            pylab.savefig(pp, format='pdf')
+            pylab.clf()
+        pp.close()
             
     def _plot_motility_1(self, path, pos):
         cond = self.position_dict[pos]
@@ -816,10 +820,10 @@ if __name__ == "__main__":
     pm.classify_tracks()
     #pm.plot_tracks('hmm_class_labels')
     #pm.plot_tracks('class_label_str')
-    #pm.plot('test')
+    pm.plot('fate')
     pm.plot_proliferaton_timing_histogram()
     print 'done'
-    pylab.show()  
+    #pylab.show()  
  
 #    plot_post_mito("_all_positions.h5")
 #    get_single_event_images_of_tree('0022.hdf5', 42)        
