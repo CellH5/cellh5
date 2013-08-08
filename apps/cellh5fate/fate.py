@@ -112,8 +112,8 @@ class CellFateAnalysis(object):
         # 108 frames = 12h
         self.mcellh5 = cellh5.CH5MappedFile(ch5_file)
         
-        #self.mcellh5.read_mapping(mapping_file, rows=("D"), cols=(3,5,8,11))
         self.mcellh5.read_mapping(mapping_file, rows=None, cols=None)
+        #self.mcellh5.read_mapping(mapping_file, rows=None, cols=None)
         
         self.class_colors = self.mcellh5.class_definition('primary__primary')['color']
         self.class_names = self.mcellh5.class_definition('primary__primary')['name']
@@ -187,8 +187,39 @@ class CellFateAnalysis(object):
             self.tracks[(w,p)]['class_labels'] = class_labels_list
             self.tracks[(w,p)]['track_ids'] = id_list
             #self.tracks[(w,p)]['hmm_class_labels'] = hmm_labels_list,
-
         print 'done'
+        
+    def extract_topro(self):
+        topro = []
+        for w, p in self.tracks:
+            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
+            for t in self.tracks[(w,p)]['track_ids']:
+                topro.extend(feature_table[t, 6])  
+        pylab.figure()
+        pylab.hist(topro, 256)
+        pylab.figure()
+        pylab.hist(numpy.log2(numpy.array(topro)), 256, log=True)
+        pylab.show()
+        
+    def predict_topro(self, thres):
+        for w, p in self.tracks:
+            topro = []
+            topro_2 = []
+            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
+            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
+            for t_ids, t in zip(self.tracks[(w,p)]['track_ids'], self.tracks[(w,p)]['class_label_str']):
+                t_topro_pos = feature_table[t_ids, 6] > thres
+                t_ = numpy.array(list(t))
+                t_[t_topro_pos] = 3
+                topro.append(t_)
+                
+                t__ = numpy.zeros((len(t),), dtype=numpy.uint8)
+                t__[t_topro_pos] = 3
+                
+                topro_2.append(t__)
+            self.tracks[(w,p)]['topro_class_labels'] = topro
+            self.tracks[(w,p)]['topro_pos'] = topro_2
+        
         
     def predict_hmm(self, class_selector):
         print 'Predict hmm',
@@ -211,6 +242,7 @@ class CellFateAnalysis(object):
             #self.tracks[(w,p)]['class_labels'] = class_labels_list
             self.tracks[(w,p)]['hmm_class_labels'] = hmm_labels_list
                             
+    
     
 
     def setup_hmm(self, k_classes):
@@ -428,7 +460,14 @@ class CellFateAnalysis(object):
         #print track_str
         MITOSIS_PATTERN = r'^1+2{%d,}3{%d}' % (MIN_MITOSIS_LEN, MIN_APO_AFTER_MITOSIS)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
+        
+        MITOSIS_PATTERN_2 = r'^3+'
+        second_mitosis_re_2 = re.search(MITOSIS_PATTERN_2, track_str)
         if second_mitosis_re is not None:
+            start = 0
+            end = second_mitosis_re.end()
+            return track_str[start:end]
+        elif second_mitosis_re_2 is not None:
             start = 0
             end = second_mitosis_re.end()
             return track_str[start:end]
@@ -494,7 +533,7 @@ class CellFateAnalysis(object):
                 ax.plot([old_l_idx, l_idx], [line_height, line_height], color=self.cmap(int(old_l)), linewidth=3)
                 old_l = l1
                 old_l_idx = l_idx
-        ax.plot([old_l_idx, l_idx+1], [line_height, line_height], color=self.cmap(int(l1)), linewidth=2)
+        ax.plot([old_l_idx+1, len(line)+1], [line_height, line_height], color=self.cmap(int(l1)), linewidth=3)
       
     
                    
@@ -530,17 +569,20 @@ class CellFateAnalysis(object):
     def plot(self, title):
         def _plot_separator(cnt, label, col='k'):
             cnt+=2
-            ax.axhline(cnt, color=col, linewidth=2, linestyle=':')
+            ax.axhline(cnt, color=col, linewidth=3, linestyle=':')
             ax.text(350, cnt-0.5, label)
             cnt+=2
             return cnt
         
         def _cmp_len_of_first_inter(x,y):
-            x_len =  re.search(r"2+", x).end()
-            y_len = re.search(r"2+", y).end()
-            return cmp(x_len, y_len)
+            try:
+                x_len =  re.search(r"2+", x).end()
+                y_len = re.search(r"2+", y).end()
+                return cmp(x_len, y_len)
+            except:
+                return 0
         
-        pp = PdfPages("%s.pdf", title)
+        pp = PdfPages("%s.pdf" % title)
         
         for w, p in self.tracks:
             cnt = 0
@@ -579,7 +621,7 @@ class CellFateAnalysis(object):
             for line in sorted(self.tracks[(w,p)]['unclassified'], cmp=_cmp_len_of_first_inter):
                 self._plot_line(list(line), cnt, self.cmap, ax)
                 cnt+=1
-                print 'unclassified', line
+                #print 'unclassified', line
             cnt = _plot_separator(cnt, '...yet unclassified', )
             
             
@@ -816,12 +858,17 @@ if __name__ == "__main__":
     pm.fate_tracking()
     pm.smooth_and_simplify_tracks()
     pm.setup_hmm3(3)
-    pm.predict_hmm('class_label_str')
+    pm.predict_topro(12)
+    #pm.predict_hmm('class_label_str')
+    pm.predict_hmm('topro_class_labels')
+    
+    #pm.extract_topro()
     pm.classify_tracks()
+    #pm.plot_tracks('topro_pos')
     #pm.plot_tracks('hmm_class_labels')
-    #pm.plot_tracks('class_label_str')
-    pm.plot('fate')
-    pm.plot_proliferaton_timing_histogram()
+    #pm.plot_tracks('topro_class_labels')
+    pm.plot('fate_with_topro_all')
+    #pm.plot_proliferaton_timing_histogram()
     print 'done'
     #pylab.show()  
  
