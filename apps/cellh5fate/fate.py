@@ -248,9 +248,8 @@ class CellFateAnalysis(object):
     def setup_hmm(self, k_classes):
         h = hmm.MultinomialHMM(k_classes, random_state=12)
         emissionprob = numpy.eye(k_classes, k_classes)
-        emissionprob = hmm.normalize(emissionprob, axis=1)
-        emissionprob[emissionprob<0.1] = 0
-        #print 'e', emissionprob
+        emissionprob = ormalize(emissionprob + 0.05, axis=1, eps=0.0)
+
         h.emissionprob_ = emissionprob
 
 #         transmat_ = numpy.array(
@@ -272,16 +271,13 @@ class CellFateAnalysis(object):
 
                                ], dtype=numpy.float64      
                               )
-        transmat_ = hmm.normalize(transmat_, axis=1)
-        transmat_[transmat_ < 0.1] = 0
-        
-        #print 't', transmat_
+        transmat_ = normalize(transmat_, axis=1, eps=0.0)
         h.transmat_ = transmat_
         
         start_prob = numpy.ones((k_classes,))
         start_prob /= start_prob.sum()
         h.startprob_ = start_prob
-        
+            
         self.hmm = h
         print 'setup_hmm(): done'
         

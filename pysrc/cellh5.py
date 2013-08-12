@@ -190,22 +190,27 @@ class CH5Position(object):
         if not isinstance(index, (list, tuple)):
             index = (index,)
         image_list = []
-        channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_]
+        channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
+        image_width = self['image']['channel'].shape[3]
+        image_height = self['image']['channel'].shape[4]
+        
+        
         for ind in index:
             time_idx = self['object'][object_][ind]['time_idx']
             cen1 = self['feature'][object_]['center'][ind]
-            image = numpy.zeros((GALLERY_SIZE,GALLERY_SIZE))
-            
-            tmp_img = self['image'] \
-                             ['channel'] \
-                             [channel_idx, time_idx, 0,
-                              max(0, cen1[1]-GALLERY_SIZE/2):min(1040,cen1[1]+GALLERY_SIZE/2), 
-                              max(0, cen1[0]-GALLERY_SIZE/2):min(1389,cen1[0]+GALLERY_SIZE/2)]
+            image = numpy.zeros((GALLERY_SIZE,GALLERY_SIZE), dtype=numpy.uint8)
+
+            tmp_img = self.get_image(time_idx, channel_idx, 0)[
+                              max(0, cen1[1]-GALLERY_SIZE/2):min(image_width,  cen1[1]+GALLERY_SIZE/2), 
+                              max(0, cen1[0]-GALLERY_SIZE/2):min(image_height, cen1[0]+GALLERY_SIZE/2)]
                              
             image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
             image_list.append(image)
-        return numpy.concatenate(image_list, axis=1)
-    
+            
+        if len(index) > 1:
+            return numpy.concatenate(image_list, axis=1)
+        return image_list[0]
+
     def get_gallery_image_rgb(self, index, object_=('primary__primary',)):
         if len(object_) == 1:
             img_ = self.get_gallery_image(index, object_[0])
@@ -224,6 +229,48 @@ class CH5Position(object):
                 img[:,:,c] = self.get_gallery_image(index, object_[c])
                 
         return img
+    
+    def get_gallery_image_list(self, index, object_='primary__primary'):
+        image_list = []
+        channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
+        image_width = self['image']['channel'].shape[3]
+        image_height = self['image']['channel'].shape[4]
+        
+        
+        time_idxs = [self['object'][object_][ind]['time_idx'] for ind in index]
+        center_idxs = [self['feature'][object_]['center'][ind] for ind in index]
+        
+        for k in xrange(len(index)):
+            time_idx = time_idxs[k]
+            cen1 = center_idxs[k]
+            image = numpy.zeros((GALLERY_SIZE,GALLERY_SIZE), dtype=numpy.uint8)
+
+            tmp_img = self['image/channel'][channel_idx, time_idx, 0,
+                                 max(0, cen1[1]-GALLERY_SIZE/2):min(image_width,  cen1[1]+GALLERY_SIZE/2), 
+                                 max(0, cen1[0]-GALLERY_SIZE/2):min(image_height, cen1[0]+GALLERY_SIZE/2)]
+                             
+            image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
+            image_list.append(image)
+            
+        return image_list
+    
+    def get_gallery_image_generator(self, index, object_='primary__primary'):
+        image_list = []
+        channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
+        image_width = self['image']['channel'].shape[3]
+        image_height = self['image']['channel'].shape[4]
+          
+        for ind in index:
+            time_idx = self['object'][object_][ind]['time_idx']
+            cen1 = self['feature'][object_]['center'][ind]
+            image = numpy.zeros((GALLERY_SIZE,GALLERY_SIZE), dtype=numpy.uint8)
+
+            tmp_img = self['image/channel'][channel_idx, time_idx, 0,
+                                 max(0, cen1[1]-GALLERY_SIZE/2):min(image_width,  cen1[1]+GALLERY_SIZE/2), 
+                                 max(0, cen1[0]-GALLERY_SIZE/2):min(image_height, cen1[0]+GALLERY_SIZE/2)]
+                             
+            image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
+            yield image
                  
     def get_gallery_image_contour(self, index, object_=('primary__primary',), color=None):
         img = self.get_gallery_image_rgb(index, object_)
@@ -270,6 +317,12 @@ class CH5Position(object):
     
     def get_time_idx(self, index, object_='primary__primary'):
         return self['object'][object_][index]['time_idx']
+    
+    def get_time_indecies(self, index, object_='primary__primary'):
+        inv_sort = numpy.argsort(numpy.argsort(numpy.array(index)))
+        index.sort()
+        tmp =  self['object'][object_][index]['time_idx']
+        return tmp[inv_sort]    
     
     def get_class_name(self, index, object_='primary__primary'):
         res = map(str, self.class_name_def(tuple(self.get_class_label(index)), object_))
@@ -496,6 +549,12 @@ class CH5File(object):
     @property
     def object_definition(self):
         return self._file_handle['/definition/object']
+    
+    def has_classification(self, object_):
+        if object_ in self.feature_definition:
+            return 'object_classification' in self.feature_definition[object_] 
+        else:
+            return False
     
     def close(self):
         self._file_handle.close()   
