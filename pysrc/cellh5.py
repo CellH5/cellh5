@@ -372,6 +372,31 @@ class CH5Position(object):
                 events.append(event_list)    
         return events
     
+    def get_event_items(self, output_second_branch=False):
+        dset_event = self.get_object_table('event')
+        events = []
+        for event_id in range(dset_event['obj_id'].max()):
+            idx = numpy.where(dset_event['obj_id'] == event_id)
+            idx1 = dset_event[idx]['idx1']
+            idx2 = dset_event[idx]['idx2']
+            second_branch_found = False
+            event_list = []
+            for p1, _ in zip(idx1, idx2):
+                if p1 in event_list:
+                    # branch ends
+                    second_branch_found = True
+                    break
+                else:
+                    event_list.append(p1)
+            if second_branch_found and output_second_branch:
+                a = list(idx1).index(p1)
+                b = len(idx1) - list(idx1)[-1:0:-1].index(p1) - 1
+                event_list2 = list(idx1[0:a]) + list(idx1[b:])
+                events.append((event_id, event_list, event_list2))
+            else:
+                events.append((event_id, event_list))    
+        return events
+    
     def _track_single(self, start_idx, type_):
         track_on_feature = False
         if type_ == 'first':
@@ -553,6 +578,12 @@ class CH5File(object):
     def has_classification(self, object_):
         if object_ in self.feature_definition:
             return 'object_classification' in self.feature_definition[object_] 
+        else:
+            return False
+        
+    def has_object_features(self, object_):
+        if object_ in self.feature_definition:
+            return 'object_features' in self.feature_definition[object_] 
         else:
             return False
     
