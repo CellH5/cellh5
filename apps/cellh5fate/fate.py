@@ -22,6 +22,7 @@ from matplotlib.mlab import PCA
 from scipy.stats import nanmean
 from matplotlib.backends.backend_pdf import PdfPages
 from sklearn import hmm
+hmm.EPS = 10e-99
 from itertools import cycle
 from cecog.util.color import rgb_to_hex
 import matplotlib
@@ -29,6 +30,11 @@ from hmmpytk import hmm_faster
 from matplotlib.numerix import Matrix
 
 from matplotlib.backends.backend_pdf import PdfPages
+
+
+
+
+
 
 def matrix_to_dict(matrix):
     d = {}
@@ -78,6 +84,39 @@ def class_lookup(class_label):
                  9 : '#00FFFF',
                 10 : '#00FFFF' }
     return color_dct[class_label]
+                
+cmap3 = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
+                                                   ['#FFFFFF', 
+                                                    '#AAAAAA', 
+                                                    '#0000FF',
+                                                    '#FF0000']), 'classification_cmap')
+cmap53 = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
+                                                   ['#FFFFFF', 
+                                                    '#AAAAAA', 
+                                                    '#0000FF',
+                                                    '#FF0000']), 'classification_cmap')     
+
+cmap13 = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
+                                                   ['#FFFFFF',
+                                                     
+                                                    '#FF0000', 
+                                                    '#CC0000',
+                                                    '#AA0000',
+                                                    '#770000',
+                                                    
+                                                    '#00FF00', 
+                                                    '#00CC00',
+                                                    '#00AA00',
+                                                    '#007700',
+                                                    
+                                                    '#0000FF', 
+                                                    '#0000CC',
+                                                    '#0000AA',
+                                                    '#000077',
+                                                    
+                                                    '#000000',
+                                                    
+                                                    ]), 'classification_cmap')           
                  
 
 
@@ -121,32 +160,27 @@ class CellFateAnalysis(object):
         hex_col = list(self.class_colors) 
         
         rgb_col = map(lambda x: hex_to_rgb(x), ['#FFFFFF'] + hex_col)
-        rgb_col = map(lambda x: hex_to_rgb(x), ['#FFFFFF', '#AAAAAA', '#0000FF','#0000FF','#0000FF', '#FF0000'])
         
         self.cmap = matplotlib.colors.ListedColormap(rgb_col, 'classification_cmap')
-        #self.cmap = matplotlib.colors.ListedColormap(rgb_col, 'classification_cmap')
         self.tracks = {}
-        self.events = {}
         
         for _, (w, p) in self.mcellh5.mapping[['Well','Site']].iterrows(): 
             cellh5pos = self.mcellh5.get_position(w,str(p))
             preds = cellh5pos.get_class_prediction()
-            self.events[(w, p)] = {}
             self.tracks[(w, p)] = {}
             event_ids = cellh5pos.get_events()
             
             event_ids = [e[onset_frame:] for e in event_ids if cellh5pos.get_time_idx(e[0]) < events_before_frame]
             
-            self.events[(w, p)]['ids'] = event_ids
-            self.events[(w, p)]['labels'] = [cellh5pos.get_class_label(e) for e in event_ids]
+            self.tracks[(w, p)]['ids'] = event_ids
+            self.tracks[(w, p)]['labels'] = [cellh5pos.get_class_label(e) for e in event_ids]
             
-            #self.events[(w, p)]['labels'] = [preds[e] for e in self.events[(w, p)]['ids']]
             print w, p, self.mcellh5.get_treatment_of_pos(w, p)[0]
             
             
     def smooth_and_simplify_tracks(self, in_selector, out_name):   
         print 'Track and hmm predict',
-        for w, p in self.events:
+        for w, p in self.tracks:
             print w, p
             cell5pos = self.mcellh5.get_position(w, p)
             class_labels = self.tracks[(w,p)][in_selector]
@@ -163,18 +197,17 @@ class CellFateAnalysis(object):
             self.tracks[(w,p)][out_name] = class_label_str 
             #print class_label_str
                 
-               
-            
+       
     def fate_tracking(self, out_name):
         print 'Track',
-        for w, p in self.events:
+        for w, p in self.tracks:
             print w, p
             cell5pos = self.mcellh5.get_position(w, p)
             
             class_labels_list = []
             id_list = []
             #hmm_labels_list = []
-            for k, e_idx in enumerate(self.events[(w,p)]['ids']):   
+            for k, e_idx in enumerate(self.tracks[(w,p)]['ids']):   
                 start_idx = e_idx[-1]
                 track = e_idx[:-1] + cell5pos.track_first(start_idx)
                 class_labels = cell5pos.get_class_label(track)
@@ -224,7 +257,7 @@ class CellFateAnalysis(object):
         
     def predict_hmm(self, class_selector, class_out_name):
         print 'Predict hmm',
-        for w, p in self.events:
+        for w, p in self.tracks:
             print w, p
             cell5pos = self.mcellh5.get_position(w, p)
             
@@ -238,55 +271,82 @@ class CellFateAnalysis(object):
                 # myhmm
                 #hmm_class_labels = numpy.array(myhmm.viterbi(self.hmm, class_labels-1)[0]) + 1
                 hmm_class_labels = self.hmm.predict(numpy.array(class_labels-1)) + 1
-                #print hmm_class_labels
+                print hmm_class_labels
                 hmm_labels_list.append(hmm_class_labels)
 
                 
             #self.tracks[(w,p)]['class_labels'] = class_labels_list
             self.tracks[(w,p)][class_out_name] = hmm_labels_list
                             
-    def securin_degradation(self, in_selector, title):
+    def event_curves(self, event_selector, 
+                           title,
+                           region_name,
+                           feature_name,
+                           with_fate,
+                           cmap,
+                           time_lapse,
+                           event_onset_indicator,
+                           xlim,
+                           ylim,
+                           ):
         pp = PdfPages("%s.pdf" % title)
         
-        for w, p in self.tracks:
+        for w, p in sorted(self.tracks):
             cnt = 0
             f = pylab.figure(figsize=(8, 8))
             ax = pylab.gca()
             
-            securin = []
-            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('tertiary__expanded')
-            for t in self.events[(w,p)]['ids']:
-                securin.append(feature_table[t, 6])  
+            
+            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features(region_name)
+            feature_idx = self.mcellh5.get_object_feature_idx_by_name(region_name, feature_name)
+
+            id_selector = 'ids'
+            if with_fate:
+                id_selector = 'track_ids'
+            
+            all_feature_values = [feature_table[t, feature_idx] for t in self.tracks[(w,p)][id_selector]]
                 
-            securin_min = numpy.min(map(numpy.min, securin))
+            feature_min = numpy.min(map(numpy.min, all_feature_values))
                 
-                
-            for line, securin_value in zip(self.tracks[(w,p)][in_selector], securin) :
-                values = numpy.array(securin_value - securin_min) 
-                
-                values = values / numpy.mean(values[2:5])
-                self._plot_securinline(list(line)[:len(securin_value)], values, self.cmap, ax)
+            for line, feature_values in zip(self.tracks[(w,p)][event_selector], all_feature_values):
+                x_values = numpy.array(map(int,list(line)))
+                if numpy.max(feature_values) < 15:
+                    print 'excluding event due to low signal'
+                    continue
+                values = numpy.array(feature_values - feature_min) 
+                values = values / numpy.mean(values[(event_onset_indicator-1):(event_onset_indicator+2)])
+                #print values[(event_onset_indicator-1):(event_onset_indicator+1)]
+                self._plot_curve(x_values[:len(feature_values)], values, cmap, ax, event_onset_indicator, time_lapse)
   
 
             ax.set_title('%s_%s -- %s'% (w, p, self.mcellh5.get_treatment_of_pos(w, p)[0]) )
             ax.set_xlabel('Time [frame]')
-            #ax.set_yticklabels([])
+            ax.set_ylabel('Fluorescence (AU)')
+            ax.set_ylim(ylim)
+            ax.set_xlim(xlim)
             pylab.savefig(pp, format='pdf')
-            pylab.clf()
-
-        
+            pylab.clf()    
         pp.close()
     
 
     def setup_hmm(self, k_classes, constraint_xml):
         from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
         constraints = HMMConstraint(constraint_xml)
+#         transmat = numpy.array([
+#                                 [0.80,  0.10,  0.10,  0.00,  0.10],
+#                                 [0.00,  0.80,  0.10,  0.00,  0.10],
+#                                 [0.00,  0.00,  0.80,  0.10,  0.10],
+#                                 [0.10,  0.00,  0.00,  0.80,  0.10],
+#                                 [0.00,  0.00,  0.00,  0.00,  1.00],
+#                                 ])
+#         transmat = normalize(transmat, eps=0.001)
+        
         transmat = numpy.array([
-                                [0.8,  0.1,  0.0,  0.0,  0.1],
-                                [0.0,  0.8,  0.1,  0.0,  0.1],
-                                [0.0,  0.0,  0.8,  0.1,  0.1],
-                                [0.1,  0.0,  0.0,  0.8,  0.1],
-                                [0.0,  0.0,  0.0,  0.0,  1.0],
+                                [10 ,  0.1,  0.0,  0.0,  0.1],
+                                [0.1,  10 ,  0.1,  0.0,  0.1],
+                                [0.1,  0.0,  10 ,  0.1,  0.1],
+                                [0.1,  0.0,  0.0,  10 ,  0.1],
+                                [0.0,  0.0,  0.0,  0.0,  10 ],
                                 ])
         transmat = normalize(transmat, eps=0.001)
         
@@ -298,131 +358,91 @@ class CellFateAnalysis(object):
         self.hmm._set_transmat(est.trans)
         self.hmm._set_emissionprob(est.emis)  
         
-    def setup_hmm2(self, k_classes):
-        h = hmm_faster.HMM()
-        h.set_states(range(k_classes))
-        h.set_observations(range(k_classes))
+    def setup_hmm_multi(self, k_classes, constraint_xml):
+        from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
+        constraints = HMMConstraint(constraint_xml)
+#         transmat = numpy.array([
+#                                 [0.80,  0.10,  0.10,  0.00,  0.10],
+#                                 [0.00,  0.80,  0.10,  0.00,  0.10],
+#                                 [0.00,  0.00,  0.80,  0.10,  0.10],
+#                                 [0.10,  0.00,  0.00,  0.80,  0.10],
+#                                 [0.00,  0.00,  0.00,  0.00,  1.00],
+#                                 ])
+#         transmat = normalize(transmat, eps=0.001)
         
-        emissionprob = numpy.array(
-                              [ 
-                                [ 1,  0,  0,],
-                                [ 0,  1,  0,],
-                                [ 0,  0,  1,],
-
-                               ], dtype=numpy.float64      
-                              )
-        emissionprob = hmm.normalize(emissionprob, axis=1, eps=10e-60)
-        h.set_emission_matrix(matrix_to_dict(emissionprob))
-        print emissionprob
-
-#         transmat_ = numpy.array(
-#                               [ 
-#                                 [ 1,  1,  0,  0,  0,  0,  0,],
-#                                 [ 0,  1,  1,  0,  0,  0,  0,],
-#                                 [ 0,  0,  1,  1,  0,  0,  0,],
-#                                 [ 1,  0,  0,  1,  0,  0,  0,],
-#                                 [ 0,  0,  0,  0,  1,  0,  1,],
-#                                 [ 0,  0,  0,  0,  1,  1,  0,],
-#                                 [ 0,  0,  0,  0,  1,  0,  1,],
-#                                ], dtype=numpy.float64      
-#                               )
-        transmat_ = numpy.array(
-                              [ 
-                                [ 1,  0,  0,],
-                                [ 0,  1,  0,],
-                                [ 0,  0,  1,],
-
-                               ], dtype=numpy.float64      
-                              )
-        transmat_ = hmm.normalize(transmat_, axis=1, eps=10e-60)
-        #transmat_[transmat_ < 0.1] = 0
+        transmat = numpy.array([
+                                [1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
+                                [0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
+                                [0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
+                                [0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
+                                
+                                [0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.9],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.9],
+                                
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.9],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.9],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.9],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9],
+                                
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                                ])
+        transmat = normalize(transmat, eps=0)
         
-        #print 't', transmat_
-        h.set_transition_matrix(matrix_to_dict(transmat_))
-        print matrix_to_dict(transmat_)
+        est = HMMAgnosticEstimator(k_classes, transmat)
+        est.constrain(constraints)
         
-        start_prob = numpy.ones((k_classes,), dtype=numpy.float64)
-        start_prob[:] = 0
-        start_prob[1] = 1
+        print transmat
         
+        self.hmm = hmm.MultinomialHMM(n_components=est.nstates)
+        self.hmm._set_startprob(est.startprob)
+        self.hmm._set_transmat(est.trans)
+        self.hmm._set_emissionprob(est.emis) 
         
-        start_prob /= start_prob.sum()
-        h.set_initial_matrix(matrix_to_dict(start_prob))
+         
+    def plot_tracks(self, track_selection, cmaps, title='plot_tracks'):
+        n = len(track_selection)
+        m = len(self.tracks) 
+        pp = PdfPages('%s.pdf' % title)
         
-        self.hmm = h
-        print matrix_to_dict(start_prob)
-        print 'setup_hmm(): done'
-        
-    def setup_hmm3(self, k_classes):
-        import myhmm
-        
-        emissionprob = numpy.array(
-                              [ 
-                                [ 1,  0,  0,],
-                                [ 0,  1,  0,],
-                                [ 0,  0,  1,],
-
-                               ], dtype=numpy.float64      
-                              )
-        emissionprob = hmm.normalize(emissionprob, axis=1, eps=10e-4)
-
-        transmat = numpy.array(
-                              [ 
-                                [ 100,  1,  1,],
-                                [ 1,  100,  1,],
-                                [ 0,  1,  100,],
-
-                               ], dtype=numpy.float64      
-                              ).T
-        transmat = hmm.normalize(transmat, axis=1, eps=0)
-
-        
-        start_prob = numpy.ones((k_classes,), dtype=numpy.float64)
-        start_prob[:] = 0
-        start_prob[0] = 1        
-        
-        start_prob /= start_prob.sum()
-        
-        h = myhmm.HMM(k_classes, V=range(k_classes), A=transmat, B=emissionprob, Pi=start_prob)
-        
-        self.hmm = h
-        
-        print h
-        print 'setup_hmm(): done'
-    
-            
-    def plot_tracks(self, class_selector="class_label_str"):
-        for w, p in self.tracks:
+        fig = pylab.figure(figsize=(n*4,m*2)) 
+        for j, (w, p) in enumerate(sorted(self.tracks)):
             cond = self.mcellh5.get_treatment_of_pos(w,p)
-
-            tracks = self.tracks[w,p][class_selector]
-            track_lens = map(len, tracks)
-            if len(track_lens) > 0:
-                pylab.figure()
-                max_track_length = max(track_lens)
-            
-                max_track_length = max(map(lambda x: len(x), tracks))
-                n_tracks = len(tracks)
-                img = numpy.zeros((n_tracks, max_track_length), dtype=numpy.uint8)
+            for k, class_selector in enumerate(track_selection):
+                cmap = cmaps[k]
+                print (m, n , k + j*n+1)
+                ax = pylab.subplot(m, n , k + j*n + 1)
                 
-                for i, t in enumerate(sorted(tracks, cmp=lambda x,y: cmp(len(x), len(y)))):
-                    if not isinstance(t, (list,)):
-                        b = list(t)
-                    img[i,:len(t)] = b
+                tracks = self.tracks[w,p][class_selector]
+                track_lens = map(len, tracks)
+                
+                if len(track_lens) > 0:
                     
-                 
-                pylab.clf()    
-                pylab.imshow(img, interpolation='nearest', cmap=self.cmap, clim=(img.min(),img.max()+1))
-                pylab.title("%s_%s_%s" % (w,p,class_selector))
+                    max_track_length = max(track_lens)
                 
-                #filename = os.path.join(path, '%s_%s_%s.png' % (pos, cond, class_selector))
-                #pylab.gcf().savefig(filename)
-                #pylab.clf()
-            else:
-                print w, p, 'Nothing to plot'
+                    max_track_length = max(map(lambda x: len(x), tracks))
+                    n_tracks = len(tracks)
+                    img = numpy.zeros((n_tracks, max_track_length), dtype=numpy.uint8)
+                    
+                    for i, t in enumerate(sorted(tracks, cmp=lambda x,y: cmp(len(x), len(y)))):
+                        if not isinstance(t, (list,)):
+                            b = list(t)
+                        img[i,:len(t)] = b
+                        
+
+                    ax.imshow(img, interpolation='nearest', cmap=cmap, clim=(img.min(),img.max()+1))
+                    ax.set_title("%s_%s_%s" % (w,p,class_selector))
+                    pylab.axis('off')
+                    
+                else:
+                    print w, p, 'Nothing to plot'
+            #pylab.show()
+        pylab.savefig(pp, format='pdf')
+        pp.close()   
           
             
-    def classify_tracks(self, class_selector='hmm_class_labels'):
+    def classify_tracks(self, class_selector):
         for w, p in self.tracks:
             cond = self.mcellh5.get_treatment_of_pos(w,p)
             self.tracks[(w,p)]['second_mitosis_inter'] = []
@@ -434,7 +454,9 @@ class CellFateAnalysis(object):
 
             for t_idx, track in enumerate(self.tracks[w,p][class_selector]):
                 track_str = "".join(map(str,track))
-                print track_str
+                if '3' in track_str:
+                    print 'found apo in', w, p
+                #print track_str
                 
                 dim = self._has_death_in_mitosis(track_str)
                 dii = self._has_death_in_interphase(track_str)
@@ -542,22 +564,37 @@ class CellFateAnalysis(object):
     def _plot_line(self, line, line_height, cmap, ax):
         old_l = line[0]
         old_l_idx = 0
-        for l_idx, l1 in enumerate(line[1:]):
+        #print map(int,line)
+        for l_idx, l1 in enumerate(line):
             if l1 != old_l:
-                ax.plot([old_l_idx, l_idx], [line_height, line_height], color=self.cmap(int(old_l)), linewidth=3)
+                ax.plot([old_l_idx, l_idx], [line_height, line_height], color=cmap(int(old_l)), linewidth=3)
+                #print [old_l_idx, l_idx],
                 old_l = l1
                 old_l_idx = l_idx
-        ax.plot([old_l_idx+1, len(line)+1], [line_height, line_height], color=self.cmap(int(l1)), linewidth=3)
+        #print [old_l_idx, len(line)]
+        ax.plot([old_l_idx, len(line)], [line_height, line_height], color=cmap(int(l1)), linewidth=3)
       
-    def _plot_securinline(self, line, values, cmap, ax):
+    def _plot_curve(self, line, values, cmap, ax, event_onset_indicator=0, time_lapse=None):
+        if time_lapse is None:
+            time_lapse = 1
+            
+        print values
+
         old_l = line[0]
         old_l_idx = 0
-        for l_idx, l1 in enumerate(line[1:]):
+        for l_idx, l1 in enumerate(line):
             if l1 != old_l:
-                ax.plot(range(old_l_idx, l_idx+1), values[old_l_idx: l_idx+1], color=self.cmap(int(old_l)), linewidth=1)
+                x = (numpy.arange(old_l_idx, l_idx+1) - event_onset_indicator ) * time_lapse
+                y = values[old_l_idx:(l_idx+1)]
+                print 'x', x[0], 'to', x[-1]
+                print 'y', y[0], 'to', y[-1]
+                ax.plot(x, y, color=self.cmap(int(old_l)), linewidth=1)
                 old_l = l1
                 old_l_idx = l_idx
-        ax.plot(range(old_l_idx, (len(line))), values[(old_l_idx):(len(line))], color=self.cmap(int(l1)), linewidth=1)
+                
+        x = (numpy.arange(old_l_idx, len(line)) - event_onset_indicator) * time_lapse
+        y = values[old_l_idx:(len(line))]
+        ax.plot(x, y, color=self.cmap(int(l1)), linewidth=1)
         
                    
     def plot_proliferaton_timing_histogram(self):
@@ -587,8 +624,8 @@ class CellFateAnalysis(object):
     def plot(self, title):
         def _plot_separator(cnt, label, col='k'):
             cnt+=2
-            ax.axhline(cnt, color=col, linewidth=3, linestyle=':')
-            ax.text(350, cnt-0.5, label)
+            ax.axhline(cnt, color=col, linewidth=1)
+            ax.text(10, cnt-0.5, label)
             cnt+=2
             return cnt
         
@@ -602,7 +639,7 @@ class CellFateAnalysis(object):
         
         pp = PdfPages("%s.pdf" % title)
         
-        for w, p in self.tracks:
+        for w, p in sorted(self.tracks):
             cnt = 0
             f = pylab.figure(figsize=(8,12))
             ax = pylab.gca()
@@ -645,7 +682,7 @@ class CellFateAnalysis(object):
             
                 
             ax.invert_yaxis()
-            ax.set_xlim(0,700)
+            ax.set_xlim(0, 450)
             ax.set_title('%s_%s -- %s'% (w, p, self.mcellh5.get_treatment_of_pos(w, p)[0]) )
             ax.set_xlabel('Time [frame]')
             ax.set_yticklabels([])
@@ -663,7 +700,7 @@ class CellFateAnalysis(object):
             return res
         
         f = h5py.File(filename, 'r')
-        for w, p in self.events:
+        for w, p in self.tracks:
             print 'Read manual annotations', w, p
             cell5pos = self.mcellh5.get_position(w, p)
             
@@ -683,46 +720,60 @@ class CellFateAnalysis(object):
             
  
 def fate():
-  
     pm = CellFateAnalysis(
                           r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
                           r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
-                          rows=('B'), 
-                          cols=(3,5,8,11),
+                        rows=('B',), 
+                        cols=(11,5),
+#                            rows=None,
+#                            cols=None,
                           )
-    #pm.setup_hmm(7)
+
     pm.fate_tracking('class_labels')
-    #pm.smooth_and_simplify_tracks()
-    pm.setup_hmm(5, 'graph_5states_left2right.xml')
-    #pm.predict_topro(12)
+    
+    
+    #pm.setup_hmm(5, 'graph_5states_left2right.xml')
+    pm.setup_hmm_multi(13, 'graph_5_multi_states_left2right.xml')
     pm.predict_hmm('class_labels', 'hmm_class_labels_5')
     pm.smooth_and_simplify_tracks('hmm_class_labels_5', 'hmm_class_labels_3')
-    #pm.predict_hmm('topro_class_labels')
     
-    #pm.extract_topro()
-    pm.classify_tracks('hmm_class_labels_3')
-    #pm.plot_tracks('topro_pos')
-    #pm.plot_tracks('class_labels')
-    #pm.plot_tracks('hmm_class_labels')
-    #pm.plot_tracks('topro_class_labels')
-#     pm.plot('fate_with_topro_all')
-   
+    pm.plot_tracks(['class_labels', 'hmm_class_labels_5', 'hmm_class_labels_3'], [pm.cmap, cmap13, cmap3], 'test')
+       
     pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
                                                    ['#FFFFFF', 
                                                     '#AAAAAA', 
                                                     '#0000FF',
-#                                                     '#0000FF',
-#                                                     '#0000FF', 
                                                     '#FF0000']), 'classification_cmap')
-    #pm.plot('HMM class based fate')
+    pm.classify_tracks('hmm_class_labels_3')
+    #pm.plot_tracks('hmm_class_labels_3')
+    pm.plot('cell_fate_hmm')
     #pm.plot_proliferaton_timing_histogram()
-    pm.securin_degradation('hmm_class_labels_3', 'securin_degradation')
+#     pm.event_curves('hmm_class_labels_3', 
+#                     'securin_degradation_short',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     False,
+#                     pm.cmap,
+#                     6.66,
+#                     4,
+#                     (-20,120),
+#                     (0,2),
+#                            )
+#     pm.event_curves('hmm_class_labels_3', 
+#                     'securin_degradation_with_fate',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     True,
+#                     pm.cmap,
+#                     6.66,
+#                     3,
+#                     (-20,2000),
+#                     (0,2),
+#                            )
+    
     print 'done'
-    pylab.show()  
- 
-#    plot_post_mito("_all_positions.h5")
-#    get_single_event_images_of_tree('0022.hdf5', 42)        
-
+    pylab.show()
+     
 def human_annotation_fate():
     pm = CellFateAnalysis(
                           r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
@@ -746,8 +797,8 @@ def human_annotation_fate():
     pm.plot('manual')
 
 if __name__ == "__main__":
-    #fate()
-    human_annotation_fate()
+    fate()
+    #human_annotation_fate()
 
     print 'done'
 

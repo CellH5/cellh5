@@ -3,10 +3,10 @@
   <n_emissions>5</n_emissions>
   <n_states>5</n_states>
   <start_probabilities epsilon="0.0">1 0 0 0 0</start_probabilities>
-  <transition_matrix epsilon="0.0">
+  <transition_matrix epsilon="0.00">
     1 1 0 0 1
     1 1 1 0 1
-    1 0 1 1 1
+    0 0 1 1 1
     1 0 0 1 1
     0 0 0 0 1
   </transition_matrix>

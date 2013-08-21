@@ -586,6 +586,13 @@ class CH5File(object):
             return 'object_features' in self.feature_definition[object_] 
         else:
             return False
+        
+    def object_feature_def(self, object_='primary__primary'):
+        return map(lambda x: str(x[0]), self.feature_definition['%s/object_features' % object_].value)
+        
+    def get_object_feature_idx_by_name(self, object_, feature_name):
+        object_feature_names = self.object_feature_def(object_)
+        return list(object_feature_names).index(feature_name)
     
     def close(self):
         self._file_handle.close()   
