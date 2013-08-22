@@ -332,14 +332,6 @@ class CellFateAnalysis(object):
     def setup_hmm(self, k_classes, constraint_xml):
         from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
         constraints = HMMConstraint(constraint_xml)
-#         transmat = numpy.array([
-#                                 [0.80,  0.10,  0.10,  0.00,  0.10],
-#                                 [0.00,  0.80,  0.10,  0.00,  0.10],
-#                                 [0.00,  0.00,  0.80,  0.10,  0.10],
-#                                 [0.10,  0.00,  0.00,  0.80,  0.10],
-#                                 [0.00,  0.00,  0.00,  0.00,  1.00],
-#                                 ])
-#         transmat = normalize(transmat, eps=0.001)
         
         transmat = numpy.array([
                                 [10 ,  0.1,  0.0,  0.0,  0.1],
@@ -361,14 +353,6 @@ class CellFateAnalysis(object):
     def setup_hmm_multi(self, k_classes, constraint_xml):
         from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
         constraints = HMMConstraint(constraint_xml)
-#         transmat = numpy.array([
-#                                 [0.80,  0.10,  0.10,  0.00,  0.10],
-#                                 [0.00,  0.80,  0.10,  0.00,  0.10],
-#                                 [0.00,  0.00,  0.80,  0.10,  0.10],
-#                                 [0.10,  0.00,  0.00,  0.80,  0.10],
-#                                 [0.00,  0.00,  0.00,  0.00,  1.00],
-#                                 ])
-#         transmat = normalize(transmat, eps=0.001)
         
         transmat = numpy.array([
                                 [1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
@@ -392,8 +376,7 @@ class CellFateAnalysis(object):
         
         est = HMMAgnosticEstimator(k_classes, transmat)
         est.constrain(constraints)
-        
-        print transmat
+
         
         self.hmm = hmm.MultinomialHMM(n_components=est.nstates)
         self.hmm._set_startprob(est.startprob)
@@ -759,6 +742,7 @@ def fate():
 #                     (-20,120),
 #                     (0,2),
 #                            )
+
 #     pm.event_curves('hmm_class_labels_3', 
 #                     'securin_degradation_with_fate',
 #                     'tertiary__expanded',
