@@ -23,7 +23,7 @@ import lxml._elementpath
 from cecog.environment import find_resource_dir
 
 np.set_printoptions(precision=2)
-EPS = np.spacing(1)
+EPS = 0.0
 
 # recycled from sklearn.hmm be able to control the eps parameter!
 def normalize(A, axis=None, eps=EPS):
@@ -148,19 +148,20 @@ class HMMEstimator(object):
         
         
 class HMMAgnosticEstimator(HMMEstimator):
-    def __init__(self, nstates, transmat):
+    def __init__(self, nstates, transmat, emis, startprob):
         super(HMMAgnosticEstimator, self).__init__(nstates)
         self._trans = transmat
+        self._emis = emis
+        self._startprob = startprob
         
     def _estimate_trans(self):
         pass
 
     def _estimate_emis(self):
-        self._emis = np.eye(self.nstates)
+        pass
 
     def _estimate_startprob(self):
-        self._startprob = np.zeros(self.nstates)
-        self._startprob[0] = 1.0
+        pass
 
 
 class HMMProbBasedEsitmator(HMMEstimator):

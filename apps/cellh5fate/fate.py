@@ -21,8 +21,7 @@ import myhmm
 from matplotlib.mlab import PCA
 from scipy.stats import nanmean
 from matplotlib.backends.backend_pdf import PdfPages
-from sklearn import hmm
-hmm.EPS = 10e-99
+
 from itertools import cycle
 from cecog.util.color import rgb_to_hex
 import matplotlib
@@ -32,7 +31,10 @@ from matplotlib.numerix import Matrix
 from matplotlib.backends.backend_pdf import PdfPages
 
 
-
+from sklearn import hmm
+from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
+hmm.normalize = lambda A, axis=None: normalize(A, axis, eps=10e-99)
+#hmm.normalize = lambda A, axis: normalize(A, axis=len(A.shape)-1, eps=eps)
 
 
 
@@ -99,20 +101,20 @@ cmap53 = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x),
 cmap13 = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
                                                    ['#FFFFFF',
                                                      
-                                                    '#FF0000', 
-                                                    '#CC0000',
-                                                    '#AA0000',
-                                                    '#770000',
+                                                    '#E31A1C', 
+                                                    '#FD8D3C',
+                                                    '#FECC5C',
+                                                    '#FFFFB2',
                                                     
-                                                    '#00FF00', 
-                                                    '#00CC00',
-                                                    '#00AA00',
-                                                    '#007700',
+                                                    '#238443', 
+                                                    '#78C679',
+                                                    '#C2E699',
+                                                    '#FFFFCC',
                                                     
-                                                    '#0000FF', 
-                                                    '#0000CC',
-                                                    '#0000AA',
-                                                    '#000077',
+                                                    '#2171B5', 
+                                                    '#6BAED6',
+                                                    '#BDD7E7',
+                                                    '#EFF3FF',
                                                     
                                                     '#000000',
                                                     
@@ -268,10 +270,9 @@ class CellFateAnalysis(object):
                     class_labels = list(t)
                     class_labels = numpy.array(map(int, t))
                 
-                # myhmm
-                #hmm_class_labels = numpy.array(myhmm.viterbi(self.hmm, class_labels-1)[0]) + 1
                 hmm_class_labels = self.hmm.predict(numpy.array(class_labels-1)) + 1
-                print hmm_class_labels
+                if not 2 in  hmm_class_labels:
+                    print hmm_class_labels
                 hmm_labels_list.append(hmm_class_labels)
 
                 
@@ -290,6 +291,11 @@ class CellFateAnalysis(object):
                            ylim,
                            ):
         pp = PdfPages("%s.pdf" % title)
+        
+        
+        time_unit = 'min'
+        if time_lapse is None:
+            time_unit = 'frame'
         
         for w, p in sorted(self.tracks):
             cnt = 0
@@ -320,7 +326,7 @@ class CellFateAnalysis(object):
   
 
             ax.set_title('%s_%s -- %s'% (w, p, self.mcellh5.get_treatment_of_pos(w, p)[0]) )
-            ax.set_xlabel('Time [frame]')
+            ax.set_xlabel('Time [%s]' % time_unit)
             ax.set_ylabel('Fluorescence (AU)')
             ax.set_ylim(ylim)
             ax.set_xlim(xlim)
@@ -330,7 +336,6 @@ class CellFateAnalysis(object):
     
 
     def setup_hmm(self, k_classes, constraint_xml):
-        from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
         constraints = HMMConstraint(constraint_xml)
         
         transmat = numpy.array([
@@ -340,18 +345,14 @@ class CellFateAnalysis(object):
                                 [0.1,  0.0,  0.0,  10 ,  0.1],
                                 [0.0,  0.0,  0.0,  0.0,  10 ],
                                 ])
-        transmat = normalize(transmat, eps=0.001)
+        transmat = normalize(transmat, axis=1, eps=0.001)
         
-        est = HMMAgnosticEstimator(k_classes, transmat)
+        est = HMMAgnosticEstimator(k_classes, transmat, numpy.ones((k_classes, k_classes)), numpy.ones((k_classes, )) )
         est.constrain(constraints)
-        
-        self.hmm = hmm.MultinomialHMM(n_components=est.nstates)
-        self.hmm._set_startprob(est.startprob)
-        self.hmm._set_transmat(est.trans)
+        self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
         self.hmm._set_emissionprob(est.emis)  
         
     def setup_hmm_multi(self, k_classes, constraint_xml):
-        from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
         constraints = HMMConstraint(constraint_xml)
         
         transmat = numpy.array([
@@ -372,25 +373,30 @@ class CellFateAnalysis(object):
                                 
                                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
                                 ])
-        transmat = normalize(transmat, eps=0)
+        transmat = normalize(transmat, axis=1, eps=0)
         
-        est = HMMAgnosticEstimator(k_classes, transmat)
+        est = HMMAgnosticEstimator(k_classes, transmat, numpy.ones((k_classes, 5)), numpy.ones((k_classes, )) )
         est.constrain(constraints)
-
-        
-        self.hmm = hmm.MultinomialHMM(n_components=est.nstates)
-        self.hmm._set_startprob(est.startprob)
-        self.hmm._set_transmat(est.trans)
-        self.hmm._set_emissionprob(est.emis) 
+        self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
+        self.hmm._set_emissionprob(est.emis)  
         
          
     def plot_tracks(self, track_selection, cmaps, title='plot_tracks'):
         n = len(track_selection)
-        m = len(self.tracks) 
+        
         pp = PdfPages('%s.pdf' % title)
         
-        fig = pylab.figure(figsize=(n*4,m*2)) 
-        for j, (w, p) in enumerate(sorted(self.tracks)):
+        old_w = 'ZZZ'
+        j = 0
+        for w, p in sorted(self.tracks):
+            if w[0] != old_w[0]:
+                if j != 0:
+                    j=0
+                    pylab.savefig(pp, format='pdf')
+                m = map(lambda x: x[0][0], self.tracks.keys()).count(w[0])
+                fig = pylab.figure(figsize=(n*8,m*4)) 
+                old_w = w
+            
             cond = self.mcellh5.get_treatment_of_pos(w,p)
             for k, class_selector in enumerate(track_selection):
                 cmap = cmaps[k]
@@ -414,14 +420,15 @@ class CellFateAnalysis(object):
                         img[i,:len(t)] = b
                         
 
-                    ax.imshow(img, interpolation='nearest', cmap=cmap, clim=(img.min(),img.max()+1))
+                    ax.matshow(img, cmap=cmap)
                     ax.set_title("%s_%s_%s" % (w,p,class_selector))
                     pylab.axis('off')
                     
                 else:
                     print w, p, 'Nothing to plot'
-            #pylab.show()
-        pylab.savefig(pp, format='pdf')
+            j+=1
+                    
+            
         pp.close()   
           
             
@@ -437,10 +444,7 @@ class CellFateAnalysis(object):
 
             for t_idx, track in enumerate(self.tracks[w,p][class_selector]):
                 track_str = "".join(map(str,track))
-                if '3' in track_str:
-                    print 'found apo in', w, p
-                #print track_str
-                
+            
                 dim = self._has_death_in_mitosis(track_str)
                 dii = self._has_death_in_interphase(track_str)
                 
@@ -702,68 +706,85 @@ class CellFateAnalysis(object):
             
             
  
+def fate_mutli():
+    pm = CellFateAnalysis(
+                          r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
+                          r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
+                        rows=None, 
+                        cols=None,
+#                            rows=None,
+#                            cols=None,
+                          )
+    pm.fate_tracking('Raw class labels')
+    pm.setup_hmm_multi(13, 'graph_5_multi_states_left2right.xml')
+    pm.predict_hmm('Raw class labels', 'Multi State HMM')
+    #pm.smooth_and_simplify_tracks('hmm_class_labels_5', 'hmm_class_labels_3')
+    
+    pm.plot_tracks(['Raw class labels', 'Multi State HMM'], [pm.cmap, cmap13], 'test2')
+       
+
+
+    
+    print 'done'
+    
 def fate():
     pm = CellFateAnalysis(
                           r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
                           r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
-                        rows=('B',), 
-                        cols=(11,5),
-#                            rows=None,
-#                            cols=None,
+#                         rows=('B'), 
+#                         cols=(3,),
+                            rows=None,
+                            cols=None,
                           )
 
-    pm.fate_tracking('class_labels')
+    pm.fate_tracking('Raw class labels')
     
     
-    #pm.setup_hmm(5, 'graph_5states_left2right.xml')
-    pm.setup_hmm_multi(13, 'graph_5_multi_states_left2right.xml')
-    pm.predict_hmm('class_labels', 'hmm_class_labels_5')
-    pm.smooth_and_simplify_tracks('hmm_class_labels_5', 'hmm_class_labels_3')
+    pm.setup_hmm(5, 'graph_5states_left2right.xml')
+    #pm.setup_hmm_multi(13, 'graph_5_multi_states_left2right.xml')
+    pm.predict_hmm('Raw class labels', 'Mapped State HMM')
+    pm.smooth_and_simplify_tracks('Mapped State HMM', 'Mapped State HMM 3')
     
-    pm.plot_tracks(['class_labels', 'hmm_class_labels_5', 'hmm_class_labels_3'], [pm.cmap, cmap13, cmap3], 'test')
+    pm.plot_tracks(['Raw class labels', 'Mapped State HMM', 'Mapped State HMM 3'], [pm.cmap, pm.cmap, cmap3], 'Mapped_HMM_tracks' )
        
     pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
                                                    ['#FFFFFF', 
                                                     '#AAAAAA', 
                                                     '#0000FF',
                                                     '#FF0000']), 'classification_cmap')
-    pm.classify_tracks('hmm_class_labels_3')
-    #pm.plot_tracks('hmm_class_labels_3')
-    pm.plot('cell_fate_hmm')
-    #pm.plot_proliferaton_timing_histogram()
-#     pm.event_curves('hmm_class_labels_3', 
-#                     'securin_degradation_short',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     False,
-#                     pm.cmap,
-#                     6.66,
-#                     4,
-#                     (-20,120),
-#                     (0,2),
-#                            )
+    pm.classify_tracks('Mapped State HMM 3')
+    pm.plot('Cell Fate Classification')
+    pm.event_curves('Mapped State HMM 3', 
+                    'securin_degradation_short',
+                    'tertiary__expanded',
+                    'n2_avg',
+                    False,
+                    pm.cmap,
+                    6.66,
+                    4,
+                    (-20,120),
+                    (0,2),
+                           )
 
-#     pm.event_curves('hmm_class_labels_3', 
-#                     'securin_degradation_with_fate',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     True,
-#                     pm.cmap,
-#                     6.66,
-#                     3,
-#                     (-20,2000),
-#                     (0,2),
-#                            )
-    
+    pm.event_curves('Mapped State HMM 3', 
+                    'securin_degradation_with_fate',
+                    'tertiary__expanded',
+                    'n2_avg',
+                    True,
+                    pm.cmap,
+                    6.66,
+                    3,
+                    (-20,2000),
+                    (0,2),
+                           )
     print 'done'
-    pylab.show()
      
 def human_annotation_fate():
     pm = CellFateAnalysis(
                           r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
                           r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
-                          rows=('B'), 
-                          cols=(3,5,11),
+                          rows=None, 
+                          cols=None,
                           )
     pm.read_manual_annotations(r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Aalysis_with_split\hdf5\annotations_all_positions.ch5",
                                '130710_Mitotic_slippage_and_cell_death')
