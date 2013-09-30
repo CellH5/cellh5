@@ -38,7 +38,7 @@ VERSION = '.'.join(map(str, VERSION_NUM))
 
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 
-GALLERY_SIZE = 100    
+GALLERY_SIZE = 150  
 
 #-------------------------------------------------------------------------------
 # Helpers:
@@ -272,8 +272,10 @@ class CH5Position(object):
             image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
             yield image
                  
-    def get_gallery_image_contour(self, index, object_=('primary__primary',), color=None):
+    def get_gallery_image_contour(self, index, object_=('primary__primary',), color=None, scale=None):
         img = self.get_gallery_image_rgb(index, object_)
+        if scale is not None:
+            img = numpy.clip(img.astype(numpy.float32)*scale, 0, 255).astype(numpy.uint8)
         for obj_id in object_:
             crack = self.get_crack_contour(index, obj_id)
             
@@ -342,7 +344,10 @@ class CH5Position(object):
         return map(lambda x: str(x[0]), self.definitions.feature_definition['%s/object_features' % object_].value)
     
     def get_object_table(self, object_):
-        return self['object'][object_].value
+        if len(self['object'][object_]) > 0:
+            return self['object'][object_].value
+        else:
+            return []
     
     def get_feature_table(self, object_, feature):
         return self['feature'][object_][feature].value

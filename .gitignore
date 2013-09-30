@@ -4,6 +4,8 @@
 *.so
 
 # Packages
+*.pdf
+*.pkl
 *.egg
 *.egg-info
 dist
@@ -20,6 +22,7 @@ lib64
 
 # Installer logs
 pip-log.txt
+
 
 # Unit test / coverage reports
 .coverage

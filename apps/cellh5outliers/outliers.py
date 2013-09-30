@@ -12,17 +12,19 @@ from scipy.stats import nanmean
 
 class OutlierDetection(object):
 	classifier_class = OneClassSVM
-	def __init__(self, name, mapping_file, cellh5_file, training_sites=(1,2,3,4), rows=None, gamma=1.0/200, nu=0.05):
+	def __init__(self, name, mapping_file, cellh5_file, training_sites=(1,), rows=None, cols=None, gamma=1.0/200, nu=0.05):
 		self.name = name
 		
 		self.mapping_file = mapping_file
 		self.cellh5_file = cellh5_file
 		
-		self.read_mapping(sites=training_sites, rows=rows)
+		self.read_mapping(sites=training_sites, rows=rows, cols=cols)
 		
 		self.gamma = gamma
 		self.nu = nu
 		self.classifier = None
+		
+		self.pca_dims = 4
 		
 	def read_mapping(self, sites=None, rows=None, cols=None):
 		self.mapping = pandas.read_csv(self.mapping_file, sep='\t')
@@ -50,9 +52,9 @@ class OutlierDetection(object):
 			obj = pickle.load(f)
 		return obj
 	
-	def train(self, train_on=('neg', 'pos')):
-		training_matrix = self.get_data(train_on)
-		training_matrix = self.normalize_training_data(training_matrix)
+	def train(self, train_on=('neg', )):
+		training_matrix = self.get_data(train_on, 'PCA')
+		#training_matrix = self.normalize_training_data(training_matrix)
 		
 		self.train_classifier(training_matrix)
 		
@@ -70,8 +72,8 @@ class OutlierDetection(object):
 # 		self.result[self.test_on]['treatment'] = testing_treatment
 # 		self.result[self.test_on]['prediction'] = prediction
 	
-	def predict(self, test_on=('target','pos','neg')):
-		training_matrix_list = self.mapping[self.mapping['Group'].isin(test_on)][['Well','Site','Object features']].iterrows()
+	def predict(self, test_on=('target', 'pos', 'neg')):
+		training_matrix_list = self.mapping[self.mapping['Group'].isin(test_on)][['Well','Site','PCA']].iterrows()
 
 		predictions = {}
 		for idx, (well, site, tm) in training_matrix_list:
@@ -79,7 +81,7 @@ class OutlierDetection(object):
 			if tm.shape[0] == 0:
 				predictions[idx] = numpy.zeros((0, 0))
 			else:
-				tm = self._remove_nan_rows(tm)
+				#tm = self._remove_nan_rows(tm)
 				predictions[idx] = self.predict_with_classifier(tm)
 			
 		self.mapping = self.mapping.join(pandas.DataFrame({'Predictions' : pandas.Series(predictions)}))
@@ -137,10 +139,10 @@ class OutlierDetection(object):
 		res = pandas.Series(self.mapping[self.mapping['Group'].isin(('target', 'pos', 'neg'))]['Predictions'].map(_outlier_count))
 		self.mapping = self.mapping.join(pandas.DataFrame({'Outlyingness': res}))
 	
-	def train_pca(self, train_on=('pos', 'neg',)):
-		print 'Compute PCA'
+	def train_pca(self, train_on=('neg', 'pos', 'target')):
 		training_matrix = self.get_data(train_on)
 		training_matrix = self.normalize_training_data(training_matrix)
+		print 'Compute PCA', 'is nan?', numpy.any(numpy.isnan( training_matrix))
 		self.pca = PCA(training_matrix)
 		
 	def predict_pca(self):
@@ -150,10 +152,9 @@ class OutlierDetection(object):
 				return numpy.NAN
 			else:
 				ma = self._remove_nan_rows(ma)
-				return self.pca.project(ma)[:,:4]
+				return self.pca.project(ma)[:, :self.pca_dims]
 		res = pandas.Series(self.mapping['Object features'].map(_project_on_pca))
-		self.mapping = self.mapping.join(pandas.DataFrame({'PCA': res}))
-					
+		self.mapping = self.mapping.join(pandas.DataFrame({'PCA': res}))	
 	
 	def train_classifier(self, training_matrix):
 		self.classifier = self.classifier_class(kernel="rbf", nu=self.nu, gamma=self.gamma)
@@ -184,18 +185,28 @@ class OutlierDetection(object):
 		data, treatment = self.get_data(group)
 		return data, treatment 
 		
-	def get_data(self, target):
-		return numpy.concatenate(self.mapping[self.mapping['Group'].isin(target)].reset_index()['Object features'])
+	def get_data(self, target, type='Object features'):
+		print 'get_data for', self.mapping[self.mapping['Group'].isin(target)].reset_index()['siRNA ID']
+		return numpy.concatenate(self.mapping[self.mapping['Group'].isin(target)].reset_index()[type])
 	
 	def normalize_training_data(self, data):
-		nan_cols = numpy.unique(numpy.where(numpy.isnan(data))[1])
-		self._non_nan_feature_idx = [x for x in range(data.shape[1]) if x not in nan_cols]
-		data = data[:, self._non_nan_feature_idx]
 		self._normalization_means = data.mean(axis=0)
 		self._normalization_stds = data.std(axis=0)
 		
 		data = (data - self._normalization_means) / self._normalization_stds
+		
+		nan_cols = numpy.unique(numpy.where(numpy.isnan(data))[1])
+		self._non_nan_feature_idx = [x for x in range(data.shape[1]) if x not in nan_cols]
+		data = data[:, self._non_nan_feature_idx]
+		
+		self._normalization_means = self._normalization_means[self._non_nan_feature_idx]
+		self._normalization_stds = self._normalization_stds[self._non_nan_feature_idx]
+		print 'normalize', numpy.any(numpy.isnan(data))
+		
 		return data
+	
+	def normalize_testing_data(self, data):
+		return (data - self._normalization_means) / self._normalization_stds
 	
 # 	def normalize_test_data(self, data, treatment_list):
 # 		# get rid of nan features from training
@@ -215,16 +226,92 @@ class OutlierDetection(object):
 # 		return data, treatment_list
 	
 
-	def plot(self, data, prediction):	
-		plt.scatter(data[prediction==-1, 0], data[prediction==-1, 1], c='red')
-		plt.scatter(data[prediction==1, 0], data[prediction==1, 1], c='white')
+	def plot(self):
+		f_x = 1
+		f_y = 0
+		
+		x_min, y_min = 1000000, 100000
+		x_max, y_max = -100000, -100000
+		
+		print len(self.mapping['PCA'])
+		for i in range(len(self.mapping['PCA'])):
+			data = self.mapping['PCA'][i]
+			prediction = self.mapping['Predictions'][i]
+			print self.mapping['siRNA ID'][i], data.shape
+			
+			if self.mapping['Group'][i] in ['pos', 'target']:
+				plt.scatter(data[prediction==-1, f_x], data[prediction==-1, f_y], c='red', marker='d', s=42)
+				plt.scatter(data[prediction==1, f_x], data[prediction==1, f_y], c='white', marker='d', s=42)
+			else:
+				plt.scatter(data[prediction==-1, f_x], data[prediction==-1, f_y], c='white', s=42)
+				plt.scatter(data[prediction==1, f_x], data[prediction==1, f_y], c='white', s=42)
+			
+			x_min_cur, x_max_cur = data[:,f_x].min(), data[:,f_x].max()
+			y_min_cur, y_max_cur = data[:,f_y].min(), data[:,f_y].max()
+		
+			x_min = min(x_min, x_min_cur)
+			y_min = min(y_min, y_min_cur)
+			x_max = max(x_max, x_max_cur)
+			y_max = max(y_max, y_max_cur)
+			
+			ch5_file = cellh5.CH5File(self.cellh5_file)
+			
+			if True:
+				import vigra, os
+				for id in numpy.where(prediction==-1)[0]:
+					well = str(self.mapping['Well'][i])
+					site = str(self.mapping['Site'][i])
+					ch5_pos = ch5_file.get_position(well, site)
+					img = ch5_pos.get_gallery_image_contour(id, color='#FFFFFF', scale=2.0)
+					try:
+						os.makedirs('%s/%s/out' % (well, site,) )
+					except:
+						pass
+					vigra.impex.writeImage(img, '%s/%s/out/%6.3f_%6.3f.png' % (well, site, data[id, f_x], data[id, f_y]))
+				for id in numpy.where(prediction==1)[0]:
+					try:
+						os.makedirs('%s/%s/in' % (well, site,))
+					except:
+						pass
+					well = self.mapping['Well'][i]
+					site = str(self.mapping['Site'][i])
+					ch5_pos = ch5_file.get_position(well, site)
+					img = ch5_pos.get_gallery_image_contour(id, color='#FFFFFF', scale=2.0)
+					vigra.impex.writeImage(img, '%s/%s/in/%6.3f_%6.3f.png' % (well, site, data[id, f_x], data[id, f_y]))
+					
+			
+		x_min = -12
+		y_min = -25
+		
+		x_max = 42
+		y_max = 42	
+			
+		xx, yy = numpy.meshgrid(numpy.linspace(x_min, x_max, 100), numpy.linspace(y_min, y_max, 100))
+		#Z = self.classifier.decision_function(numpy.c_[xx.ravel(), yy.ravel()])
+		matrix = numpy.zeros((100*100, self.pca_dims))
+		matrix[:, f_x] = xx.ravel()
+		matrix[:, f_y] = yy.ravel()
+		
+		
+		Z = self.classifier.decision_function(matrix)
+		Z = Z.reshape(xx.shape)
+		#print Z
+		#Z = (Z - Z.min())
+		#Z = Z / Z.max()
+		#print Z.min(), Z.max()
+		#Z = numpy.log(Z+0.001)
+		
+		plt.contourf(xx, yy, Z, levels=numpy.linspace(Z.min(), Z.max(), 8), cmap=plt.matplotlib.cm.Greens, hold='on', alpha=0.5)
+		#a = plt.contour(xx, yy, Z, levels=[0], linewidths=2, colors='red')
+		#plt.contourf(xx, yy, Z, levels=[0, Z.max()], colors='orange')
+		
+		
 		plt.axis('tight')
 		
-		x_min, x_max = data[:,0].min(), data[:,0].max()
-		y_min, y_max = data[:,1].min(), data[:,1].max()
 		plt.xlim((x_min, x_max))
 		plt.ylim((y_min, y_max))
-		plt.show()
+		plt.axis('off')
+		plt.show(block=True)
 		
 	def purge_feature(self):
 		del self.mapping['Object features']
@@ -322,9 +409,7 @@ class OutlierDetection(object):
 		means = means.copy()
 		means.sort()
 		
-		
 
-		
 		stds = []
 		genes = []
 		for g, m in means.iteritems():
@@ -359,20 +444,25 @@ class OutlierDetection(object):
 		
 		
 class OutlierTest(object):
-	def setup(self, rows):
+	def setup(self, rows, cols):
 		self.od = OutlierDetection("testing",
 							  "screening_plate_9_plate_mapping.txt", 
 							  "M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/Cellcognition/Analysis2/Analysis2/hdf5/_all_positions.ch5",
 							  rows=rows,
+							  cols=cols,
+							  gamma=1.0/60, 
+							  nu=0.08
 							  )
 		self.od.read_feature()
-		self.od.train()
-		self.od.predict()
+		
 		self.od.train_pca()
 		self.od.predict_pca()
 		
+		self.od.train()
+		self.od.predict()
+		
 		self.od.compute_outlyingness()
-		self.od.purge_feature()
+		#self.od.purge_feature()
 		self.last_file = self.od.save()
 		print 'Storing to file name', self.last_file
 		
@@ -393,9 +483,12 @@ class OutlierTest(object):
 if __name__ == "__main__":
 	ot = OutlierTest()
 	
-	ot.setup(rows=None)
+	ot.setup(rows=('C', 'D', 'F',), cols=(2,))
+	
+	#ot.setup(rows=('H', 'I', 'J', 'L', 'N', 'P'), cols=(20,1,2,3))
 	#ot.load_last('testing_13-07-23-12-47_g0.0050_n0.0500.pkl')
-	ot.load_last()
-	a = ot.od.make_hit_list()
+	#ot.load_last()
+	ot.od.plot()
+# 	a = ot.od.make_hit_list()
 
 
