@@ -644,12 +644,15 @@ class CellFateAnalysis(object):
             return cnt
         
         def _cmp_len_of_first_inter(x,y):
+            x_ = "".join(map(lambda x: "%02d" % x, x))
+            y_ = "".join(map(lambda x: "%02d" % x, y))
             try:
-                x_len =  re.search(r"2+", x).end()
-                y_len = re.search(r"2+", y).end()
-                return cmp(x_len, y_len)
+                x_len = re.search(r"(02|03|04)+", x_).end()
+                y_len = re.search(r"(02|03|04)+", y_).end()
+                return cmp(y_len, x_len)
             except:
-                return 0
+                return cmp(len(y), len(x))
+
         
         pp = PdfPages("%s.pdf" % title)
         
@@ -658,40 +661,46 @@ class CellFateAnalysis(object):
             f = pylab.figure(figsize=(8,12))
             ax = pylab.gca()
             
-            for line in sorted( self.tracks[(w,p)]['second_mitosis_inter'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(list(split_str_into_len(line, split_len)), cnt, self.cmap, ax)
+            for line in sorted( self.tracks[(w,p)]['mito_int'], cmp=_cmp_len_of_first_inter):
+                self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
-            cnt = _plot_separator(cnt, 'Second Mitosis -> Interphase')
+            cnt = _plot_separator(cnt, 'mito_int')
             
-            for line in sorted( self.tracks[(w,p)]['second_mitosis_apo'], cmp=_cmp_len_of_first_inter): 
-                self._plot_line(list(split_str_into_len(line, split_len)), cnt, self.cmap, ax)
+            for line in sorted( self.tracks[(w,p)]['mito_int_mito_int_mito'], cmp=_cmp_len_of_first_inter): 
+                self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
                 
-            cnt = _plot_separator(cnt, 'Second Mitosis -> Apoptotic')
+            cnt = _plot_separator(cnt, 'mito_int_mito_int_mito')
             
-            for line in sorted(self.tracks[(w,p)]['death_in_mitosis'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(list(split_str_into_len(line, split_len)), cnt, self.cmap, ax)
+            for line in sorted(self.tracks[(w,p)]['mito_int_mito_int_apo'], cmp=_cmp_len_of_first_inter):
+                self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
                 
-            cnt = _plot_separator(cnt, 'Death in first Mitosis')
+            cnt = _plot_separator(cnt, 'mito_int_mito_int_apo')
             
-            for line in sorted(self.tracks[(w,p)]['death_in_interphase'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(list(split_str_into_len(line, split_len)), cnt, self.cmap, ax)
+            for line in sorted(self.tracks[(w,p)]['mito_int_apo'], cmp=_cmp_len_of_first_inter):
+                self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
                 
-            cnt = _plot_separator(cnt, 'Death in Interphase (after first Mitosis)')
+            cnt = _plot_separator(cnt, 'mito_int_apo')
                 
-            for line in sorted(self.tracks[(w,p)]['no_second_mitosis_no_death'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(list(split_str_into_len(line, split_len)), cnt, self.cmap, ax)
+            for line in sorted(self.tracks[(w,p)]['mito_int_mito_apo'], cmp=_cmp_len_of_first_inter):
+                self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
      
-            cnt = _plot_separator(cnt, 'No second Mitosis', 'r')
+            cnt = _plot_separator(cnt, 'mito_int_mito_apo')
             
-            for line in sorted(self.tracks[(w,p)]['unclassified'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(list(split_str_into_len(line, split_len)), cnt, self.cmap, ax)
+            for line in sorted(self.tracks[(w,p)]['mito_apo'], cmp=_cmp_len_of_first_inter):
+                self._plot_line(line, cnt, self.cmap, ax)
+                cnt+=1
+     
+            cnt = _plot_separator(cnt, 'mito_apo')
+            
+            for line in sorted(self.tracks[(w,p)]['mito_unclassified'], cmp=_cmp_len_of_first_inter):
+                self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
                 #print 'unclassified', line
-            cnt = _plot_separator(cnt, '...yet unclassified', )
+            cnt = _plot_separator(cnt, 'mito_unclassified', )
             
             
                 
@@ -774,129 +783,140 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
         
         for w, p in self.tracks:
             cond = self.mcellh5.get_treatment_of_pos(w,p)
-            self.tracks[(w,p)]['second_mitosis_inter'] = named_list('second_mitosis_inter')
-            self.tracks[(w,p)]['second_mitosis_apo'] =  named_list('second_mitosis_apo')
-            self.tracks[(w,p)]['death_in_mitosis'] = named_list('death_in_mitosis')
-            self.tracks[(w,p)]['death_in_interphase'] = named_list('death_in_interphase')
-            self.tracks[(w,p)]['no_second_mitosis_no_death'] = named_list('no_second_mitosis_no_death')
-            self.tracks[(w,p)]['unclassified'] = named_list('unclassified')
+            self.tracks[(w,p)]['mito_int'] = named_list('mito_int')
+            self.tracks[(w,p)]['mito_apo'] = named_list('mito_apo')
+            self.tracks[(w,p)]['mito_int_mito_int_mito'] =  named_list('mito_int_mito_int_mito')
+            self.tracks[(w,p)]['mito_int_mito_int_apo'] =  named_list('mito_int_mito_int_apo')
+            self.tracks[(w,p)]['mito_int_apo'] = named_list('mito_int_apo')
+            self.tracks[(w,p)]['mito_int_mito_apo'] = named_list('mito_int_mito_apo')
+            self.tracks[(w,p)]['mito_unclassified'] = named_list('mito_unclassified')
 
             for t_idx, track in enumerate(self.tracks[w,p][class_selector]):
                 track_str = "".join(map(lambda x: "%02d" % x,track))
             
                 print self.tracks[w,p][class_selector][t_idx]
                 print self.tracks[w,p]['Raw class labels'][t_idx]
-                print '*'
                 
-                dim = self._has_death_in_mitosis(track_str)
-                dii = self._has_death_in_interphase(track_str)
                 
-                if dim is not None:
-                    self.tracks[(w, p)]['death_in_mitosis'].append(dim)
-                    
-                elif dii is not None:
-                     self.tracks[(w, p)]['death_in_interphase'].append(dii)
-
-                else:
+                mito_int = self._has_mito_int(track_str)
+                if mito_int:
+                    self.tracks[(w,p)]['mito_int'].append(mito_int)
+                    continue   
                 
-                    smi = self._has_second_mitosis(track_str, 9)
-                    sma = self._has_second_mitosis(track_str, 17)
-                    if smi is not None and sma is not None:
-                        if len(smi) >= len(sma):
-                            self.tracks[(w, p)]['second_mitosis_inter'].append(smi)
-                        else:
-                            self.tracks[(w, p)]['second_mitosis_apo'].append(sma)
-                    elif smi is None and sma is not None:
-                        self.tracks[(w, p)]['second_mitosis_apo'].append(sma)
-                    elif smi is not None and sma is None:
-                        self.tracks[(w, p)]['second_mitosis_inter'].append(smi)
-                    elif smi is None and sma is None:
-                        nsmnd = self._has_no_second_mitosis_no_death(track_str)
-                        
-                        if nsmnd is not None:
-                            self.tracks[(w,p)]['no_second_mitosis_no_death'].append(track_str)
-                        else:
-                            self.tracks[(w,p)]['unclassified'].append(track_str)            
-    
-    def _has_death_in_mitosis(self, track_str):
+                mito_apo = self._has_mito_apo(track_str)
+                if mito_apo:
+                    self.tracks[(w,p)]['mito_apo'].append(mito_apo)
+                    continue 
+                
+                mito_int_mito_int_apo = self._has_mito_int_mito_int_apo(track_str)
+                if mito_int_mito_int_apo:
+                    self.tracks[(w,p)]['mito_int_mito_int_apo'].append(mito_int_mito_int_apo)
+                    continue 
+                
+                mito_int_mito_int_mito = self._has_mito_int_mito_int_mito(track_str)
+                if mito_int_mito_int_mito:
+                    self.tracks[(w,p)]['mito_int_mito_int_mito'].append(mito_int_mito_int_mito)
+                    continue 
+                
+                mito_int_apo = self._has_mito_int_apo(track_str)
+                if mito_int_apo:
+                    self.tracks[(w,p)]['mito_int_apo'].append(mito_int_apo)
+                    continue 
+                
+                mito_int_mito_apo = self._has_mito_int_mito_apo(track_str)
+                if mito_int_mito_apo:
+                    self.tracks[(w,p)]['mito_int_mito_apo'].append(mito_int_mito_apo)
+                    continue           
+                
+                track_ints = map(int, list(split_str_into_len(track_str, 2)))
+                self.tracks[(w,p)]['mito_unclassified'].append(track_ints)
+             
+    def _has_mito_apo(self, track_str):
         MIN_MITOSIS_LEN = 1
-        MIN_APO_AFTER_MITOSIS = 3
-        #print track_str
+        MIN_APO_AFTER_MITOSIS = 1
         MITOSIS_PATTERN = r'^(01)+(02|03|04){%d,}(17){%d}' % (MIN_MITOSIS_LEN, MIN_APO_AFTER_MITOSIS)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
-        
-        MITOSIS_PATTERN_2 = r'^(17)+'
-        second_mitosis_re_2 = re.search(MITOSIS_PATTERN_2, track_str)
         if second_mitosis_re is not None:
-            start = 0
-            end = second_mitosis_re.end()
-            return track_str[start:end]
-        elif second_mitosis_re_2 is not None:
-            start = 0
-            end = second_mitosis_re.end()
-            return track_str[start:end]
+            end = second_mitosis_re.end() / 2
+            track_ints = map(int, list(split_str_into_len(track_str, 2)))
+            return [track_ints[i] if i < 4 else 17 for i in xrange(len(track_ints))][:end]
+            # all red
         return None      
     
-    def _has_death_in_interphase(self, track_str):
+    def _has_mito_int_apo(self, track_str):
         MIN_INTER_LEN = 1
         MIN_APO_AFTER_MITOSIS = 1
         MIN_MITO_LEN = 3 
-        MITOSIS_PATTERN = r'^(01)+(02|03|04){%d,}(05){%d,}(17){%d}' % (MIN_MITO_LEN, MIN_INTER_LEN, MIN_APO_AFTER_MITOSIS)
+        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04){%d,})(05){%d,}(17){%d}' % (MIN_MITO_LEN, MIN_INTER_LEN, MIN_APO_AFTER_MITOSIS)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         if second_mitosis_re is not None:
-            start = 0
-            end = second_mitosis_re.end()
-            return track_str[start:end]
+            end = second_mitosis_re.end() / 2
+            end_blue = second_mitosis_re.end('blue') / 2
+            track_ints = map(int, list(split_str_into_len(track_str, 2)))
+            return [track_ints[i] if i < 4 else 2 if i < end_blue else 18 for i in xrange(len(track_ints))][:end]
+            # blue, green
         return None       
                     
-    def _has_no_second_mitosis_no_death(self, track_str):
-        MITOSIS_PATTERN = r'^(01)+(02|03|04)+(05)+$' 
+    def _has_mito_int(self, track_str):
+        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04)+)(05)*$' 
         no_second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         if no_second_mitosis_re is not None:
-            start = 0
-            end = no_second_mitosis_re.end()
-            return track_str[start:end]
+            end = no_second_mitosis_re.end() / 2
+            end_blue = no_second_mitosis_re.end('blue') / 2
+            track_ints = map(int, list(split_str_into_len(track_str, 2)))
+            return track_ints[:end] # [track_ints[i] if i < 4 else 2 for i in xrange(len(track_ints))][:end_blue]
+            # just blue
         return None 
                     
               
-    def _has_second_mitosis(self, track_str, phase_after):
-        MIN_INTER_LEN=20
+    def _has_mito_int_mito_int_mito(self, track_str):
+        MIN_INTER_LEN=1
         MIN_MITOSIS_LEN = 3
-        MIN_PHASE_AFTER_MITOSIS = 5
-        MITOSIS_PATTERN = r'^(01)+(02|03|04)+(05){%d,}(06|07|08){%d,}(%02d){%d}' % (MIN_INTER_LEN, MIN_MITOSIS_LEN, phase_after, MIN_PHASE_AFTER_MITOSIS)
+        MIN_PHASE_AFTER_MITOSIS = 1
+        MITOSIS_PATTERN = r'^(01)+(02|03|04)+(05){%d,}(((06|07|08){%d,}(09){%d}(10|11|12)*)|(06|07|08)+)' % (MIN_INTER_LEN, MIN_MITOSIS_LEN, MIN_PHASE_AFTER_MITOSIS)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         
-        MITOSIS_PATTERN_2 = r'^(01)+(02|03|04)+(05){%d,}(06|07|08){%d,}' % (MIN_INTER_LEN, MIN_MITOSIS_LEN)
-        second_mitosis_re_2 = re.search(MITOSIS_PATTERN_2, track_str)
-        
-        MITOSIS_PATTERN_3 = '^(01)+(02|03|04)+(05).+(17)+$'
-        second_mitosis_re_3 = re.search(MITOSIS_PATTERN_3, track_str)
+        if second_mitosis_re is not None:
+            end = second_mitosis_re.end() / 2
+            track_ints = map(int, list(split_str_into_len(track_str, 2)))
+            return track_ints
+            # as is
+        return None
+    
+    def _has_mito_int_mito_int_apo(self, track_str):
+        MIN_INTER_LEN=1
+        MIN_MITOSIS_LEN = 1
+        MIN_PHASE_AFTER_MITOSIS = 1
+        MITOSIS_PATTERN = r'^(01)+(02|03|04)+(05){%d,}(06|07|08){%d,}(09){%d,}(17)+' % (MIN_INTER_LEN, MIN_MITOSIS_LEN, MIN_PHASE_AFTER_MITOSIS)
+        second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         
         if second_mitosis_re is not None:
-            start = 0
-            end = second_mitosis_re.end()
-            return track_str[start:end]
+            end = second_mitosis_re.end() / 2
+            track_ints = map(int, list(split_str_into_len(track_str, 2)))
+            return track_ints[:end]  
+        return None
+    
+    def _has_mito_int_mito_apo(self, track_str):
+        MIN_INTER_LEN=1
+        MIN_MITOSIS_LEN = 1
+        MIN_PHASE_AFTER_MITOSIS = 1
+        MITOSIS_PATTERN = r'^(01)+(02|03|04)+(05){%d,}(06|07|08){%d,}(17)+' % (MIN_INTER_LEN, MIN_MITOSIS_LEN)
+        second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         
-        elif (second_mitosis_re_2 is not None) and (phase_after==9):
-            start = 0
-            end = second_mitosis_re_2.end()
-            return track_str[start:end]
-        
-        elif (second_mitosis_re_3 is not None) and (phase_after==17):
-            start = 0
-            end = second_mitosis_re_3.end()
-            return track_str[start:end]
-        
+        if second_mitosis_re is not None:
+            end = second_mitosis_re.end() / 2
+            track_ints = map(int, list(split_str_into_len(track_str, 2)))
+            return track_ints[:end]  
         return None
             
 def fate_mutli():
     pm = CellFateAnalysisMultiHMM(
                           r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
                           r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
-                        rows=("B",), 
-                        cols=(2,3,4,5),
-#                            rows=None,
-#                            cols=None,
+                        rows=("D",), 
+                        cols=(2,3,11),
+                        #    rows=None,
+                        #    cols=None,
                           )
     pm.fate_tracking('Raw class labels')
     pm.setup_hmm(17, 'graph_5_multi_states_left2right_17.xml')
@@ -922,7 +942,8 @@ def fate_mutli():
                                                     '#0000FF',
                                                     '#0000FF',
                                                     '#0000FF',
-                                                    '#FF0000']), 'classification_cmap')
+                                                    '#FF0000',
+                                                    '#00FF00']), 'classification_cmap')
     
     pm.plot('Cell Fate Classification Multi HMM', 2)
     
