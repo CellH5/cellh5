@@ -20,8 +20,6 @@ import lxml.objectify
 import lxml.etree
 import lxml._elementpath
 
-from cecog.environment import find_resource_dir
-
 np.set_printoptions(precision=2)
 EPS = 0.0
 
@@ -84,7 +82,7 @@ class HMMConstraint(object):
             self.emis += float(xml.emission_matrix.attrib['epsilon'])
 
     def validate(self, xml):
-        schemafile = join(find_resource_dir(), "schemas", "hmm_constraint.xsd")
+        schemafile = "hmm_constraint.xsd"
         schema_doc =  lxml.etree.parse(schemafile)
         return lxml.etree.XMLSchema(schema_doc).assertValid(xml)
 
