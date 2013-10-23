@@ -639,7 +639,7 @@ class CellFateAnalysis(object):
         def _plot_separator(cnt, label, col='k'):
             cnt+=2
             ax.axhline(cnt, color=col, linewidth=1)
-            ax.text(10, cnt-0.5, label)
+            ax.text(420, cnt-0.5, label)
             cnt+=2
             return cnt
         
@@ -661,46 +661,55 @@ class CellFateAnalysis(object):
             f = pylab.figure(figsize=(8,12))
             ax = pylab.gca()
             
+            total_count = 0
+            
             for line in sorted( self.tracks[(w,p)]['mito_int'], cmp=_cmp_len_of_first_inter):
                 self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
-            cnt = _plot_separator(cnt, 'mito_int')
+            total_count += len(self.tracks[(w,p)]['mito_int'])
+            cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int'])))
             
             for line in sorted( self.tracks[(w,p)]['mito_int_mito_int_mito'], cmp=_cmp_len_of_first_inter): 
                 self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
+            total_count += len(self.tracks[(w,p)]['mito_int_mito_int_mito'])
                 
-            cnt = _plot_separator(cnt, 'mito_int_mito_int_mito')
+            cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int_mito_int_mito'])))
             
             for line in sorted(self.tracks[(w,p)]['mito_int_mito_int_apo'], cmp=_cmp_len_of_first_inter):
                 self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
+            total_count += len(self.tracks[(w,p)]['mito_int_mito_int_apo'])
                 
-            cnt = _plot_separator(cnt, 'mito_int_mito_int_apo')
+            cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int_mito_int_apo'])))
             
             for line in sorted(self.tracks[(w,p)]['mito_int_apo'], cmp=_cmp_len_of_first_inter):
                 self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
+            total_count += len(self.tracks[(w,p)]['mito_int_apo'])
                 
-            cnt = _plot_separator(cnt, 'mito_int_apo')
+            cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int_apo'])))
                 
             for line in sorted(self.tracks[(w,p)]['mito_int_mito_apo'], cmp=_cmp_len_of_first_inter):
                 self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
+            total_count += len(self.tracks[(w,p)]['mito_int_mito_apo'])
      
-            cnt = _plot_separator(cnt, 'mito_int_mito_apo')
+            cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int_mito_apo'])))
             
             for line in sorted(self.tracks[(w,p)]['mito_apo'], cmp=_cmp_len_of_first_inter):
                 self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
+            total_count += len(self.tracks[(w,p)]['mito_apo'])
      
-            cnt = _plot_separator(cnt, 'mito_apo')
+            cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_apo'])))
             
             for line in sorted(self.tracks[(w,p)]['mito_unclassified'], cmp=_cmp_len_of_first_inter):
                 self._plot_line(line, cnt, self.cmap, ax)
                 cnt+=1
-                #print 'unclassified', line
-            cnt = _plot_separator(cnt, 'mito_unclassified', )
+            total_count += len(self.tracks[(w,p)]['mito_unclassified'])
+                
+            cnt = _plot_separator(cnt, str(total_count))
             
             
                 
@@ -743,24 +752,24 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
         
         transmat = numpy.array([
                                 [1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
-                                [0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
-                                [0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
-                                [0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
+                                [0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
                                 
-                                [0.0, 0.0, 0.0, 0.0,92.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
+                                [0.0, 0.0, 0.0, 0.0, 90 , 1  , 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60 ],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
                                 
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,92.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.9],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.9],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 90 , 1  , 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60 ],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.1],
                                 
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,92.0, 0.9, 0.0, 0.0, 0.9],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.9],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.9],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 90 , 1  , 0.0, 0.0, 60 ],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.1],
                                 
                                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
                                 ])
@@ -808,6 +817,11 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
                     self.tracks[(w,p)]['mito_apo'].append(mito_apo)
                     continue 
                 
+                mito_int_mito_apo = self._has_mito_int_mito_apo(track_str)
+                if mito_int_mito_apo:
+                    self.tracks[(w,p)]['mito_int_mito_apo'].append(mito_int_mito_apo)
+                    continue 
+                
                 mito_int_mito_int_apo = self._has_mito_int_mito_int_apo(track_str)
                 if mito_int_mito_int_apo:
                     self.tracks[(w,p)]['mito_int_mito_int_apo'].append(mito_int_mito_int_apo)
@@ -823,10 +837,7 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
                     self.tracks[(w,p)]['mito_int_apo'].append(mito_int_apo)
                     continue 
                 
-                mito_int_mito_apo = self._has_mito_int_mito_apo(track_str)
-                if mito_int_mito_apo:
-                    self.tracks[(w,p)]['mito_int_mito_apo'].append(mito_int_mito_apo)
-                    continue           
+                          
                 
                 track_ints = map(int, list(split_str_into_len(track_str, 2)))
                 self.tracks[(w,p)]['mito_unclassified'].append(track_ints)
@@ -847,7 +858,7 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
         MIN_INTER_LEN = 1
         MIN_APO_AFTER_MITOSIS = 1
         MIN_MITO_LEN = 3 
-        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04){%d,})(05){%d,}(17){%d}' % (MIN_MITO_LEN, MIN_INTER_LEN, MIN_APO_AFTER_MITOSIS)
+        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04){%d,})(05){%d,}(17){%d,}' % (MIN_MITO_LEN, MIN_INTER_LEN, MIN_APO_AFTER_MITOSIS)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         if second_mitosis_re is not None:
             end = second_mitosis_re.end() / 2
@@ -864,22 +875,20 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
             end = no_second_mitosis_re.end() / 2
             end_blue = no_second_mitosis_re.end('blue') / 2
             track_ints = map(int, list(split_str_into_len(track_str, 2)))
-            return track_ints[:end] # [track_ints[i] if i < 4 else 2 for i in xrange(len(track_ints))][:end_blue]
+            return [track_ints[i] if i < 4 else 2 for i in xrange(len(track_ints))][:end_blue]
             # just blue
         return None 
                     
               
     def _has_mito_int_mito_int_mito(self, track_str):
-        MIN_INTER_LEN=1
-        MIN_MITOSIS_LEN = 3
-        MIN_PHASE_AFTER_MITOSIS = 1
-        MITOSIS_PATTERN = r'^(01)+(02|03|04)+(05){%d,}(((06|07|08){%d,}(09){%d}(10|11|12)*)|(06|07|08)+)' % (MIN_INTER_LEN, MIN_MITOSIS_LEN, MIN_PHASE_AFTER_MITOSIS)
+
+        MITOSIS_PATTERN = r'^(01)+(02|03|04)+(05)+(06|07|08)+(09)*(10|11|12)*(13)*(14|15|16)*'
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         
-        if second_mitosis_re is not None:
+        if (second_mitosis_re is not None) and (track_str[-2:] != '17'):
             end = second_mitosis_re.end() / 2
             track_ints = map(int, list(split_str_into_len(track_str, 2)))
-            return track_ints
+            return track_ints[:end]
             # as is
         return None
     
@@ -887,36 +896,40 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
         MIN_INTER_LEN=1
         MIN_MITOSIS_LEN = 1
         MIN_PHASE_AFTER_MITOSIS = 1
-        MITOSIS_PATTERN = r'^(01)+(02|03|04)+(05){%d,}(06|07|08){%d,}(09){%d,}(17)+' % (MIN_INTER_LEN, MIN_MITOSIS_LEN, MIN_PHASE_AFTER_MITOSIS)
+        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04)+(05){%d,}(06|07|08){%d,}(09){%d,})((10|11|12)+(13)+)*(17)+' % (MIN_INTER_LEN, MIN_MITOSIS_LEN, MIN_PHASE_AFTER_MITOSIS)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         
         if second_mitosis_re is not None:
             end = second_mitosis_re.end() / 2
+            end_blue = second_mitosis_re.end('blue') / 2
             track_ints = map(int, list(split_str_into_len(track_str, 2)))
-            return track_ints[:end]  
+            return [track_ints[i] if i < end_blue else 18 for i in xrange(len(track_ints))][:end]
+            # blue, as is, green
         return None
     
     def _has_mito_int_mito_apo(self, track_str):
         MIN_INTER_LEN=1
         MIN_MITOSIS_LEN = 1
         MIN_PHASE_AFTER_MITOSIS = 1
-        MITOSIS_PATTERN = r'^(01)+(02|03|04)+(05){%d,}(06|07|08){%d,}(17)+' % (MIN_INTER_LEN, MIN_MITOSIS_LEN)
+        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04)+(05){%d,}(06|07|08){%d,})((09)+(10|11|12)+((13)+(14|15|16)+)*)*(17)+' % (MIN_INTER_LEN, MIN_MITOSIS_LEN)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         
         if second_mitosis_re is not None:
             end = second_mitosis_re.end() / 2
+            end_blue = second_mitosis_re.end('blue') / 2
             track_ints = map(int, list(split_str_into_len(track_str, 2)))
-            return track_ints[:end]  
+            return [track_ints[i] if i < end_blue else 17 for i in xrange(len(track_ints))][:end]
+            # blue, as is, red  
         return None
             
 def fate_mutli():
     pm = CellFateAnalysisMultiHMM(
                           r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
                           r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
-                        rows=("D",), 
-                        cols=(2,3,11),
-                        #    rows=None,
-                        #    cols=None,
+                        #rows=("D",), 
+                        #cols=(2,3,11),
+                            rows=None,
+                            cols=None,
                           )
     pm.fate_tracking('Raw class labels')
     pm.setup_hmm(17, 'graph_5_multi_states_left2right_17.xml')
@@ -953,10 +966,10 @@ def fate():
     pm = CellFateAnalysis(
                           r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
                           r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
-                         rows=('B'), 
-                         cols=(3,4,5),
-#                             rows=None,
-#                             cols=None,
+                         #rows=('B'), 
+                         #cols=(3,4,5),
+                            rows=None,
+                             cols=None,
                           )
     pm.fate_tracking('Raw class labels')
     pm.setup_hmm(5, 'graph_5states_left2right.xml')
