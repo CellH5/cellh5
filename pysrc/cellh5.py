@@ -603,7 +603,7 @@ class CH5File(object):
         self._file_handle.close()   
 
 class CH5MappedFile(CH5File):
-    def read_mapping(self, mapping_file, sites=None, rows=None, cols=None):
+    def read_mapping(self, mapping_file, sites=None, rows=None, cols=None, locations=None):
         self.mapping_file = mapping_file
         self.mapping = pandas.read_csv(self.mapping_file, sep='\t')
         
@@ -613,6 +613,9 @@ class CH5MappedFile(CH5File):
             self.mapping = self.mapping[self.mapping['Row'].isin(rows)]
         if cols is not None:
             self.mapping = self.mapping[self.mapping['Column'].isin(cols)]
+            
+        if locations is not None:
+            self.mapping = self.mapping[reduce(pandas.Series.__or__, [self.mapping['Row'].isin(c) & (self.mapping['Column'] == r) for c, r in locations])]
         
         self.mapping.reset_index(inplace=True)
 
