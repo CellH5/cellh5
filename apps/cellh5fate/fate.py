@@ -151,12 +151,12 @@ class ColorPicker(object):
             return c
 
 class CellFateAnalysis(object):
-    def __init__(self, ch5_file, mapping_file, events_before_frame=108, onset_frame=0, rows=None, cols=None, locations=None):
+    def __init__(self, ch5_file, mapping_file, events_before_frame=108, onset_frame=0, sites=None, rows=None, cols=None, locations=None):
         # 108 frames = 12h
         self.mcellh5 = cellh5.CH5MappedFile(ch5_file)
         
         #self.mcellh5.read_mapping(mapping_file, rows=('B'), cols=(3,5,8,11))
-        self.mcellh5.read_mapping(mapping_file, rows=rows, cols=cols, locations=locations)
+        self.mcellh5.read_mapping(mapping_file, sites=sites, rows=rows, cols=cols, locations=locations)
         
         self.class_colors = self.mcellh5.class_definition('primary__primary')['color']
         self.class_names = self.mcellh5.class_definition('primary__primary')['name']
@@ -174,7 +174,7 @@ class CellFateAnalysis(object):
             self.tracks[(w, p)] = {}
             event_ids = cellh5pos.get_events()
             
-            event_ids = [e[onset_frame:] for e in event_ids if cellh5pos.get_time_idx(e[0]) < events_before_frame]
+            event_ids = [e[onset_frame:] for e in event_ids if cellh5pos.get_time_idx(e[onset_frame]) < events_before_frame]
             
             self.tracks[(w, p)]['ids'] = event_ids
             self.tracks[(w, p)]['labels'] = [cellh5pos.get_class_label(e) for e in event_ids]
@@ -448,7 +448,7 @@ class CellFateAnalysis(object):
             cond = self.mcellh5.get_treatment_of_pos(w,p)
             for k, class_selector in enumerate(track_selection):
                 cmap = cmaps[k]
-                print (m, n , k + j*n+1)
+                #print (m, n , k + j*n+1)
                 ax = pylab.subplot(m, n , k + j*n + 1)
                 
                 tracks = self.tracks[w,p][class_selector]
@@ -945,20 +945,20 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
     
     
 class CellFateMitoticTiming(CellFateAnalysis):
-    def __init__(self, ch5_file, mapping_file, events_before_frame=9999, onset_frame=4, rows=None, cols=None, locations=None):
-        CellFateAnalysis.__init__(self, ch5_file, mapping_file, events_before_frame=events_before_frame, onset_frame=onset_frame, rows=rows, cols=cols, locations=locations)
+    def __init__(self, ch5_file, mapping_file, events_before_frame=9999, onset_frame=4, sites=None, rows=None, cols=None, locations=None):
+        CellFateAnalysis.__init__(self, ch5_file, mapping_file, events_before_frame=events_before_frame, onset_frame=onset_frame, sites=sites, rows=rows, cols=cols, locations=locations)
     
     def setup_hmm(self, k_classes, constraint_xml):
         constraints = HMMConstraint(constraint_xml)
         
         transmat = numpy.array([
-                                [0.1  ,  0.1,  0.0,  0.0,  0.1, 0.1, 0.0],
-                                [0.0,  2  ,  0.1,  0.0,  0.1, 0.1, 0.0],
-                                [0.0,  0.0,  2  ,  0.1,  0.1, 0.1, 0.0],
+                                [0.1,  0.1,  0.0,  0.0,  0.0, 0.1, 0.1],
+                                [0.0,  2  ,  0.1,  0.0,  0.0, 0.1, 0.1],
+                                [0.0,  0.0,  2  ,  0.1,  0.0, 0.1, 0.1],
                                 [0.1,  0.0,  0.0,  2  ,  0.1, 0.1, 0.0],
-                                [0.0,  0.0,  0.0,  0.0,  2  , 0.0, 0.0],
-                                [0.0,  0.1,  0.1,  0.0,  0.1, 2  , 0.0],
-                                [0.0,  0.0,  0.0,  0.0,  0.0, 0.0,  2 ],
+                                [0.1,  0.0,  0.0,  0.0,  2  , 0.1, 0.0],
+                                [0.0,  0.0,  0.0,  0.0,  0.0, 1  , 0.0],
+                                [0.0,  0.1,  0.1,  0.0,  0.0, 0.1,  2 ],
                                 ])
         transmat = normalize(transmat, axis=1, eps=0)
         
@@ -973,31 +973,39 @@ class CellFateMitoticTiming(CellFateAnalysis):
         import re
         from collections import OrderedDict
         pp = PdfPages('mitotic_timing.pdf')
-        pylab.clf()
+        f = pylab.figure(figsize=(20,8))
         mito_timing = OrderedDict()
         
         xticklabels=[]
         
-        for w, p in [('G05', 1), 
-                     ('G04', 1),
-                     ('B05', 1), ('C05', 1), ('D05', 1), ('E05', 1), ('F05', 1),
-                     ('B11', 1), ('C11', 1), ('D11', 1), ('E11', 1), ('F11', 1),
-                     ('B03', 1), ('C03', 1), ('D03', 1),]:
+        for w, p in sorted(self.tracks.keys()):
             
             mito_timing[(w,p)] = []
             if (w,p) not in self.tracks:
                 continue
             for t in self.tracks[(w,p)]['HMM']:
                 track_str = "".join(map(str, t))
-                mito_re = re.search(r'1+(?P<mito>(2|3|6)+)(1|4)+', track_str)
+                mito_re = re.search(r'1+(?P<mito>(2|3|7)+)(1|4|5|6)+', track_str)
                 if mito_re is not None:
                     span = mito_re.span('mito')
                     mito_timing[(w,p)].append((span[1] - span[0])*4.7)
                 
             treatment = self.mcellh5.get_treatment_of_pos(w, p)[1]
-            xticklabels.append(treatment + " (%s_%02d)" % (w,p))
-        colors = ['g', 'g',] + ['r']*5 + ['b']*5 + ["#ffa500"]*3
-        ax = spreadplot(mito_timing.values(), xticklabels=xticklabels, colors=colors, spread_type='g', spread=0.1)
+            xticklabels.append("%s_%02d" % (w,p))
+        
+        from itertools import izip_longest
+        import csv
+
+        with open('mito_timing.txt', 'wb') as f:
+            writer = csv.writer(f, delimiter='\t')
+            writer.writerow(xticklabels)
+            writer.writerows(izip_longest(*mito_timing.values(), fillvalue=""))   
+        
+        colors = ['g', 'g',] + ['r']*5 + ['b']*5 + ["#ffa500"]*3 + ['r']*5 + ['b']*5 + ["#ffa500"]*3 + ['k']*50
+#         ax = p(mito_timing.values(), xticklabels=xticklabels, colors=colors, spread_type='g', spread=0.1)
+        ax = pylab.boxplot(mito_timing.values())
+        ax = pylab.gca()
+        ax.set_xticklabels(xticklabels, rotation=90)
         ax.set_title('Mitotic Timing')
         ax.set_ylabel('Mitotic timing [min]')
         pylab.tight_layout()
@@ -1007,31 +1015,34 @@ class CellFateMitoticTiming(CellFateAnalysis):
         
 def fate_mitotic_time():
     locs = [('G', 4), ('G', 5),
-            ('B', 5), ('C', 5), ('D', 5), ('E', 5), ('F', 5),
-            ('B', 11), ('C', 11), ('D', 11), ('E', 11), ('F', 11),
-            ('B', 3), ('C', 3), ('D', 3),]
+            #('B', 5), ('C', 5), ('D', 5), ('E', 5), ('F', 5),
+            #('B', 11), ('C', 11), ('D', 11), ('E', 11), ('F', 11),
+            ('B', 3), ('C', 3), ('D', 3),
+            ]
     
     pm = CellFateMitoticTiming(
-                          r"M:\experiments\Experiments_002200\002288\_meta\Analysis_siR-act-tub\hdf5\_all_positions.ch5",
-                          r"M:\experiments\Experiments_002200\002288\_meta\Mapping\002288.txt",
+                          r"M:\experiments\Experiments_002300\002308\_meta\Analysis\hdf5\_all_positions.ch5",
+                          r"M:\experiments\Experiments_002300\002308\_meta\002308.txt",
+                          events_before_frame=150,
                           #rows=("B", "C", "D", "E", "F", "G",), 
                           #cols=(3, 4, 5, 11),
                           #rows= ("G",),
                           #cols= (4,5)
-                          locations=locs
+                          sites=(1,),
+                          #locations=locs
                           )
     pm.fate_tracking('Raw class labels')
     pm.setup_hmm(7, 'graph_7_left2right.xml')
     pm.predict_hmm('Raw class labels', 'HMM')   
     pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
                                                    ['#FFFFFF', 
-                                                    '#00FF00', 
+                                                    '#00ff00', 
                                                     '#ff8000',
                                                     '#d28dce',
-                                                    '#5871f1',
-                                                    '#ff0000', 
-                                                    '#00FFFF',
-                                                    '#000000']), 'classification_cmap')
+                                                    '#0055ff',
+                                                    '#aa5500', 
+                                                    '#ff0000',
+                                                    '#ffff00']), 'classification_cmap')
     pm.plot_tracks(['Raw class labels', 'HMM'], [pm.cmap, pm.cmap], 'test2')
     pm.plot_mitotic_timing()
             
@@ -1183,7 +1194,7 @@ def human_annotation_fate():
 
 if __name__ == "__main__":
     #fate()
-    fate_mutli()
-    #fate_mitotic_time()
+    #fate_mutli()
+    fate_mitotic_time()
     print 'done'
 
