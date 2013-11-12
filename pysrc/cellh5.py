@@ -120,18 +120,11 @@ class CH5Position(object):
         self.pos = pos
         self.grp_pos_path = grp_pos
         self.definitions = parent
+               
         
-        self.f = h5py.File(self.definitions.filename, 'r')
-        
-    @property
-    def grp_pos(self):
-        with h5py.File(self.definitions.filename, 'r') as f:
-            return f[self.grp_pos_path]
         
     def __getitem__(self, key):
-#         with h5py.File(self.definitions.filename, 'r') as f:
-#             return f[self.grp_pos_path][key]
-        return self.f[self.grp_pos_path][key]
+        return self.definitions.get_file_handle()[self.grp_pos_path][key]
     
     def get_tracking(self):
         return self['object']['tracking'].value
@@ -556,6 +549,9 @@ class CH5File(object):
     def get_position(self, well, pos):
         return self._position_group[(well, str(pos))]
     
+    def get_file_handle(self):
+        return self._file_handle
+    
     def iter_positions(self):
         for w, pos_list in self.positions.items():
             for p in pos_list:
@@ -726,7 +722,7 @@ class TestCH5Examples(CH5TestBase):
         fig.add_axes(ax)
         ax.imshow(h2b[400:600, 400:600], cmap='gray')
         fig.savefig('img1.png', format='png')
-        ax.imshow(tub[400:600, 400:600], cmap='g2ay')
+        ax.imshow(tub[400:600, 400:600], cmap='gray')
         #fig.savefig('img2.png', format='png')
         
 #        vigra.impex.writeImage(h2b[400:600, 400:600].swapaxes(1,0), 'img1.png')   
