@@ -151,8 +151,39 @@ class ColorPicker(object):
             return c
 
 class CellFateAnalysis(object):
-    def __init__(self, ch5_file, mapping_file, events_before_frame=108, onset_frame=0, sites=None, rows=None, cols=None, locations=None):
-        # 108 frames = 12h
+    def __init__(self, ch5_file, mapping_file, 
+                 
+                 events_before_frame=9999, 
+                 onset_frame=0, 
+                 
+                 time_lapse=None,
+                 
+                 hmm_constraint_file=None,
+                 hmm_n_classes=None,
+                 hmm_n_obs=None,
+                 
+                 sites=None, 
+                 rows=None, 
+                 cols=None, 
+                 locations=None):
+        
+        self.events_before_frame = events_before_frame
+        self.onset_frame = onset_frame
+        
+        self.hmm_constraint_file = hmm_constraint_file
+        self.hmm_n_classes = hmm_n_classes
+        self.hmm_n_obs = hmm_n_obs
+        
+        self.time_lapse = time_lapse
+        
+        
+        assert os.path.exists(ch5_file)
+        assert os.path.exists(mapping_file)
+        assert os.path.exists(hmm_constraint_file)
+        assert time_lapse is not None
+        
+        # 108 frames = 12h 6.7
+        # 155 frames = 12h 4.6
         self.mcellh5 = cellh5.CH5MappedFile(ch5_file)
         
         #self.mcellh5.read_mapping(mapping_file, rows=('B'), cols=(3,5,8,11))
@@ -368,11 +399,14 @@ class CellFateAnalysis(object):
             
             all_feature_values = [feature_table[t, feature_idx] for t in self.tracks[(w,p)][id_selector]]
                 
-            feature_min = numpy.min(map(numpy.min, all_feature_values))
+            if len(all_feature_values)>0:
+                feature_min = numpy.min(map(numpy.min, all_feature_values))
+            else:
+                feature_min = 0
                 
             lines = {}
-            lines['Mitotic Exit'] = []
-            lines['Apoptosis after Mitosis'] = []
+            lines['Mitotic exit'] = []
+            lines['Apoptosis after mitosis'] = []
             for line, feature_values in zip(self.tracks[(w,p)][event_selector], all_feature_values):
                 x_values = numpy.array(map(int,list(line)))
                 if numpy.max(feature_values) < 15:
@@ -381,13 +415,13 @@ class CellFateAnalysis(object):
                 values = numpy.array(feature_values - feature_min) 
                 values = values / numpy.mean(values[(event_onset_indicator-1):(event_onset_indicator+2)])
                 if 17 in x_values:
-                    lines['Apoptosis after Mitosis'].append(values)
+                    lines['Apoptosis after mitosis'].append(values)
                 else:
-                    lines['Mitotic Exit'].append(values)
+                    lines['Mitotic exit'].append(values)
 
             from itertools import izip_longest
             
-            for n, c in [('Mitotic Exit', 'b'), ('Apoptosis after Mitosis', 'r')]:
+            for n, c in [('Mitotic exit', 'b'), ('Apoptosis after mitosis', 'r')]:
                 y = []
                 yerr = []
                 for tmp in izip_longest(*lines[n]):
@@ -404,12 +438,13 @@ class CellFateAnalysis(object):
             ax = pylab.gca()
             pylab.legend(loc=1)
             pylab.vlines(0, 0, 1.5, 'k', '--', label='NEBD')
-            ax.set_title('%s_%s -- %s'% (w, p, self.mcellh5.get_treatment_of_pos(w, p)[0]) )
+            ax.set_title('%s_%s -- %s %d'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,p])) 
             ax.set_xlabel('Time [%s]' % time_unit)
             ax.set_ylabel('Fluorescence (AU)')
             ax.set_ylim(ylim)
             ax.set_xlim(xlim)
-            f.savefig(pp, format='pdf')             
+            f.savefig(pp, format='pdf')   
+            f.savefig('securin_%s_%s_%s_%d.png'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,p]))  
         pp.close()
     
     def setup_hmm(self, k_classes, constraint_xml):
@@ -469,7 +504,10 @@ class CellFateAnalysis(object):
                         
 
                     ax.matshow(img, cmap=cmap, vmin=0, vmax=cmap.N-1)
-                    ax.set_title("%s_%s_%s" % (w,p,class_selector))
+                    
+                    title = '%s_%s -- %s %d %s' % tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,p, class_selector]) 
+                    
+                    ax.set_title(title)
                     pylab.axis('off')
                     
                 else:
@@ -734,10 +772,11 @@ class CellFateAnalysis(object):
                 
             ax.invert_yaxis()
             ax.set_xlim(0, 450)
-            ax.set_title('%s_%s -- %s'% (w, p, self.mcellh5.get_treatment_of_pos(w, p)[0]) )
+            ax.set_title('%s_%s -- %s %d' % tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,p])) 
             ax.set_xlabel('Time [frame]')
             ax.set_yticklabels([])
             pylab.savefig(pp, format='pdf')
+            pylab.savefig('fate_%s_%s_%s_%d.png'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,p])) 
             pylab.clf()
         pp.close()
             
@@ -767,8 +806,8 @@ class CellFateAnalysis(object):
         
 class CellFateAnalysisMultiHMM(CellFateAnalysis):    
                 
-    def setup_hmm(self, k_classes, constraint_xml):
-        constraints = HMMConstraint(constraint_xml)
+    def setup_hmm(self):
+        constraints = HMMConstraint(self.hmm_constraint_file)
         
         transmat = numpy.array([
                                 [1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
@@ -795,7 +834,14 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
                                 ])
         transmat = normalize(transmat, axis=1, eps=0)
         
-        est = HMMAgnosticEstimator(k_classes, transmat, numpy.ones((k_classes, 5)), numpy.ones((k_classes, )) )
+        assert transmat.shape[0] == self.hmm_n_classes
+        assert transmat.shape[1] == self.hmm_n_classes
+        
+        est = HMMAgnosticEstimator(self.hmm_n_classes, 
+                                   transmat, 
+                                   numpy.ones((self.hmm_n_classes, self.hmm_n_obs)), 
+                                   numpy.ones((self.hmm_n_classes, )))
+        
         est.constrain(constraints)
         self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
         self.hmm._set_emissionprob(est.emis)               
@@ -823,8 +869,8 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
             for t_idx, track in enumerate(self.tracks[w,p][class_selector]):
                 track_str = "".join(map(lambda x: "%02d" % x,track))
             
-                print self.tracks[w,p][class_selector][t_idx]
-                print self.tracks[w,p]['Raw class labels'][t_idx]
+                #print self.tracks[w,p][class_selector][t_idx]
+                #print self.tracks[w,p]['Raw class labels'][t_idx]
                 
                 
                 mito_int = self._has_mito_int(track_str)
@@ -1046,19 +1092,29 @@ def fate_mitotic_time():
     pm.plot_tracks(['Raw class labels', 'HMM'], [pm.cmap, pm.cmap], 'test2')
     pm.plot_mitotic_timing()
             
-def fate_mutli():
-    pm = CellFateAnalysisMultiHMM(
-                          r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
-                          r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
-                        #rows=("D",), 
-                        #cols=(2,3,11),
-                            rows=None,
-                            cols=None,
-                          )
-    pm.fate_tracking('Raw class labels')
-    pm.setup_hmm(17, 'graph_5_multi_states_left2right_17.xml')
+            
+EXP_LOOKUP = {
+                 '002200':
+                    {
+                     'ch5_file': "M:/experiments/Experiments_002200/002200/_meta/Cecog/Aalysis_with_split/hdf5/_all_positions.ch5",
+                     'mapping_file': "M:/experiments/Experiments_002200/002200/_meta/Cecog/Mapping/002200_2.txt",
+                     'time_lapse': 6.7, 
+                     'events_before_frame':155, 
+                     'onset_frame':4, 
+                     'hmm_constraint_file':'graph_5_multi_states_left2right_17.xml',
+                     'hmm_n_classes': 17,
+                     'hmm_n_obs': 5,
+                     }
+              }
+            
+def fate_mutli(plate_id):
+    pm = CellFateAnalysisMultiHMM(rows=("D",), cols=(2,3,11), **EXP_LOOKUP[plate_id])
+    
+    pm.fate_tracking(out_name='Raw class labels')
+    pm.setup_hmm()
     pm.predict_hmm('Raw class labels', 'Multi State HMM')   
-    #pm.plot_tracks(['Raw class labels', 'Multi State HMM'], [pm.cmap, cmap17], 'test2')
+    
+    pm.plot_tracks(['Raw class labels', 'Multi State HMM'], [pm.cmap, cmap17], 'hmm_multi_fate')
     
     pm.classify_tracks('Multi State HMM')
     pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
@@ -1082,7 +1138,7 @@ def fate_mutli():
                                                     '#FF0000',
                                                     '#00FF00']), 'classification_cmap')
     
-    #pm.plot('Cell Fate Classification Multi HMM', 2)
+    pm.plot('Cell Fate Classification Multi HMM', 2)
     pm.event_mean_curves('Multi State HMM',
                             'securin_degradation_short_mean',
                             'tertiary__expanded',
@@ -1109,92 +1165,72 @@ def fate_mutli():
     
     print 'CellFateAnalysisMultiHMM done'
     
-def fate():
-    pm = CellFateAnalysis(
-                          r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
-                          r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
-                         #rows=('B'), 
-                         #cols=(3,4,5),
-                            rows=None,
-                             cols=None,
-                          )
-    pm.fate_tracking('Raw class labels')
-    pm.setup_hmm(5, 'graph_5states_left2right.xml')
-    #pm.setup_hmm_multi(13, 'graph_5_multi_states_left2right.xml')
-    pm.predict_hmm('Raw class labels', 'Mapped State HMM')
-    pm.smooth_and_simplify_tracks('Mapped State HMM', 'Mapped State HMM 3')
-    
-    pm.plot_tracks(['Raw class labels', 'Mapped State HMM', 'Mapped State HMM 3'], [pm.cmap, pm.cmap, cmap3], 'Mapped_HMM_tracks' )
-       
-    pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
-                                                   ['#FFFFFF', 
-                                                    '#AAAAAA', 
-                                                    '#0000FF',
-                                                    '#FF0000']), 'classification_cmap')
-    pm.classify_tracks('Mapped State HMM 3')
-    pm.plot('Cell Fate Classification')
-    pm.event_curves('Mapped State HMM 3', 
-                    'securin_degradation_short',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    False,
-                    pm.cmap,
-                    6.66,
-                    4,
-                    (-20,120),
-                    (0,2),
-                           )
-
-    pm.event_curves('Mapped State HMM 3', 
-                    'securin_degradation_with_fate',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    True,
-                    pm.cmap,
-                    6.66,
-                    3,
-                    (-20,2000),
-                    (0,2),
-                           )
-    pm.event_mean_curves('Mapped State HMM 3', 
-                    'securin_degradation_short',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    False,
-                    pm.cmap,
-                    6.66,
-                    4,
-                    (-20,120),
-                    (0,2),
-                           )
-    
-    print 'done'
-     
-def human_annotation_fate():
-    pm = CellFateAnalysis(
-                          r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
-                          r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
-                          rows=None, 
-                          cols=None,
-                          )
-    pm.read_manual_annotations(r"M:\members\Claudia Blaukopf\Experiments\130710_Mitotic_slippage_and_cell_death\_meta\Cecog\Aalysis_with_split\hdf5\annotations_all_positions.ch5",
-                               '130710_Mitotic_slippage_and_cell_death')
-    
-    pm.smooth_and_simplify_tracks('manual_annotations', 'manual_annotations_3')
-    
-    pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
-                                                   ['#FFFFFF', 
-                                                    '#AAAAAA', 
-                                                    '#0000FF',
+# def fate():
+#     pm = CellFateAnalysis(
+#                           r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
+#                           r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
+#                          #rows=('B'), 
+#                          #cols=(3,4,5),
+#                             rows=None,
+#                              cols=None,
+#                           )
+#     pm.fate_tracking('Raw class labels')
+#     pm.setup_hmm(5, 'graph_5states_left2right.xml')
+#     #pm.setup_hmm_multi(13, 'graph_5_multi_states_left2right.xml')
+#     pm.predict_hmm('Raw class labels', 'Mapped State HMM')
+#     pm.smooth_and_simplify_tracks('Mapped State HMM', 'Mapped State HMM 3')
+#     
+#     pm.plot_tracks(['Raw class labels', 'Mapped State HMM', 'Mapped State HMM 3'], [pm.cmap, pm.cmap, cmap3], 'Mapped_HMM_tracks' )
+#        
+#     pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
+#                                                    ['#FFFFFF', 
+#                                                     '#AAAAAA', 
 #                                                     '#0000FF',
-#                                                     '#0000FF', 
-                                                    '#FF0000']), 'classification_cmap')
-    pm.classify_tracks('manual_annotations_3')
-    pm.plot('manual')
+#                                                     '#FF0000']), 'classification_cmap')
+#     pm.classify_tracks('Mapped State HMM 3')
+#     pm.plot('Cell Fate Classification')
+#     pm.event_curves('Mapped State HMM 3', 
+#                     'securin_degradation_short',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     False,
+#                     pm.cmap,
+#                     6.66,
+#                     4,
+#                     (-20,120),
+#                     (0,2),
+#                            )
+# 
+#     pm.event_curves('Mapped State HMM 3', 
+#                     'securin_degradation_with_fate',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     True,
+#                     pm.cmap,
+#                     6.66,
+#                     3,
+#                     (-20,2000),
+#                     (0,2),
+#                            )
+#     pm.event_mean_curves('Mapped State HMM 3', 
+#                     'securin_degradation_short',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     False,
+#                     pm.cmap,
+#                     6.66,
+#                     4,
+#                     (-20,120),
+#                     (0,2),
+#                            )
+#     
+#     print 'done'
+     
+
 
 if __name__ == "__main__":
     #fate()
-    #fate_mutli()
-    fate_mitotic_time()
+    fate_mutli('002200')
+    #fate_mitotic_time()
     print 'done'
 
