@@ -188,7 +188,7 @@ class PositionThumbnailEvents(PositionThumbnailBase):
         PositionThumbnailBase.__init__(self, parent)
         self.parent = parent
         self.position_key = position_key
-        events = position.get_events()
+        events = position.get_events(random=10)
         
         def event_cmp(x, y):
             x_l = position.get_class_label(x)
@@ -496,20 +496,21 @@ class TrackletBrowser(QtGui.QWidget):
         position = self.data_provider.get_position(position_key[2], position_key[3])
         
         self._root_items = []
-        events = position.get_events()
+        events = position.get_events(random=10)
         
-        self.dlg = waitingProgressDialog('Rendering gallery images...', self, None, (0, len(events)))
-        events = position.get_events()
+        #self.dlg = waitingProgressDialog('Rendering gallery images...', self, None, (0, len(events)))
         
-        def load_events(dlg, events):
-            for kk, event in enumerate(events):
-                g_event = EventGraphicsItem(kk, event, position)
-                g_event.setHandlesChildEvents(False)
-                self._root_items.append(g_event)
-                dlg.setValue(kk)
+        #def load_events(dlg, events):
+        for kk, event in enumerate(events):
+            print 'Rendering', kk
+            g_event = EventGraphicsItem(kk, event, position)
+            g_event.setHandlesChildEvents(False)
+            self._root_items.append(g_event)
+            #dlg.setValue(kk)
+            
         
-        self.dlg.setTarget(load_events, events)
-        self.dlg.exec_(passDialog=True) 
+        #self.dlg.setTarget(load_events, events)
+        #self.dlg.exec_(passDialog=True) 
         
         for g_event in self._root_items:
             self.scene.addItem(g_event) 
@@ -1048,7 +1049,7 @@ def main():
     else:
         file = r'C:\Users\sommerc\data\cellh5_demo\0013.hdf5'
         
-    sys.stderr 
+    #sys.stderr 
     mainwindow = MainWindow()
     mainwindow.show()
     app.exec_()

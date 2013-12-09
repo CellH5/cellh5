@@ -38,7 +38,7 @@ VERSION = '.'.join(map(str, VERSION_NUM))
 
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 
-GALLERY_SIZE = 150  
+GALLERY_SIZE = 60  
 
 #-------------------------------------------------------------------------------
 # Helpers:
@@ -348,13 +348,18 @@ class CH5Position(object):
     def get_feature_table(self, object_, feature):
         return self['feature'][object_][feature].value
     
-    def get_events(self, output_second_branch=False):
+    def get_events(self, output_second_branch=False, random=None):
         dset_event = self.get_object_table('event')
         if len(dset_event) == 0:
             return []
         events = []
-        for event_id in range(dset_event['obj_id'].max()):
-            idx = numpy.where(dset_event['obj_id'] == event_id)
+        n_events = dset_event['obj_id'].max()
+        for event_id in range(n_events):
+            if random is not None:
+                event_id_ = numpy.random.randint(n_events)
+            else:
+                event_id_ = event_id
+            idx = numpy.where(dset_event['obj_id'] == event_id_)
             idx1 = dset_event[idx]['idx1']
             idx2 = dset_event[idx]['idx2']
             second_branch_found = False
@@ -372,7 +377,10 @@ class CH5Position(object):
                 event_list2 = list(idx1[0:a]) + list(idx1[b:])
                 events.append([event_list, event_list2])
             else:
-                events.append(event_list)    
+                events.append(event_list)   
+                
+            if random is not None and event_id > random:
+                break 
         return events
     
     def get_event_items(self, output_second_branch=False):

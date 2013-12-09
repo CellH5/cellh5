@@ -14,9 +14,12 @@ import functools
 import time
 import cProfile
 import re
+import datetime
+import os
 import random
 import pylab
 import myhmm
+from itertools import izip_longest
 
 from matplotlib.mlab import PCA
 from scipy.stats import nanmean
@@ -28,133 +31,42 @@ import matplotlib
 
 from matplotlib.backends.backend_pdf import PdfPages
 
-
 from sklearn import hmm
 from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
+from collections import OrderedDict
 hmm.normalize = lambda A, axis=None: normalize(A, axis, eps=10e-99)
-#hmm.normalize = lambda A, axis: normalize(A, axis=len(A.shape)-1, eps=eps)
 
-# def matrix_to_dict(matrix):
-#     d = {}
-#     for row in range(matrix.shape[0]):
-#         d[row] = {}
-#         if len(matrix.shape) == 2:
-#             for col in range(matrix.shape[1]):
-#                 d[row][col] = numpy.log2(matrix[row, col])
-#         else:
-#             d[row] = numpy.log2(matrix[row])
-#     return d
+from fate_utils import CMAP17, hex_to_rgb, split_str_into_len, CMAP17_MULTI, pairwise
+                 
+OUTPUT_FORMATS = ['png', 'pdf']
+TRACK_IMG_CROP = 240 # min
 
-def split_str_into_len(s, l=2):
-    """ Split a string into chunks of length l """
-    return [s[i:i+l] for i in range(0, len(s), l)]
+from matplotlib import rcParams
+rcParams['font.family'] = 'sans-serif'
+rcParams['font.size'] *= 2
+rcParams['font.sans-serif'] = ['Arial']
+#matplotlib.rc('xtick', labelsize=14) 
+#matplotlib.rc('ytick', labelsize=14) 
+#matplotlib.rc('axes', labelsize=14) 
+matplotlib.rc('legend',**{'fontsize':18})
+rcParams['axes.linewidth'] = rcParams['axes.linewidth']*2
+rcParams['legend.numpoints'] = 1
+#rcParams['legend.markerscale'] = 0
+rcParams['xtick.major.width'] = 2
+rcParams['ytick.major.width'] = 2
+rcParams['pdf.fonttype'] = 42
+rcParams['xtick.major.pad']= 8
+rcParams['ytick.major.pad']= 8
 
-def hex_to_rgb(hex_string):
-    """
-    Converts the hex representation of a RGB value (8bit per channel) to
-    its integer components.
-
-    Example: hex_to_rgb('#559988') = (85, 153, 136)
-             hex_to_rgb('559988') = (85, 153, 136)
-
-    @param hexString: the RGB value
-    @type hexString: string
-    @return: RGB integer components (tuple)
-    """
-    if hex_string[:2] == '0x':
-        hex_value = eval(hex_string)
-    elif hex_string[0] == '#':
-        hex_value = eval('0x'+hex_string[1:])
-    else:
-        hex_value = eval('0x'+hex_string)
-    b = hex_value & 0xff
-    g = hex_value >> 8 & 0xff
-    r = hex_value >> 16 & 0xff
-    return (r/255.0, g/255.0, b/255.0)
-
-def class_lookup(class_label):
-    color_dct = {
-                 1 : '#00AA00',
-                 2 : '#ff8000',
-                 3 : '#ff8000',
-                 4 : '#ff8000',
-                 5 : '#ff8000',
-                 6 : '#00AA00',
-                 7 : '#00AA00',
-                 8 : '#FF0000',
-                 9 : '#00FFFF',
-                10 : '#00FFFF' }
-    return color_dct[class_label]
-                
-cmap3 = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
-                                                   ['#FFFFFF', 
-                                                    '#AAAAAA', 
-                                                    '#0000FF',
-                                                    '#FF0000']), 'classification_cmap')
-cmap53 = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
-                                                   ['#FFFFFF', 
-                                                    '#AAAAAA', 
-                                                    '#0000FF',
-                                                    '#FF0000']), 'classification_cmap')     
-
-cmap17 = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
-                                                   ['#FFFFFF',
-                                                     
-                                                    '#E31A1C', 
-                                                    '#FD8D3C',
-                                                    '#FECC5C',
-                                                    '#FFFFB2',
-                                                    
-                                                    '#238443', 
-                                                    '#78C679',
-                                                    '#C2E699',
-                                                    '#FFFFCC',
-                                                    
-                                                    '#2171B5', 
-                                                    '#6BAED6',
-                                                    '#BDD7E7',
-                                                    '#EFF3FF',
-                                                    
-                                                    '#238443', 
-                                                    '#78C679',
-                                                    '#C2E699',
-                                                    '#FFFFCC',
-                                                    
-                                                    '#000000',
-                                                    
-                                                    ]), 'classification_cmap')                        
-
-class ColorPicker(object):
-    def __init__(self, color_list=None):
-        if color_list is None:
-            import colorbrewer
-            color_list = []
-            color_list.extend(colorbrewer.Set3[12])
-            color_list.extend(colorbrewer.Oranges[5])
-            color_list.extend(colorbrewer.Blues[5])
-            color_list.extend(colorbrewer.Reds[5])
-            color_list.extend(colorbrewer.Greens[5])
-            import random
-            random.shuffle(color_list)
-            
-            
-        self.color_list = color_list
-        self.mapped_colors = {}
-        self.colors = cycle(self.color_list)
-        
-    def get_color(self, key):
-        if key in self.mapped_colors:
-            return self.mapped_colors[key]
-        else:
-            c =  self.colors.next()
-            self.mapped_colors[key] = c
-            return c
+SECURIN_BACKGROUND = 14
 
 class CellFateAnalysis(object):
-    def __init__(self, ch5_file, mapping_file, 
+    def __init__(self, plate_id, ch5_file, mapping_file, 
                  
                  events_before_frame=9999, 
                  onset_frame=0, 
+                 
+                 output_dir=None,
                  
                  time_lapse=None,
                  
@@ -176,17 +88,19 @@ class CellFateAnalysis(object):
         
         self.time_lapse = time_lapse
         
+        self.output_dir = output_dir
+        if output_dir is None:
+            self.output_dir = plate_id +"/" + datetime.datetime.now().strftime("%y-%m-%d-%H-%M")
+            os.makedirs(self.output_dir)
+        print "Output Directory: ", self.output_dir
         
         assert os.path.exists(ch5_file)
         assert os.path.exists(mapping_file)
         assert os.path.exists(hmm_constraint_file)
         assert time_lapse is not None
         
-        # 108 frames = 12h 6.7
-        # 155 frames = 12h 4.6
         self.mcellh5 = cellh5.CH5MappedFile(ch5_file)
         
-        #self.mcellh5.read_mapping(mapping_file, rows=('B'), cols=(3,5,8,11))
         self.mcellh5.read_mapping(mapping_file, sites=sites, rows=rows, cols=cols, locations=locations)
         
         self.class_colors = self.mcellh5.class_definition('primary__primary')['color']
@@ -201,98 +115,104 @@ class CellFateAnalysis(object):
         
         for _, (w, p) in self.mcellh5.mapping[['Well','Site']].iterrows(): 
             cellh5pos = self.mcellh5.get_position(w,str(p))
-            preds = cellh5pos.get_class_prediction()
+            #preds = cellh5pos.get_class_prediction()
             self.tracks[(w, p)] = {}
             event_ids = cellh5pos.get_events()
             
-            event_ids = [e[onset_frame:] for e in event_ids if cellh5pos.get_time_idx(e[onset_frame]) < events_before_frame]
+            event_ids = [e for e in event_ids if cellh5pos.get_time_idx(e[onset_frame]) < events_before_frame]
             
             self.tracks[(w, p)]['ids'] = event_ids
             self.tracks[(w, p)]['labels'] = [cellh5pos.get_class_label(e) for e in event_ids]
             
-            print w, p, self.mcellh5.get_treatment_of_pos(w, p)[0]
-            
-            
-    def smooth_and_simplify_tracks(self, in_selector, out_name):   
-        print 'Track and hmm predict',
-        for w, p in self.tracks:
-            print w, p
-            cell5pos = self.mcellh5.get_position(w, p)
-            class_labels = self.tracks[(w,p)][in_selector]
-            class_label_str = map(lambda x : "".join(map(str, x)), class_labels)
-            class_label_str = map(lambda x: x.replace('3','2'), class_label_str)
-            class_label_str = map(lambda x: x.replace('4','2'), class_label_str)
-            class_label_str = map(lambda x: x.replace('5','3'), class_label_str)
-            
-            #class_label_str = map(lambda x: x.replace('6','1'), class_label_str)
-            #class_label_str = map(lambda x: x.replace('7','1'), class_label_str)
-            
-            
-            
-            self.tracks[(w,p)][out_name] = class_label_str 
-            #print class_label_str
+            print "Read events from ch5:", w, p, "with", list(self.mcellh5.get_treatment_of_pos(w, p))
+           
+           
+    def output(self, file):
+        file = self.str_sanatize(file)
+        return os.path.join(self.output_dir, file) 
+        
+    @staticmethod    
+    def str_sanatize(input_str):
+        input_str = input_str.replace("/","_")
+        input_str = input_str.replace("#","_")
+        input_str = input_str.replace(")","_")
+        input_str = input_str.replace("(","_")
+        
+        return input_str
+          
+#     def smooth_and_simplify_tracks(self, in_selector, out_name):   
+#         print 'Track and hmm predict',
+#         for w, p in self.tracks:
+#             print w, p
+#             cell5pos = self.mcellh5.get_position(w, p)
+#             class_labels = self.tracks[(w,p)][in_selector]
+#             class_label_str = map(lambda x : "".join(map(str, x)), class_labels)
+#             class_label_str = map(lambda x: x.replace('3','2'), class_label_str)
+#             class_label_str = map(lambda x: x.replace('4','2'), class_label_str)
+#             class_label_str = map(lambda x: x.replace('5','3'), class_label_str)
+#             
+#             #class_label_str = map(lambda x: x.replace('6','1'), class_label_str)
+#             #class_label_str = map(lambda x: x.replace('7','1'), class_label_str)
+#             
+#             
+#             
+#             self.tracks[(w,p)][out_name] = class_label_str 
+#             #print class_label_str
                 
-       
     def fate_tracking(self, out_name):
-        print 'Track',
+        print 'Tracking cells',
         for w, p in self.tracks:
-            print w, p
+            print w,
             cell5pos = self.mcellh5.get_position(w, p)
             
             class_labels_list = []
             id_list = []
-            #hmm_labels_list = []
             for k, e_idx in enumerate(self.tracks[(w,p)]['ids']):   
                 start_idx = e_idx[-1]
                 track = e_idx + cell5pos.track_first(start_idx)
                 class_labels = cell5pos.get_class_label(track)
-                #hmm_class_labels = numpy.array(self.hmm.predict(class_labels-1)) + 1
-                #print hmm_class_labels
                 class_labels_list.append(class_labels)
                 id_list.append(track)
-                #hmm_labels_list.append(hmm_class_labels)
 
-                
             self.tracks[(w,p)][out_name] = class_labels_list
             self.tracks[(w,p)]['track_ids'] = id_list
-            #self.tracks[(w,p)]['hmm_class_labels'] = hmm_labels_list,
-        print 'done'
+        print ' ...done'
         
-    def extract_topro(self):
-        topro = []
-        for w, p in self.tracks:
-            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
-            for t in self.tracks[(w,p)]['track_ids']:
-                topro.extend(feature_table[t, 6])  
-        pylab.figure()
-        pylab.hist(topro, 256)
-        pylab.figure()
-        pylab.hist(numpy.log2(numpy.array(topro)), 256, log=True)
-        pylab.show()
-        
-    def predict_topro(self, thres):
-        for w, p in self.tracks:
-            topro = []
-            topro_2 = []
-            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
-            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
-            for t_ids, t in zip(self.tracks[(w,p)]['track_ids'], self.tracks[(w,p)]['class_label_str']):
-                t_topro_pos = feature_table[t_ids, 6] > thres
-                t_ = numpy.array(list(t))
-                t_[t_topro_pos] = 3
-                topro.append(t_)
-                
-                t__ = numpy.zeros((len(t),), dtype=numpy.uint8)
-                t__[t_topro_pos] = 3
-                
-                topro_2.append(t__)
-            self.tracks[(w,p)]['topro_class_labels'] = topro
-            self.tracks[(w,p)]['topro_pos'] = topro_2
+#     def extract_topro(self):
+#         topro = []
+#         for w, p in self.tracks:
+#             feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
+#             for t in self.tracks[(w,p)]['track_ids']:
+#                 topro.extend(feature_table[t, 6])  
+#         pylab.figure()
+#         pylab.hist(topro, 256)
+#         pylab.figure()
+#         pylab.hist(numpy.log2(numpy.array(topro)), 256, log=True)
+#         pylab.show()
+#         
+#     def predict_topro(self, thres):
+#         for w, p in self.tracks:
+#             topro = []
+#             topro_2 = []
+#             feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
+#             feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
+#             for t_ids, t in zip(self.tracks[(w,p)]['track_ids'], self.tracks[(w,p)]['class_label_str']):
+#                 t_topro_pos = feature_table[t_ids, 6] > thres
+#                 t_ = numpy.array(list(t))
+#                 t_[t_topro_pos] = 3
+#                 topro.append(t_)
+#                 
+#                 t__ = numpy.zeros((len(t),), dtype=numpy.uint8)
+#                 t__[t_topro_pos] = 3
+#                 
+#                 topro_2.append(t__)
+#             self.tracks[(w,p)]['topro_class_labels'] = topro
+#             self.tracks[(w,p)]['topro_pos'] = topro_2
                
     def predict_hmm(self, class_selector, class_out_name):
         print 'Predict hmm',
         for w, p in self.tracks:
-            print w, p
+            print w, 
             cell5pos = self.mcellh5.get_position(w, p)
             
             hmm_labels_list = []
@@ -303,31 +223,25 @@ class CellFateAnalysis(object):
                     class_labels = numpy.array(map(int, t))
                 
                 hmm_class_labels = self.hmm.predict(numpy.array(class_labels-1)) + 1
-                if not 2 in  hmm_class_labels:
-                    print hmm_class_labels
                 hmm_labels_list.append(hmm_class_labels)
 
                 
             #self.tracks[(w,p)]['class_labels'] = class_labels_list
             self.tracks[(w,p)][class_out_name] = hmm_labels_list
+        print ' ... done'
                             
-    def event_curves(self, event_selector, 
+    def event_fate_curves(self, event_selector, 
                            title,
                            region_name,
                            feature_name,
                            with_fate,
                            cmap,
-                           time_lapse,
-                           event_onset_indicator,
                            xlim,
                            ylim,
                            ):
-        pp = PdfPages("%s.pdf" % title)
-        
+        pp = PdfPages(self.output("%s.pdf") % title)
         
         time_unit = 'min'
-        if time_lapse is None:
-            time_unit = 'frame'
         
         for w, p in sorted(self.tracks):
             cnt = 0
@@ -339,30 +253,141 @@ class CellFateAnalysis(object):
             feature_idx = self.mcellh5.get_object_feature_idx_by_name(region_name, feature_name)
 
             id_selector = 'ids'
+            fate_ = 'short'
             if with_fate:
                 id_selector = 'track_ids'
+                fate_ = 'long'
             
-            all_feature_values = [feature_table[t, feature_idx] for t in self.tracks[(w,p)][id_selector]]
-                
-            feature_min = numpy.min(map(numpy.min, all_feature_values))
-                
-            for line, feature_values in zip(self.tracks[(w,p)][event_selector], all_feature_values):
-                x_values = numpy.array(map(int,list(line)))
-                if numpy.max(feature_values) < 15:
-                    print 'excluding event due to low signal'
-                    continue
-                values = numpy.array(feature_values - feature_min) 
-                values = values / numpy.mean(values[(event_onset_indicator-1):(event_onset_indicator+2)])
-                #print values[(event_onset_indicator-1):(event_onset_indicator+1)]
-                self._plot_curve(x_values[:len(feature_values)], values, cmap, ax, event_onset_indicator, time_lapse)
+            feature_min = SECURIN_BACKGROUND 
+            
+            fate_classes = [('mito_int', 'b', 'Mitosis - live interphase',),
+                            ('mito_int_apo','g', 'Mitosis - death in interphase'),
+                            ('mito_apo', 'r', 'Mitosis - death in mitosis')]
+            
+            for fate_name, fate_color, fate_label in fate_classes:
+                for track_1, track_2, track_ids in self.tracks[(w,p)][fate_name]:
+                    track_str = "".join(map(lambda x: "%02d" % x, track_2))
+                    mito_re = re.search(r'01+(?P<mito>(02|03)+)', track_str)
+                    if mito_re is not None:
+                        end = mito_re.end('mito') / 2
+                    else:
+                        print 'oarg?'
+                        print track_str
+                        print ""
+                        continue
+                    
+                    feature_values = numpy.array([feature_table[t, feature_idx] for t in track_ids[:end]])
+                    values = feature_values - feature_min
+                    values = values / numpy.mean(values[(self.onset_frame-1):(self.onset_frame+2)])
+                    ax.plot(numpy.arange(-self.onset_frame, len(values)-self.onset_frame, 1)*self.time_lapse, values[:len(values)], color=fate_color, linewidth=1, label=fate_label)
   
-
-            ax.set_title('%s_%s -- %s'% (w, p, self.mcellh5.get_treatment_of_pos(w, p)[0]) )
-            ax.set_xlabel('Time [%s]' % time_unit)
+#             handles, labels = ax.get_legend_handles_labels()
+#             lg = pylab.legend(handles, labels, loc=3, ncol=1)
+#             lg.draw_frame(False)
+            pylab.vlines(0, ylim[0], ylim[1], 'k', '--', label='NEBD')
+            title = '%s - %s (%s)'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,])
+            ax.set_title(title)
+            ax.set_xlabel('Time (%s)' % time_unit)
             ax.set_ylabel('Fluorescence (AU)')
             ax.set_ylim(ylim)
             ax.set_xlim(xlim)
+            ax.spines["right"].set_visible(False)
+            ax.spines["top"].set_visible(False)
+            ax.get_xaxis().tick_bottom()
+            ax.get_yaxis().tick_left()
+            
             pylab.savefig(pp, format='pdf')
+            for fmt in OUTPUT_FORMATS:
+                pylab.savefig(self.output('securin_fate_all_%s_%s.%s' % (fate_, title, fmt)))
+            pylab.clf()    
+        pp.close()
+        
+    def event_mean_fate_curves(self, event_selector, 
+                           title,
+                           region_name,
+                           feature_name,
+                           with_fate,
+                           cmap,
+                           xlim,
+                           ylim,
+                           ):
+        pp = PdfPages(self.output("%s.pdf") % title)
+        
+        time_unit = 'min'
+        
+        for w, p in sorted(self.tracks):
+            cnt = 0
+            f = pylab.figure(figsize=(8, 8))
+            ax = pylab.gca()
+            
+            
+            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features(region_name)
+            feature_idx = self.mcellh5.get_object_feature_idx_by_name(region_name, feature_name)
+
+            id_selector = 'ids'
+            fate_ = 'short'
+            if with_fate:
+                id_selector = 'track_ids'
+                fate_ = 'long'
+            
+            feature_min = SECURIN_BACKGROUND 
+            
+            fate_classes = [('mito_int', 'b', 'Mitosis - live interphase',),
+                            ('mito_int_apo','g', 'Mitosis - death in interphase'),
+                            ('mito_apo', 'r', 'Mitosis - death in mitosis')]
+            
+            for fate_name, fate_color, fate_label in fate_classes:
+                feature_values = []
+                for track_1, track_2, track_ids in self.tracks[(w,p)][fate_name]:
+                    track_str = "".join(map(lambda x: "%02d" % x, track_2))
+                    mito_re = re.search(r'01+(?P<mito>(02|03)+)', track_str)
+                    if mito_re is not None:
+                        end = mito_re.end('mito') / 2
+                    else:
+                        print 'oarg?'
+                        print track_str
+                        print ""
+                        continue
+                    values = numpy.array([feature_table[t, feature_idx] for t in track_ids[:end]])
+                    values -= feature_min
+                    values /= numpy.mean(values[(self.onset_frame-1):(self.onset_frame+2)])
+                    feature_values.append(values)
+                y = []
+                yerr = []
+                for tmp in izip_longest(*feature_values):
+                    y.append(numpy.array([t for t in tmp if t is not None]).mean())
+                    yerr.append(numpy.array([t for t in tmp if t is not None]).std())
+                    
+                xa = numpy.arange(-self.onset_frame, len(y)-self.onset_frame, 1) * self.time_lapse
+                
+                step = 1
+                fate_ = 'short'
+                if with_fate:
+                    step = 4
+                    fate_ = 'long'
+                pylab.errorbar(xa[::step], y[::step], yerr=yerr[::step], fmt='o-', color=fate_color, markeredgecolor=fate_color, label=fate_label+" (%d)"%len(feature_values))
+  
+
+            handles, labels = ax.get_legend_handles_labels()
+            # remove the errorbars
+            handles = [h[0] for h in handles]
+            lg = pylab.legend(handles, labels, loc=3, ncol=1)
+            lg.draw_frame(False)
+            pylab.vlines(0, ylim[0], ylim[1], 'k', '--', label='NEBD')
+            title = '%s - %s (%s)'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,])
+            ax.set_title(title)
+            ax.set_xlabel('Time (%s)' % time_unit)
+            ax.set_ylabel('Fluorescence (AU)')
+            ax.set_ylim(ylim)
+            ax.set_xlim(xlim)
+            ax.spines["right"].set_visible(False)
+            ax.spines["top"].set_visible(False)
+            ax.get_xaxis().tick_bottom()
+            ax.get_yaxis().tick_left()
+            
+            pylab.savefig(pp, format='pdf')
+            for fmt in OUTPUT_FORMATS:
+                pylab.savefig(self.output('securin_fate_mean_%s_%s.%s' % (fate_, title, fmt)))
             pylab.clf()    
         pp.close()
         
@@ -372,17 +397,13 @@ class CellFateAnalysis(object):
                            feature_name,
                            with_fate,
                            cmap,
-                           time_lapse,
-                           event_onset_indicator,
                            xlim,
                            ylim,
                            ):
-        pp = PdfPages("%s.pdf" % title)
+        pp = PdfPages(self.output("%s.pdf") % title)
         
         
         time_unit = 'min'
-        if time_lapse is None:
-            time_unit = 'frame'
         
         for w, p in sorted(self.tracks):
             cnt = 0
@@ -399,52 +420,137 @@ class CellFateAnalysis(object):
             
             all_feature_values = [feature_table[t, feature_idx] for t in self.tracks[(w,p)][id_selector]]
                 
-            if len(all_feature_values)>0:
-                feature_min = numpy.min(map(numpy.min, all_feature_values))
-            else:
-                feature_min = 0
+            feature_min = SECURIN_BACKGROUND
                 
             lines = {}
             lines['Mitotic exit'] = []
-            lines['Apoptosis after mitosis'] = []
+            lines['Dying in mitosis'] = []
+            lines['Dying in interphase'] = []
+            
             for line, feature_values in zip(self.tracks[(w,p)][event_selector], all_feature_values):
                 x_values = numpy.array(map(int,list(line)))
-                if numpy.max(feature_values) < 15:
+                if numpy.max(feature_values) < 14:
                     print 'excluding event due to low signal'
                     continue
                 values = numpy.array(feature_values - feature_min) 
-                values = values / numpy.mean(values[(event_onset_indicator-1):(event_onset_indicator+2)])
+                values = values / numpy.mean(values[(self.onset_frame-1):(self.onset_frame+2)])
                 if 17 in x_values:
-                    lines['Apoptosis after mitosis'].append(values)
+                    apo_ind = list(x_values).index(17)
+                    if apo_ind > 0:
+                        if x_values[apo_ind-1] in (2,3,4,6,7,8,10,11,12,14,15,16):
+                            lines['Dying in mitosis'].append(values)
+                        elif x_values[apo_ind-1] in (1,5,9,13):
+                            lines['Dying in interphase'].append(values)
+                        else:
+                            print 'Should not happen...'
+                    else:
+                        print 'Apoptotic from start on... ignoring as unclassified'
                 else:
                     lines['Mitotic exit'].append(values)
 
             from itertools import izip_longest
             
-            for n, c in [('Mitotic exit', 'b'), ('Apoptosis after mitosis', 'r')]:
+            for n, c in [('Mitotic exit', 'b'), ('Dying in mitosis', 'r'), ('Dying in interphase', 'g')]:
                 y = []
                 yerr = []
                 for tmp in izip_longest(*lines[n]):
                     y.append(numpy.array([t for t in tmp if t is not None]).mean())
                     yerr.append(numpy.array([t for t in tmp if t is not None]).std())
                     
-                xa = numpy.arange(-4, len(y)-4, 1) * time_lapse
+                xa = numpy.arange(-self.onset_frame, len(y)-self.onset_frame, 1) * self.time_lapse
                 
                 step = 1
+                
+                fate_ = 'short'
                 if with_fate:
-                    step = 5
+                    step = 4
+                    fate_ = 'long'
                 pylab.errorbar(xa[::step], y[::step], yerr=yerr[::step], fmt='o-', color=c, markeredgecolor=c, label=n+" (%d)"%len(lines[n]))
 
             ax = pylab.gca()
-            pylab.legend(loc=1)
-            pylab.vlines(0, 0, 1.5, 'k', '--', label='NEBD')
-            ax.set_title('%s_%s -- %s %d'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,p])) 
-            ax.set_xlabel('Time [%s]' % time_unit)
+            # add lines
+            handles, labels = ax.get_legend_handles_labels()
+            # remove the errorbars
+            handles = [h[0] for h in handles]
+            lg = pylab.legend(handles, labels, loc=3, ncol=3)
+            lg.draw_frame(False)
+            pylab.vlines(0, ylim[0], ylim[1], 'k', '--', label='NEBD')
+            title = '%s - %s (%s)'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,])
+            ax.set_title(title) 
+            ax.set_xlabel('Time (%s)' % time_unit)
             ax.set_ylabel('Fluorescence (AU)')
             ax.set_ylim(ylim)
             ax.set_xlim(xlim)
-            f.savefig(pp, format='pdf')   
-            f.savefig('securin_%s_%s_%s_%d.png'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,p]))  
+            ax.spines["right"].set_visible(False)
+            ax.spines["top"].set_visible(False)
+            ax.get_xaxis().tick_bottom()
+            ax.get_yaxis().tick_left()
+            
+            f.savefig(pp, format='pdf')
+            for fmt in OUTPUT_FORMATS:   
+                f.savefig(self.output('securin_2_mean_%s_%s_.%s'% (fate_, title, fmt)))  
+        pp.close()
+        
+    def event_curves(self, event_selector, 
+                           title,
+                           region_name,
+                           feature_name,
+                           with_fate,
+                           cmap,
+                           xlim,
+                           ylim,
+                           ):
+        pp = PdfPages(self.output("%s.pdf") % title)
+        
+        
+        time_unit = 'min'
+        
+        for w, p in sorted(self.tracks):
+            cnt = 0
+            f = pylab.figure(figsize=(8, 8))
+            ax = pylab.gca()
+            
+            
+            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features(region_name)
+            feature_idx = self.mcellh5.get_object_feature_idx_by_name(region_name, feature_name)
+
+            id_selector = 'ids'
+            fate_ = 'short'
+            if with_fate:
+                id_selector = 'track_ids'
+                fate_ = 'long'
+            
+            all_feature_values = [feature_table[t, feature_idx] for t in self.tracks[(w,p)][id_selector]]
+                
+            feature_min = SECURIN_BACKGROUND #numpy.min(map(numpy.min, all_feature_values))
+                
+            #print "FEATURE_MIN", feature_min
+            for line, feature_values in zip(self.tracks[(w,p)][event_selector], all_feature_values):
+                x_values = numpy.array(map(int,list(line)))
+                if numpy.max(feature_values) < 15:
+                    print 'excluding event due to low signal'
+                    continue
+                values = numpy.array(feature_values - feature_min) 
+                values = values / numpy.mean(values[(self.onset_frame-1):(self.onset_frame+2)])
+                self._plot_curve(x_values[:len(feature_values)], values, cmap, ax)
+  
+
+            pylab.vlines(0, ylim[0], ylim[1], 'k', '--', label='NEBD')
+            title = '%s - %s (%s)'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,])
+            ax.set_title(title)
+            ax.set_xlabel('Time (%s)' % time_unit)
+            ax.set_ylabel('Fluorescence (AU)')
+            ax.set_ylim(ylim)
+            ax.set_xlim(xlim)
+            ax.spines["right"].set_visible(False)
+            ax.spines["top"].set_visible(False)
+            ax.get_xaxis().tick_bottom()
+            ax.get_yaxis().tick_left()
+            
+            pylab.savefig(pp, format='pdf')
+            for fmt in OUTPUT_FORMATS:
+                pylab.savefig(self.output('securin_2_all_%s_%s.%s' % (fate_, title, fmt)))
+            pylab.clf()    
         pp.close()
     
     def setup_hmm(self, k_classes, constraint_xml):
@@ -464,10 +570,9 @@ class CellFateAnalysis(object):
         self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
         self.hmm._set_emissionprob(est.emis) 
              
-    def plot_tracks(self, track_selection, cmaps, title='plot_tracks'):
+    def plot_tracks(self, track_selection, cmaps, names, title='plot_tracks'):
         n = len(track_selection)
-        
-        pp = PdfPages('%s.pdf' % title)
+        pp = PdfPages(self.output('%s.pdf') % title)
         
         old_w = 'ZZZ'
         j = 0
@@ -483,7 +588,7 @@ class CellFateAnalysis(object):
             cond = self.mcellh5.get_treatment_of_pos(w,p)
             for k, class_selector in enumerate(track_selection):
                 cmap = cmaps[k]
-                #print (m, n , k + j*n+1)
+                name = names[k]
                 ax = pylab.subplot(m, n , k + j*n + 1)
                 
                 tracks = self.tracks[w,p][class_selector]
@@ -497,19 +602,32 @@ class CellFateAnalysis(object):
                     n_tracks = len(tracks)
                     img = numpy.zeros((n_tracks, max_track_length), dtype=numpy.uint8)
                     
-                    for i, t in enumerate(sorted(tracks, cmp=lambda x,y: cmp(len(x), len(y)))):
+                    track_crop_frame = int(TRACK_IMG_CROP/self.time_lapse)+1
+                    
+                    def my_cmp(x,y):
+                        counter = lambda x, items: reduce(lambda a,b:a+b, [list(x).count(xx) for xx in items])
+                        tmp =  cmp(counter(x, [2,3,4]), counter(y, [2,3,4]))
+                        return tmp if tmp!=0 else cmp(len(x),len(y)) 
+                    
+                    for i, t in enumerate([tmp[0] for tmp in sorted(zip(tracks, self.tracks[w,p][track_selection[-1]]), cmp=my_cmp, key=lambda x:x[1])]):
                         if not isinstance(t, (list,)):
                             b = list(t)
                         img[i,:len(t)] = b
-                        
-
-                    ax.matshow(img, cmap=cmap, vmin=0, vmax=cmap.N-1)
+                      
                     
-                    title = '%s_%s -- %s %d %s' % tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,p, class_selector]) 
-                    
+                      
+                    ax.matshow(img[:,:track_crop_frame], cmap=cmap, vmin=0, vmax=cmap.N-1)
+                    title = '%s - %s (%s) %s' % tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w, name]) 
                     ax.set_title(title)
                     pylab.axis('off')
-                    
+                    extent = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+                    fig.savefig(self.output('tracks_short_%s.png' % title), bbox_inches=extent)  
+
+                    ax.matshow(img, cmap=cmap, vmin=0, vmax=cmap.N-1) 
+                    ax.set_title(title)
+                    pylab.axis('off')
+                    extent = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+                    fig.savefig(self.output('tracks_full_%s.png' % title), bbox_inches=extent)
                 else:
                     print w, p, 'Nothing to plot'
             j+=1
@@ -638,38 +756,33 @@ class CellFateAnalysis(object):
         #print map(int,line)
         for l_idx, l1 in enumerate(line):
             if l1 != old_l:
-                ax.plot([old_l_idx, l_idx], [line_height, line_height], color=cmap(int(old_l)), linewidth=3)
+                ax.plot([old_l_idx*self.time_lapse, l_idx*self.time_lapse], [line_height, line_height], color=cmap(int(old_l)), linewidth=3)
                 #print [old_l_idx, l_idx],
                 old_l = l1
                 old_l_idx = l_idx
         #print [old_l_idx, len(line)]
-        ax.plot([old_l_idx, len(line)], [line_height, line_height], color=cmap(int(l1)), linewidth=3)
+        ax.plot([old_l_idx*self.time_lapse, len(line)*self.time_lapse], [line_height, line_height], color=cmap(int(l1)), linewidth=3)
       
-    def _plot_curve(self, line, values, cmap, ax, event_onset_indicator=0, time_lapse=None):
-        if time_lapse is None:
-            time_lapse = 1
-            
-        print values
-
+    def _plot_curve(self, line, values, cmap, ax):
         old_l = line[0]
         old_l_idx = 0
         for l_idx, l1 in enumerate(line):
             if l1 != old_l:
-                x = (numpy.arange(old_l_idx, l_idx+1) - event_onset_indicator ) * time_lapse
+                x = (numpy.arange(old_l_idx, l_idx+1) - self.onset_frame ) * self.time_lapse
                 y = values[old_l_idx:(l_idx+1)]
-                print 'x', x[0], 'to', x[-1]
-                print 'y', y[0], 'to', y[-1]
+                #print 'x', x[0], 'to', x[-1]
+                #print 'y', y[0], 'to', y[-1]
                 ax.plot(x, y, color=self.cmap(int(old_l)), linewidth=1)
                 old_l = l1
                 old_l_idx = l_idx
                 
-        x = (numpy.arange(old_l_idx, len(line)) - event_onset_indicator) * time_lapse
+        x = (numpy.arange(old_l_idx, len(line)) - self.onset_frame) * self.time_lapse
         y = values[old_l_idx:(len(line))]
         ax.plot(x, y, color=self.cmap(int(l1)), linewidth=1)
         
                    
     def plot_proliferaton_timing_histogram(self):
-        pp = PdfPages('proliferation_ctrl.pdf')
+        pp = PdfPages(self.output('_proliferation_ctrl.pdf'))
         for w, p in self.tracks:
             bins = numpy.zeros((21,), dtype=numpy.int32)
             cnt = 0
@@ -681,10 +794,10 @@ class CellFateAnalysis(object):
                 bins[onset_time/20]+=1
                 
             pylab.bar(range(0,420,20), bins, 16, color='w')
-            treatment = self.mcellh5.get_treatment_of_pos(w, p)[0]
-            ax.set_title('%s_%s - %s'% (w, p, treatment ))
-            ax.set_xlabel('Time [frames]')
-            ax.set_ylabel('Mitotic Onset [count]')
+            treatment = list(self.mcellh5.get_treatment_of_pos(w, p))
+            ax.set_title('%s - %s (%s) '% tuple(treatment + [w,] ))
+            ax.set_xlabel('Time (frames)')
+            ax.set_ylabel('Mitotic Onset (count)')
             ax.set_xlim(0,420)
             ax.set_ylim(0,50)
             treatment = treatment.replace('/','_')
@@ -696,89 +809,127 @@ class CellFateAnalysis(object):
         def _plot_separator(cnt, label, col='k'):
             cnt+=2
             ax.axhline(cnt, color=col, linewidth=1)
-            ax.text(420, cnt-0.5, label)
+            ax.text(460*self.time_lapse, cnt-0.5, label)
             cnt+=2
             return cnt
         
         def _cmp_len_of_first_inter(x,y):
-            x_ = "".join(map(lambda x: "%02d" % x, x))
-            y_ = "".join(map(lambda x: "%02d" % x, y))
+            x_ = "".join(map(lambda x: "%02d" % x, x[0]))
+            y_ = "".join(map(lambda x: "%02d" % x, y[0]))
             try:
                 x_len = re.search(r"(02|03|04)+", x_).end()
                 y_len = re.search(r"(02|03|04)+", y_).end()
                 return cmp(y_len, x_len)
             except:
-                return cmp(len(y), len(x))
-
+                return cmp(len(y[0]), len(x[0]))
+     
+        pp = PdfPages(self.output("%s.pdf") % title)
         
-        pp = PdfPages("%s.pdf" % title)
+        exp_header = []
+        exp_content = OrderedDict()
+        
+        exp_content['mito_int'] = []
+        exp_content['mito_int_mito_int_mito'] = []
+        exp_content['mito_int_mito_int_apo'] = []
+        exp_content['mito_int_apo'] = []
+        exp_content['mito_int_mito_apo'] = []
+        exp_content['mito_apo'] = []
+        exp_content['mito_unclassified'] = []
+
+        exp_total = []
         
         for w, p in sorted(self.tracks):
             cnt = 0
             f = pylab.figure(figsize=(8,12))
             ax = pylab.gca()
             
+            exp_header.append(w)
+            
+            for c in exp_content.keys():
+                exp_content[c].append(len(self.tracks[(w,p)][c]))
+            
             total_count = 0
             
             for line in sorted( self.tracks[(w,p)]['mito_int'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(line, cnt, self.cmap, ax)
+                self._plot_line(line[0], cnt, self.cmap, ax)
                 cnt+=1
             total_count += len(self.tracks[(w,p)]['mito_int'])
             cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int'])))
             
             for line in sorted( self.tracks[(w,p)]['mito_int_mito_int_mito'], cmp=_cmp_len_of_first_inter): 
-                self._plot_line(line, cnt, self.cmap, ax)
+                self._plot_line(line[0], cnt, self.cmap, ax)
                 cnt+=1
             total_count += len(self.tracks[(w,p)]['mito_int_mito_int_mito'])
                 
             cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int_mito_int_mito'])))
             
             for line in sorted(self.tracks[(w,p)]['mito_int_mito_int_apo'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(line, cnt, self.cmap, ax)
+                self._plot_line(line[0], cnt, self.cmap, ax)
                 cnt+=1
             total_count += len(self.tracks[(w,p)]['mito_int_mito_int_apo'])
                 
             cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int_mito_int_apo'])))
             
             for line in sorted(self.tracks[(w,p)]['mito_int_apo'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(line, cnt, self.cmap, ax)
+                self._plot_line(line[0], cnt, self.cmap, ax)
                 cnt+=1
             total_count += len(self.tracks[(w,p)]['mito_int_apo'])
                 
             cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int_apo'])))
                 
             for line in sorted(self.tracks[(w,p)]['mito_int_mito_apo'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(line, cnt, self.cmap, ax)
+                self._plot_line(line[0], cnt, self.cmap, ax)
                 cnt+=1
             total_count += len(self.tracks[(w,p)]['mito_int_mito_apo'])
      
             cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int_mito_apo'])))
             
             for line in sorted(self.tracks[(w,p)]['mito_apo'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(line, cnt, self.cmap, ax)
+                self._plot_line(line[0], cnt, self.cmap, ax)
                 cnt+=1
             total_count += len(self.tracks[(w,p)]['mito_apo'])
      
             cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_apo'])))
             
             for line in sorted(self.tracks[(w,p)]['mito_unclassified'], cmp=_cmp_len_of_first_inter):
-                self._plot_line(line, cnt, self.cmap, ax)
+                self._plot_line(line[0], cnt, self.cmap, ax)
                 cnt+=1
+                
+            exp_total.append(total_count)
+            
             total_count += len(self.tracks[(w,p)]['mito_unclassified'])
                 
-            cnt = _plot_separator(cnt, str(total_count))
+            #cnt = _plot_separator(cnt, str(total_count))
+            
+            #cnt +=4
+            #ax.text(460*self.time_lapse, cnt-0.5, str(total_count))
             
             
+            ax.set_ylim(0, cnt)
                 
             ax.invert_yaxis()
-            ax.set_xlim(0, 450)
-            ax.set_title('%s_%s -- %s %d' % tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,p])) 
-            ax.set_xlabel('Time [frame]')
+            ax.set_xlim(0, 450*self.time_lapse)
+            title = '%s - %s (%s)' % tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,])
+            ax.set_title(title) 
+            ax.set_xlabel('Time (min)')
             ax.set_yticklabels([])
+            ax.get_xaxis().tick_bottom()
+            ax.get_yaxis().set_ticks([])
+            
+            pylab.tight_layout()
             pylab.savefig(pp, format='pdf')
-            pylab.savefig('fate_%s_%s_%s_%d.png'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,p])) 
+            for fmt in OUTPUT_FORMATS:
+                pylab.savefig(self.output('fate_%s.%s' % (title, fmt))) 
             pylab.clf()
         pp.close()
+        
+        import csv
+        with open(self.output('__dyinging_in_mito_or_apo.txt'), 'wb') as f:
+            writer = csv.writer(f, delimiter='\t')
+            writer.writerow(exp_header)
+            for v in exp_content.values():
+                writer.writerow(v)
+            writer.writerow(exp_total)
             
     def read_manual_annotations(self, filename, plate_id):
         def decode(code_string):
@@ -853,7 +1004,7 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
                 list.__init__(self)
                 
             def append(self, x):
-                print x, "added to", self.name
+                #print x, "added to", self.name
                 list.append(self, x)
         
         for w, p in self.tracks:
@@ -866,7 +1017,7 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
             self.tracks[(w,p)]['mito_int_mito_apo'] = named_list('mito_int_mito_apo')
             self.tracks[(w,p)]['mito_unclassified'] = named_list('mito_unclassified')
 
-            for t_idx, track in enumerate(self.tracks[w,p][class_selector]):
+            for t_idx, (track, track_ids) in enumerate(zip(self.tracks[w,p][class_selector], self.tracks[w,p]['track_ids'])):
                 track_str = "".join(map(lambda x: "%02d" % x,track))
             
                 #print self.tracks[w,p][class_selector][t_idx]
@@ -875,43 +1026,43 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
                 
                 mito_int = self._has_mito_int(track_str)
                 if mito_int:
-                    self.tracks[(w,p)]['mito_int'].append(mito_int)
+                    self.tracks[(w,p)]['mito_int'].append((mito_int, track, track_ids))
                     continue   
                 
                 mito_apo = self._has_mito_apo(track_str)
                 if mito_apo:
-                    self.tracks[(w,p)]['mito_apo'].append(mito_apo)
+                    self.tracks[(w,p)]['mito_apo'].append((mito_apo, track, track_ids))
                     continue 
                 
                 mito_int_mito_apo = self._has_mito_int_mito_apo(track_str)
                 if mito_int_mito_apo:
-                    self.tracks[(w,p)]['mito_int_mito_apo'].append(mito_int_mito_apo)
+                    self.tracks[(w,p)]['mito_int_mito_apo'].append((mito_int_mito_apo, track, track_ids))
                     continue 
                 
                 mito_int_mito_int_apo = self._has_mito_int_mito_int_apo(track_str)
                 if mito_int_mito_int_apo:
-                    self.tracks[(w,p)]['mito_int_mito_int_apo'].append(mito_int_mito_int_apo)
+                    self.tracks[(w,p)]['mito_int_mito_int_apo'].append((mito_int_mito_int_apo, track, track_ids))
                     continue 
                 
                 mito_int_mito_int_mito = self._has_mito_int_mito_int_mito(track_str)
                 if mito_int_mito_int_mito:
-                    self.tracks[(w,p)]['mito_int_mito_int_mito'].append(mito_int_mito_int_mito)
+                    self.tracks[(w,p)]['mito_int_mito_int_mito'].append((mito_int_mito_int_mito, track, track_ids))
                     continue 
                 
                 mito_int_apo = self._has_mito_int_apo(track_str)
                 if mito_int_apo:
-                    self.tracks[(w,p)]['mito_int_apo'].append(mito_int_apo)
+                    self.tracks[(w,p)]['mito_int_apo'].append((mito_int_apo, track, track_ids))
                     continue 
                 
                           
                 
                 track_ints = map(int, list(split_str_into_len(track_str, 2)))
-                self.tracks[(w,p)]['mito_unclassified'].append(track_ints)
+                self.tracks[(w,p)]['mito_unclassified'].append((track_ints, track, track_ids))
              
     def _has_mito_apo(self, track_str):
         MIN_MITOSIS_LEN = 1
         MIN_APO_AFTER_MITOSIS = 1
-        MITOSIS_PATTERN = r'^(01)+(02|03|04){%d,}(17){%d}' % (MIN_MITOSIS_LEN, MIN_APO_AFTER_MITOSIS)
+        MITOSIS_PATTERN = r'^(01)+(02|03|04){%d,}(17)' % (MIN_MITOSIS_LEN)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         if second_mitosis_re is not None:
             end = second_mitosis_re.end() / 2
@@ -924,7 +1075,7 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
         MIN_INTER_LEN = 1
         MIN_APO_AFTER_MITOSIS = 1
         MIN_MITO_LEN = 3 
-        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04){%d,})(05){%d,}(17){%d,}' % (MIN_MITO_LEN, MIN_INTER_LEN, MIN_APO_AFTER_MITOSIS)
+        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04){%d,})(05){%d,}(17)' % (MIN_MITO_LEN, MIN_INTER_LEN)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         if second_mitosis_re is not None:
             end = second_mitosis_re.end() / 2
@@ -962,12 +1113,15 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
         MIN_INTER_LEN=1
         MIN_MITOSIS_LEN = 1
         MIN_PHASE_AFTER_MITOSIS = 1
-        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04)+(05){%d,}(06|07|08){%d,}(09){%d,})((10|11|12)+(13)+)*(17)+' % (MIN_INTER_LEN, MIN_MITOSIS_LEN, MIN_PHASE_AFTER_MITOSIS)
+        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04)+(05){%d,}(06|07|08){%d,})(09){%d,}((?P<blue_2>(10|11|12)+)(13)+)*(17)' % (MIN_INTER_LEN, MIN_MITOSIS_LEN, MIN_PHASE_AFTER_MITOSIS)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         
         if second_mitosis_re is not None:
             end = second_mitosis_re.end() / 2
             end_blue = second_mitosis_re.end('blue') / 2
+            end_blue_2 = second_mitosis_re.end('blue_2') / 2
+            if end_blue_2 > end_blue:
+                end_blue = end_blue_2
             track_ints = map(int, list(split_str_into_len(track_str, 2)))
             return [track_ints[i] if i < end_blue else 18 for i in xrange(len(track_ints))][:end]
             # blue, as is, green
@@ -977,16 +1131,84 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
         MIN_INTER_LEN=1
         MIN_MITOSIS_LEN = 1
         MIN_PHASE_AFTER_MITOSIS = 1
-        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04)+(05){%d,}(06|07|08){%d,})((09)+(10|11|12)+((13)+(14|15|16)+)*)*(17)+' % (MIN_INTER_LEN, MIN_MITOSIS_LEN)
+        MITOSIS_PATTERN = r'^(01)+(?P<blue>(02|03|04)+(05){%d,}(06|07|08){%d,})((09)+(10|11|12)+((13)+(14|15|16)+)*)*(17)' % (MIN_INTER_LEN, MIN_MITOSIS_LEN)
         second_mitosis_re = re.search(MITOSIS_PATTERN, track_str)
         
         if second_mitosis_re is not None:
             end = second_mitosis_re.end() / 2
             end_blue = second_mitosis_re.end('blue') / 2
             track_ints = map(int, list(split_str_into_len(track_str, 2)))
-            return [track_ints[i] if i < end_blue else 17 for i in xrange(len(track_ints))][:end]
+            return [track_ints[i] for i in xrange(len(track_ints))][:end]
             # blue, as is, red  
         return None
+    
+    def plot_mitotic_timing(self, track_selector):
+        from plot_ext import spreadplot
+        import re
+        from collections import OrderedDict
+        pp = PdfPages(self.output('_mitotic_timing.pdf'))
+        f = pylab.figure(figsize=(20,8))
+        mito_timing = OrderedDict()
+        mito_class = OrderedDict()
+        
+        xticklabels=[]
+        
+        for w, p in sorted(self.tracks.keys()):
+            
+            exp_content = OrderedDict()
+        
+            mito_classes = ['mito_int',
+                            'mito_int_mito_int_mito',
+                            'mito_int_mito_int_apo',
+                            'mito_int_apo',
+                            'mito_int_mito_apo',
+                            'mito_apo',
+                            'mito_unclassified']
+
+            mito_timing[(w,p)] = []
+            mito_class[(w,p)] = []
+            if (w,p) not in self.tracks:
+                continue
+            
+            for m_idx, m_class in enumerate(mito_classes):
+                for t_ in self.tracks[(w,p)][m_class]:
+                    t = t_[1]
+                    track_str = "".join(map(lambda x: "%02d" % x, t))
+                    mito_re = re.search(r'01+(?P<mito>(02|03)+)', track_str)
+                    if mito_re is not None:
+                        span = mito_re.span('mito')
+                        mito_timing[(w,p)].append((span[1]/2 - span[0]/2) * self.time_lapse )
+                        mito_class[(w,p)].append(m_idx)
+                    else:
+                        pass
+                
+            treatment = self.mcellh5.get_treatment_of_pos(w, p)[1]
+            xticklabels.append("%s_%02d" % (w,p))
+        
+        from itertools import izip_longest
+        import csv
+
+        with open(self.output('__mito_timing.txt'), 'wb') as f:
+            writer = csv.writer(f, delimiter='\t')
+            writer.writerow(xticklabels)
+            writer.writerows(izip_longest(*mito_timing.values(), fillvalue=""))
+               
+        with open(self.output('__mito_classes.txt'), 'wb') as f:
+            writer = csv.writer(f, delimiter='\t')
+            writer.writerow(xticklabels)
+            writer.writerows(izip_longest(*mito_class.values(), fillvalue="")) 
+        
+        colors = ['g', 'g',] + ['r']*5 + ['b']*5 + ["#ffa500"]*3 + ['r']*5 + ['b']*5 + ["#ffa500"]*3 + ['k']*50
+#         ax = p(mito_timing.values(), xticklabels=xticklabels, colors=colors, spread_type='g', spread=0.1)
+        ax = pylab.boxplot(mito_timing.values())
+        ax = pylab.gca()
+        ax.set_xticklabels(xticklabels, rotation=90)
+        ax.set_title('Mitotic Timing')
+        ax.set_ylabel('Mitotic timing (min)')
+        pylab.tight_layout()
+        pylab.savefig(pp, format='pdf')
+        
+        pp.close()
     
     
     
@@ -1018,7 +1240,7 @@ class CellFateMitoticTiming(CellFateAnalysis):
         from plot_ext import spreadplot
         import re
         from collections import OrderedDict
-        pp = PdfPages('mitotic_timing.pdf')
+        pp = PdfPages(self.output('mitotic_timing.pdf'))
         f = pylab.figure(figsize=(20,8))
         mito_timing = OrderedDict()
         
@@ -1053,7 +1275,7 @@ class CellFateMitoticTiming(CellFateAnalysis):
         ax = pylab.gca()
         ax.set_xticklabels(xticklabels, rotation=90)
         ax.set_title('Mitotic Timing')
-        ax.set_ylabel('Mitotic timing [min]')
+        ax.set_ylabel('Mitotic timing (min)')
         pylab.tight_layout()
         pylab.savefig(pp, format='pdf')
         
@@ -1099,67 +1321,112 @@ EXP_LOOKUP = {
                      'ch5_file': "M:/experiments/Experiments_002200/002200/_meta/Cecog/Aalysis_with_split/hdf5/_all_positions.ch5",
                      'mapping_file': "M:/experiments/Experiments_002200/002200/_meta/Cecog/Mapping/002200_2.txt",
                      'time_lapse': 6.7, 
-                     'events_before_frame':155, 
-                     'onset_frame':4, 
-                     'hmm_constraint_file':'graph_5_multi_states_left2right_17.xml',
+                     'events_before_frame': 155, # in frames
+                     'onset_frame': 4, # in frames
+                     'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
                      'hmm_n_classes': 17,
                      'hmm_n_obs': 5,
+                     #'output_dir' : 'M:/experiments/Experiments_002200/002200/_meta/fate',
                      }
               }
             
 def fate_mutli(plate_id):
-    pm = CellFateAnalysisMultiHMM(rows=("D",), cols=(2,3,11), **EXP_LOOKUP[plate_id])
+    pm = CellFateAnalysisMultiHMM(plate_id, 
+                                  #rows=("D",), 
+                                  #cols=(3,4,11), 
+                                  **EXP_LOOKUP[plate_id])
     
     pm.fate_tracking(out_name='Raw class labels')
     pm.setup_hmm()
     pm.predict_hmm('Raw class labels', 'Multi State HMM')   
     
-    pm.plot_tracks(['Raw class labels', 'Multi State HMM'], [pm.cmap, cmap17], 'hmm_multi_fate')
-    
+    pm.plot_tracks(['Raw class labels', 'Multi State HMM', 'Multi State HMM',], 
+                   [pm.cmap, CMAP17, CMAP17_MULTI],
+                   ['Raw class labels', 'HMM Multi simple', 'HMM Multi full'],
+                    '_trajectories_all')
+     
     pm.classify_tracks('Multi State HMM')
-    pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
-                                                   ['#FFFFFF', 
-                                                    '#AAAAAA', 
-                                                    '#0000FF',
-                                                    '#0000FF',
-                                                    '#0000FF',
-                                                    '#AAAAAA', 
-                                                    '#0000FF',
-                                                    '#0000FF',
-                                                    '#0000FF',
-                                                    '#AAAAAA', 
-                                                    '#0000FF',
-                                                    '#0000FF',
-                                                    '#0000FF',
-                                                    '#AAAAAA', 
-                                                    '#0000FF',
-                                                    '#0000FF',
-                                                    '#0000FF',
-                                                    '#FF0000',
-                                                    '#00FF00']), 'classification_cmap')
+    pm.plot_mitotic_timing('Multi State HMM')
+    pm.cmap = CMAP17
+    pm.plot('__fate_all', 2)
+     
+#     pm.event_curves('Multi State HMM',
+#                     '_securin_degradation_short',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     False,
+#                     pm.cmap,
+#                     (-20,120),
+#                     (0,1.5),
+#                            )
+#       
+#     pm.event_curves('Multi State HMM',
+#                     '_securin_degradation_long',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     True,
+#                     pm.cmap,
+#                     (-20, 1200),
+#                     (0,1.5),
+#                            )
+#      
+#     pm.event_mean_curves('Multi State HMM',
+#                             '_securin_degradation_short_mean',
+#                             'tertiary__expanded',
+#                             'n2_avg',
+#                             False,
+#                             pm.cmap,
+#                             (-20,120),
+#                             (0,1.5),
+#                                    )
+#      
+#     pm.event_mean_curves('Multi State HMM', 
+#                     '_securin_degradation_long_mean',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     True,
+#                     pm.cmap,
+#                     (-20,1200),
+#                     (0,1.5),
+#                            )
     
-    pm.plot('Cell Fate Classification Multi HMM', 2)
-    pm.event_mean_curves('Multi State HMM',
-                            'securin_degradation_short_mean',
-                            'tertiary__expanded',
-                            'n2_avg',
-                            False,
-                            pm.cmap,
-                            6.5,
-                            4,
-                            (-20,120),
-                            (0,1.5),
-                                   )
-    
-    pm.event_mean_curves('Multi State HMM', 
-                    'securin_degradation_with_fate_mean_long',
+    pm.event_mean_fate_curves('Multi State HMM', 
+                    '_securin_degradation_per_fate_mean_long',
                     'tertiary__expanded',
                     'n2_avg',
                     True,
                     pm.cmap,
-                    6.5,
-                    4,
-                    (-20,2000),
+                    (-20,1200),
+                    (0,1.5),
+                           )
+    
+    pm.event_mean_fate_curves('Multi State HMM', 
+                    '_securin_degradation_per_fate_mean_short',
+                    'tertiary__expanded',
+                    'n2_avg',
+                    False,
+                    pm.cmap,
+                    (-20,120),
+                    (0,1.5),
+                           )
+    
+    pm.event_fate_curves('Multi State HMM', 
+                    '_securin_degradation_per_fate_all_long',
+                    'tertiary__expanded',
+                    'n2_avg',
+                    True,
+                    pm.cmap,
+                    (-20,1200),
+                    (0,1.5),
+                           )
+    
+    pm.event_fate_curves('Multi State HMM', 
+                    '_securin_degradation_per_fate_all_short',
+                    'tertiary__expanded',
+                    'n2_avg',
+                    False,
+                    pm.cmap,
+                    (-20,120),
                     (0,1.5),
                            )
     
@@ -1209,7 +1476,7 @@ def fate_mutli(plate_id):
 #                     pm.cmap,
 #                     6.66,
 #                     3,
-#                     (-20,2000),
+#                     (-20,1200),
 #                     (0,2),
 #                            )
 #     pm.event_mean_curves('Mapped State HMM 3', 
@@ -1232,5 +1499,5 @@ if __name__ == "__main__":
     #fate()
     fate_mutli('002200')
     #fate_mitotic_time()
-    print 'done'
+    print 'FINISH'
 
