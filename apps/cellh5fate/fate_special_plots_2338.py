@@ -271,24 +271,29 @@ def boehringer_mitotic_timing():
      
     for plot_ in [plot_spreads, plot_bars, plot_stacked_bars]:   
         cons_nm = ["%s" % c for c in ['0',] + map(str, [0.78, 1.56, 3.13, 6.25, 12.5, 25, 50, 100, 200, 400])]
+        neg_ctrl = ["B12",]
         
-        BI2_no  =   ["A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09","A10","A11",]
-        BI2_smac  = ["H02", "H03", "H04", "H05", "H06", "H07", "H08", "H09","H10","H11",]
+        ### BI2xxx
+        BI2_no   = neg_ctrl + ["A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11",]
+        BI2_smac = neg_ctrl +  ["H02", "H03", "H04", "H05", "H06", "H07", "H08", "H09", "H10", "H11",]
         plot_('no BI87832 - BI2536 ', BI2_no, cons_nm, 'nM')
         plot_('400nM BI87832 - BI2536', BI2_smac, cons_nm, 'nM')
         
-        BI6_no  =   ["D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09","D10","D11",]
-        BI6_smac  = ["G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09","G10","G11",]
+        ### BI6xxx
+        BI6_no   = neg_ctrl + ["D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09", "D10", "D11",]
+        BI6_smac = neg_ctrl + ["G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11",]
         plot_('no - BI2536 ', BI6_no, cons_nm, 'nM')
         plot_('400nM BI87832 - BI2536', BI6_smac, cons_nm, 'nM')
         
-        NO_no  =   ["B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09","B10","B11",]
-        NO_smac  = ["E02", "E03", "E04", "E05", "E06", "E07", "E08", "E09","E10","E11",]
+        ### Noco
+        NO_no   = neg_ctrl + ["B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11",]
+        NO_smac = neg_ctrl + ["E02", "E03", "E04", "E05", "E06", "E07", "E08", "E09", "E10", "E11",]
         plot_('no BI87832 - Nocodazole', NO_no, cons_nm, 'ng/ml')
         plot_('400nM BI87832 - Nocodazole', NO_smac, cons_nm, 'ng/ml')
         
-        TA_no  =   ["C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09","C10","C11",]
-        TA_smac  = ["F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09","F10","F11",]
+        ### Taxol
+        TA_no   = neg_ctrl + ["C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09", "C10", "C11",]
+        TA_smac = neg_ctrl + ["F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11",]
         plot_('no BI87832 - Taxol', TA_no, cons_nm, 'nM')
         plot_('400nM BI87832 - Taxol ', TA_smac, cons_nm, 'nM')
     
