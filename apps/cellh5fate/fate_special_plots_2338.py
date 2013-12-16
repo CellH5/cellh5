@@ -221,15 +221,15 @@ def boehringer_mitotic_timing():
     """ plots concentration versus mitotic timing for Taxol, Noco and BI
         color code == fate of beeing either Gascoigne class 1,3,5 (only first mitosis)
     """
-    mt_fle = "__mito_timing.txt"
-    mc_fle = "__mito_classes.txt"
+    mt_fle = "__mito_timing_2338.txt"
+    mc_fle = "__mito_classes_2338.txt"
      
     def plot_spreads(title, wells, conc, conc_label):
         fig = pylab.figure(figsize=(9,6))
         ax = pylab.gca()
-        bi_1 = ColoredConcentrationTimingSpread("BI2536 no siRNA", wells , conc, '__mito_timing.txt', "g")
+        bi_1 = ColoredConcentrationTimingSpread("BI2536 no siRNA", wells , conc, mt_fle, "g")
         bi_1.set_concentration_unit(conc_label)
-        bi_1.read_fate_class("__mito_classes.txt")
+        bi_1.read_fate_class(mc_fle)
         
         bi_1.plot_spread(ax, marker='o')
         ax.set_ylim(0,2000)
@@ -242,9 +242,9 @@ def boehringer_mitotic_timing():
     def plot_bars(title, wells, conc, conc_label):
         fig = pylab.figure(figsize=(9,6))
         ax = pylab.gca()
-        bi_1 = ColoredConcentrationTimingBar("BI2536 no siRNA", wells , conc, '__mito_timing.txt', "g")
+        bi_1 = ColoredConcentrationTimingBar("BI2536 no siRNA", wells , conc, mt_fle, "g")
         bi_1.set_concentration_unit(conc_label)
-        bi_1.read_fate_class("__mito_classes.txt")
+        bi_1.read_fate_class(mc_fle)
         
         bi_1.plot_bar(ax, marker='o')
         ax.set_ylim(0,2000)
@@ -257,9 +257,9 @@ def boehringer_mitotic_timing():
     def plot_stacked_bars(title, wells, conc, conc_label):
         fig = pylab.figure(figsize=(9,6))
         ax = pylab.gca()
-        bi_1 = ConcentrationStackedBar("BI2536 no siRNA", wells , conc, '__mito_timing.txt', "g")
+        bi_1 = ConcentrationStackedBar("BI2536 no siRNA", wells , conc, mt_fle, "g")
         bi_1.set_concentration_unit(conc_label)
-        bi_1.read_fate_class("__mito_classes.txt")
+        bi_1.read_fate_class(mc_fle)
         
         bi_1.plot_stacked_fate_bar(ax, marker='o')
         ax.set_ylim(0,1.1)
@@ -271,7 +271,7 @@ def boehringer_mitotic_timing():
      
     for plot_ in [plot_spreads, plot_bars, plot_stacked_bars]:   
         cons_nm = ["%s" % c for c in ['0',] + map(str, [0.78, 1.56, 3.13, 6.25, 12.5, 25, 50, 100, 200, 400])]
-        neg_ctrl = ["B12",]
+        neg_ctrl = ["C12",]
         
         ### BI2xxx
         BI2_no   = neg_ctrl + ["A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11",]
@@ -282,7 +282,7 @@ def boehringer_mitotic_timing():
         ### BI6xxx
         BI6_no   = neg_ctrl + ["D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09", "D10", "D11",]
         BI6_smac = neg_ctrl + ["G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11",]
-        plot_('no - BI2536 ', BI6_no, cons_nm, 'nM')
+        plot_('no BI2536 ', BI6_no, cons_nm, 'nM')
         plot_('400nM BI87832 - BI2536', BI6_smac, cons_nm, 'nM')
         
         ### Noco
@@ -301,3 +301,4 @@ def boehringer_mitotic_timing():
 
 if __name__ == "__main__":
     boehringer_mitotic_timing()
+    print 'Finished boehringer_mitotic_timing'

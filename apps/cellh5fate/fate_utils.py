@@ -184,13 +184,13 @@ class ConcentrationLine(object):
         return numpy.std(values)
         
     def read_values(self):
-        v = numpy.recfromcsv(self.source_file, delimiter='\t', filling_values=numpy.nan, case_sensitive=True)
+        v = numpy.recfromcsv(self.source_file, delimiter='\t', filling_values=-1, case_sensitive=True)
         for p in self.wells:
             try:
                 tmp = v[p+"_01"]
             except:
                 tmp =  v[p] 
-            tmp = tmp[numpy.logical_not(numpy.isnan(tmp))]
+            tmp = tmp[numpy.logical_not(tmp < 0)]
             self.mean_values[p] = self.mean_functor(tmp)
             self.std_values[p] = self.std_functor(tmp)
             self.raw_values[p] = tmp
@@ -276,13 +276,13 @@ class ColoredConcentrationTimingSpread(ConcentrationLine):
         lg = ax.legend(rects, ('Mitosis - live interphase', 'Mitosis - death in interphase', 'Mitosis - death in mitosis'), 
                        loc=self.legend_loc, 
                        ncol=self.legend_ncol,
-                       bbox_to_anchor=(-0.1, -0.2)
+                       bbox_to_anchor=(-0.1, -0.3)
                        )
         lg.draw_frame(False)
         ax.set_xlim(-0.5,ind+.5)
                 
         ax.set_xticks(numpy.arange(len(values)))
-        ax.set_xticklabels(self.labels,)
+        ax.set_xticklabels(self.labels, rotation=90)
         ax.spines["right"].set_visible(False)
         ax.spines["top"].set_visible(False)
         ax.get_xaxis().tick_bottom()
@@ -339,12 +339,12 @@ class ColoredConcentrationTimingBar(ColoredConcentrationTimingSpread):
         lg = ax.legend(rects, ('Mitosis - live interphase', 'Mitosis - death in interphase', 'Mitosis - death in mitosis'), 
                        loc=self.legend_loc, 
                        ncol=self.legend_ncol,
-                       bbox_to_anchor=(-0.1, -0.2)
+                       bbox_to_anchor=(-0.1, -0.3)
                        )
         lg.draw_frame(False)
                 
         ax.set_xticks(numpy.arange(len(values))+3*width/2.0)
-        ax.set_xticklabels(self.labels,)
+        ax.set_xticklabels(self.labels, rotation=90)
         ax.spines["right"].set_visible(False)
         ax.spines["top"].set_visible(False)
         ax.get_xaxis().tick_bottom()
@@ -402,12 +402,12 @@ class ConcentrationStackedBar(ColoredConcentrationTimingSpread):
         lg = ax.legend(rects, ('Mitosis - live interphase', 'Mitosis - death in interphase', 'Mitosis - death in mitosis'), 
                        loc=self.legend_loc, 
                        ncol=self.legend_ncol,
-                       bbox_to_anchor=(-0.1, -0.2)
+                       bbox_to_anchor=(-0.1, -0.3)
                        )
         lg.draw_frame(False)
                 
         ax.set_xticks(numpy.arange(len(fates))+width/2.0)
-        ax.set_xticklabels(self.labels,)
+        ax.set_xticklabels(self.labels, rotation=90)
         ax.spines["right"].set_visible(False)
         ax.spines["top"].set_visible(False)
         ax.get_xaxis().tick_bottom()
