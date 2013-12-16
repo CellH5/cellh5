@@ -483,12 +483,13 @@ class OutlierTest(object):
 if __name__ == "__main__":
 	ot = OutlierTest()
 	
-	ot.setup(rows=('C', 'D', 'F',), cols=(2,))
+	#ot.setup(rows=('C', 'D', 'F',), cols=(2,))
 	
 	#ot.setup(rows=('H', 'I', 'J', 'L', 'N', 'P'), cols=(20,1,2,3))
-	#ot.load_last('testing_13-07-23-12-47_g0.0050_n0.0500.pkl')
+	ot.load_last('testing_13-07-23-13-24_g0.0050_n0.0500.pkl')
 	#ot.load_last()
-	ot.od.plot()
-# 	a = ot.od.make_hit_list()
+	#ot.od.plot()
+ 	a = ot.od.make_hit_list()
+ 	a = ot.od.make_heat_map()
 
 

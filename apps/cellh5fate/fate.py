@@ -114,7 +114,11 @@ class CellFateAnalysis(object):
         self.tracks = {}
         
         for _, (w, p) in self.mcellh5.mapping[['Well','Site']].iterrows(): 
-            cellh5pos = self.mcellh5.get_position(w,str(p))
+            try:
+                cellh5pos = self.mcellh5.get_position(w,str(p))
+            except:
+                print "Positon", (w, p), "is corrupt. Process again with CellCognition"
+                continue
             #preds = cellh5pos.get_class_prediction()
             self.tracks[(w, p)] = {}
             event_ids = cellh5pos.get_events()
@@ -1316,24 +1320,36 @@ def fate_mitotic_time():
             
             
 EXP_LOOKUP = {
-                 '002200':
-                    {
-                     'ch5_file': "M:/experiments/Experiments_002200/002200/_meta/Cecog/Aalysis_with_split/hdf5/_all_positions.ch5",
-                     'mapping_file': "M:/experiments/Experiments_002200/002200/_meta/Cecog/Mapping/002200_2.txt",
-                     'time_lapse': 6.7, 
-                     'events_before_frame': 155, # in frames
-                     'onset_frame': 4, # in frames
-                     'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
-                     'hmm_n_classes': 17,
-                     'hmm_n_obs': 5,
-                     #'output_dir' : 'M:/experiments/Experiments_002200/002200/_meta/fate',
-                     }
-              }
+         '002200':
+            {
+             'ch5_file': "M:/experiments/Experiments_002200/002200/_meta/Cecog/Aalysis_with_split/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002200/002200/_meta/Cecog/Mapping/002200_2.txt",
+             'time_lapse': 6.7, 
+             'events_before_frame': 108, # in frames
+             'onset_frame': 4, # in frames
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             #'output_dir' : 'M:/experiments/Experiments_002200/002200/_meta/fate',
+             },
+        '002338':
+            {
+             'ch5_file': "M:/experiments/Experiments_002300/002338/002338/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002300/002338/002338/_meta/Cecog/Mapping/002338.txt",
+             'time_lapse': 8, 
+             'events_before_frame': 90, # in frames
+             'onset_frame': 5, # in frames
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002300/002338/002338/_meta/fate',
+             }
+      }
             
-def fate_mutli(plate_id):
+def fate_mutli_bi(plate_id):
     pm = CellFateAnalysisMultiHMM(plate_id, 
-                                  #rows=("D",), 
-                                  #cols=(3,4,11), 
+                                  #rows=("H", ), 
+                                  #cols=(2,), 
                                   **EXP_LOOKUP[plate_id])
     
     pm.fate_tracking(out_name='Raw class labels')
@@ -1432,72 +1448,13 @@ def fate_mutli(plate_id):
     
     print 'CellFateAnalysisMultiHMM done'
     
-# def fate():
-#     pm = CellFateAnalysis(
-#                           r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Aalysis_with_split\hdf5\_all_positions.ch5",
-#                           r"M:\experiments\Experiments_002200\002200\_meta\Cecog\Mapping\130710_Mitotic_slippage_and_cell_death.txt",
-#                          #rows=('B'), 
-#                          #cols=(3,4,5),
-#                             rows=None,
-#                              cols=None,
-#                           )
-#     pm.fate_tracking('Raw class labels')
-#     pm.setup_hmm(5, 'graph_5states_left2right.xml')
-#     #pm.setup_hmm_multi(13, 'graph_5_multi_states_left2right.xml')
-#     pm.predict_hmm('Raw class labels', 'Mapped State HMM')
-#     pm.smooth_and_simplify_tracks('Mapped State HMM', 'Mapped State HMM 3')
-#     
-#     pm.plot_tracks(['Raw class labels', 'Mapped State HMM', 'Mapped State HMM 3'], [pm.cmap, pm.cmap, cmap3], 'Mapped_HMM_tracks' )
-#        
-#     pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
-#                                                    ['#FFFFFF', 
-#                                                     '#AAAAAA', 
-#                                                     '#0000FF',
-#                                                     '#FF0000']), 'classification_cmap')
-#     pm.classify_tracks('Mapped State HMM 3')
-#     pm.plot('Cell Fate Classification')
-#     pm.event_curves('Mapped State HMM 3', 
-#                     'securin_degradation_short',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     False,
-#                     pm.cmap,
-#                     6.66,
-#                     4,
-#                     (-20,120),
-#                     (0,2),
-#                            )
-# 
-#     pm.event_curves('Mapped State HMM 3', 
-#                     'securin_degradation_with_fate',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     True,
-#                     pm.cmap,
-#                     6.66,
-#                     3,
-#                     (-20,1200),
-#                     (0,2),
-#                            )
-#     pm.event_mean_curves('Mapped State HMM 3', 
-#                     'securin_degradation_short',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     False,
-#                     pm.cmap,
-#                     6.66,
-#                     4,
-#                     (-20,120),
-#                     (0,2),
-#                            )
-#     
-#     print 'done'
+
      
 
 
 if __name__ == "__main__":
-    #fate()
-    fate_mutli('002200')
+    #fate_mutli_bi('002200')
+    fate_mutli_bi('002338')
     #fate_mitotic_time()
     print 'FINISH'
 
