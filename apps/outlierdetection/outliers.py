@@ -342,13 +342,13 @@ class OutlierDetection(object):
 				
 				if numpy.isnan(value):
 					print 'Warning: there are nans...'
-				if target_count.sum() > 100:
+				if target_count.sum() > 0:
 					heatmap[r_idx, c_idx] = value
-				else:
-					heatmap[r_idx, c_idx] = -1
-					
-				if target_grp.iloc[0] in ('neg', 'pos'):
-					heatmap[r_idx, c_idx] = -1
+# 				else:
+# 					heatmap[r_idx, c_idx] = -1
+# 					
+# 				if target_grp.iloc[0] in ('neg', 'pos'):
+# 					heatmap[r_idx, c_idx] = -1
 				
 		cmap = plt.matplotlib.cm.Greens
 		cmap.set_under(plt.matplotlib.cm.Oranges(0))
@@ -362,9 +362,15 @@ class OutlierDetection(object):
 
 		for r_idx, r in enumerate(rows):
 			for c_idx, c in enumerate(cols):
-				text_grp = str(self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['Group'].iloc[0])
-				text_gene = str(self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['siRNA ID'].iloc[0])
-				count = self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['Object count'].sum()
+				try:
+					text_grp = str(self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['Group'].iloc[0])
+					text_gene = str(self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['siRNA ID'].iloc[0])
+					count = self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['Object count'].sum()
+				except IndexError:
+					text_grp = "empty"
+					text_gene = "empty"
+					count = -1
+					
 				t = plt.text(c_idx + 0.5, r_idx + 0.5, '%s\n%s\n%d' %( text_grp, text_gene, count), horizontalalignment='center', verticalalignment='center', fontsize=8)
 				if heatmap[r_idx, c_idx] > 0.1:
 					t.set_color('w')
@@ -389,21 +395,13 @@ class OutlierDetection(object):
 		group_on = 'siRNA ID'
 		#group_on = 'Gene Symbol'
 		
-		group = self.mapping[(self.mapping['Object count'] > 100) & (self.mapping['Group'] == 'target')].groupby([group_on])
+		group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'target')].groupby([group_on])
 		
-		neg_group = self.mapping[(self.mapping['Object count'] > 100) & (self.mapping['Group'] == 'neg')].groupby([group_on])
+		neg_group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'neg')].groupby([group_on])
 		neg_mean = neg_group.mean()['Outlyingness'].mean()
 		
-		pos_group = self.mapping[(self.mapping['Object count'] > 100) & (self.mapping['Group'] == 'pos')].groupby([group_on])
-		pos_mean = pos_group.mean()['Outlyingness'].mean()
-		
-		def _helper(x):
-			cnt = x['Object count']
-			out = x['Outlyingness']
-			a = (cnt * out).sum() / cnt.sum() 		
-			#print (cnt * out).sum(), cnt.sum(), a
-			print type(a), a
-			return pandas.DataFrame({'foo':a, 'bar':a})
+		pos_group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'pos')].groupby([group_on])
+		pos_mean = pos_group.mean()['Outlyingness'].mean()		
 		
 		means = group.mean()['Outlyingness']
 		means = means.copy()
@@ -444,10 +442,15 @@ class OutlierDetection(object):
 		
 		
 class OutlierTest(object):
-	def setup(self, rows, cols):
-		self.od = OutlierDetection("testing",
-							  "screening_plate_9_plate_mapping.txt", 
-							  "M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/Cellcognition/Analysis2/Analysis2/hdf5/_all_positions.ch5",
+	def __init__(self, name, mapping_file, ch5_file):
+		self.name = name
+		self.mapping_file = mapping_file 
+		self.ch5_file = ch5_file 
+		
+	def setup(self, rows=None, cols=None):
+		self.od = OutlierDetection(self.name,
+							  self.mapping_file, 
+							  self.ch5_file,
 							  rows=rows,
 							  cols=cols,
 							  gamma=1.0/60, 
@@ -480,14 +483,23 @@ class OutlierTest(object):
 		#self.od.__class__ = OutlierDetection
 		
 		
-if __name__ == "__main__":
-	ot = OutlierTest()
-	
-	#ot.setup(rows=('C', 'D', 'F',), cols=(2,))
-	
-	#ot.setup(rows=('H', 'I', 'J', 'L', 'N', 'P'), cols=(20,1,2,3))
+def sara_screen_analysis():
+	ot = OutlierTest('matthias', 'dc', 'dc')
 	ot.load_last('testing_13-07-23-13-24_g0.0050_n0.0500.pkl')
 	#ot.load_last()
+	#ot.od.plot()
+ 	a = ot.od.make_hit_list()
+ 	a = ot.od.make_heat_map()
+ 	
+if __name__ == "__main__":
+	ot = OutlierTest('matthias',
+					 'M:/experiments/Experiments_002300/002324/meta/CellCog/mapping/MD9_Grape_over_Time.txt',
+					 'M:/experiments/Experiments_002300/002324/meta/CellCog/analysis/hdf5/_all_positions.ch5'
+					)
+	ot.setup(
+			#rows=('A', 'B', 'C', 'D', 'E'), 
+			#cols=(8,9,10,11,12,13,14,15,19,24)
+			)
 	#ot.od.plot()
  	a = ot.od.make_hit_list()
  	a = ot.od.make_heat_map()
