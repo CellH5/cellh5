@@ -925,7 +925,6 @@ class CellGraphicsTextItem(QtGui.QGraphicsTextItem, GraphicsTerminalObjectItem):
         
     @property
     def width(self):
-        print 'asdf'
         return self.textWidth()
         
         
