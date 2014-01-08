@@ -267,7 +267,26 @@ class CH5Position(object):
                              
             image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
             yield image
-                 
+            
+    def get_gallery_image_matrix(self, index, shape, object_='primary__primary'):
+        image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
+        i,j = 0, 0
+        img_gen = self.get_gallery_image_generator(index, object_)
+        
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                try:
+                    img = img_gen.next()
+                except StopIteration:
+                    break
+                a = i * GALLERY_SIZE
+                b = j * GALLERY_SIZE
+                c = a + GALLERY_SIZE
+                d = b + GALLERY_SIZE
+                image[a:c, b:d] = img
+                
+        return image
+                              
     def get_gallery_image_contour(self, index, object_=('primary__primary',), color=None, scale=None):
         img = self.get_gallery_image_rgb(index, object_)
         if scale is not None:
@@ -720,7 +739,13 @@ class TestCH5Basic(CH5TestBase):
         self.assertTrue('n2_avg' in  self.pos.object_feature_def())
         self.assertTrue(self.pos.get_object_features().shape[1] == 239)
  
-class TestCH5Examples(CH5TestBase):   
+class TestCH5Examples(CH5TestBase): 
+    def testGalleryMatrix(self):
+        image = self.pos.get_gallery_image_matrix(range(20), (5,6))
+        import vigra
+        vigra.impex.writeImage(image.swapaxes(1,0), 'img_matrix.png')
+        
+      
     def testReadAnImage(self):
         """Read an raw image an write a sub image to disk"""
         # read the images at time point 1
@@ -741,7 +766,7 @@ class TestCH5Examples(CH5TestBase):
 #        vigra.impex.writeImage(h2b[400:600, 400:600].swapaxes(1,0), 'img1.png')   
 #        vigra.impex.writeImage(tub[400:600, 400:600].swapaxes(1,0), 'img2.png')   
         
-#    unittest.skip('ploting so many lines is very slow in matplotlib')
+    #unittest.skip('ploting so many lines is very slow in matplotlib')
     def testPrintTrackingTrace(self):
         """Show the cell movement over time by showing the trace of each cell colorcoded 
            overlayed on of the first image"""
@@ -775,6 +800,7 @@ class TestCH5Examples(CH5TestBase):
             
         fig.savefig('tracking.png', format='png')
         
+    #unittest.skip('ploting so many lines is very slow in matplotlib')
     def testComputeTheMitoticIndex(self):
         """Read the classification results and compute the mitotic index"""
         
