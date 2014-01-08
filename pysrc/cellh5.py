@@ -283,6 +283,9 @@ class CH5Position(object):
                 b = j * GALLERY_SIZE
                 c = a + GALLERY_SIZE
                 d = b + GALLERY_SIZE
+                
+                if (c,d) > image.shape:
+                    break
                 image[a:c, b:d] = img
                 
         return image
