@@ -188,7 +188,7 @@ class PositionThumbnailEvents(PositionThumbnailBase):
         PositionThumbnailBase.__init__(self, parent)
         self.parent = parent
         self.position_key = position_key
-        events = position.get_events(random=10)
+        events = position.get_events()
         
         def event_cmp(x, y):
             x_l = position.get_class_label(x)
@@ -496,7 +496,7 @@ class TrackletBrowser(QtGui.QWidget):
         position = self.data_provider.get_position(position_key[2], position_key[3])
         
         self._root_items = []
-        events = position.get_events(random=10)
+        events = position.get_events()
         
         #self.dlg = waitingProgressDialog('Rendering gallery images...', self, None, (0, len(events)))
         
@@ -690,7 +690,12 @@ class EventGraphicsItem(GraphicsObjectItem):
         GraphicsObjectItem.__init__(self, object_item, position, parent)
         
         self.id = CellGraphicsTextItem()
-        self.id.setHtml("<span style='color:white; font:bold 32px'> %r </span>" % idx)
+        
+        t = position.get_time_idx(object_item[0])
+        oo = position.get_obj_label_id(object_item[0])
+        self.id.setHtml("<span style='color:white; font:bold 16px'>T%04d<br />O%04d </span>" % (t, oo))
+        self.setPos(-self.id.width, 0)
+      
         self.position = position
         
         self.addToGroup(self.id)
@@ -757,7 +762,7 @@ class EventGraphicsItem(GraphicsObjectItem):
         features = ((1 - (features-min_)/(max_ - min_)) * self.height).astype(numpy.uint8)
         
         for col, (f1, f2, obj) in enumerate(zip(features, numpy.roll(features, -1), self.object_item)):
-            class_color = self.position.get_class_color(obj, 'secondary__expanded')
+            class_color = self.position.get_class_color(obj, 'secondary__outside')
             if class_color is None:
                 color_ = QtCore.Qt.white
             else:
@@ -777,8 +782,7 @@ class GraphicsTerminalObjectItem(GraphicsObjectItemBase):
     def __init__(self, text, position, parent=None):
         GraphicsObjectItemBase.__init__(self, parent=None)
         self.position = position
-        
-        
+                
     @property
     def width(self):
         return self.object_item.BOUNDING_BOX_SIZE
@@ -862,6 +866,7 @@ class CellGraphicsItem(GraphicsTerminalObjectItem):
         primary_contour_item = HoverPolygonItem(QtGui.QPolygonF(map(lambda x: QtCore.QPointF(x[0],x[1]), self.position.get_crack_contour(object_item)[0])))
         primary_contour_item.setPos(0, self.PREDICTION_BAR_HEIGHT)
         primary_contour_item.setPen(QtGui.QPen(QtGui.QColor(self.position.get_class_color(object_item))))
+#         primary_contour_item.setPen(QtGui.QPen(QtGui.QColor("#ca0000")))
         primary_contour_item.setAcceptHoverEvents(True)
         primary_contour_item.setZValue(4)
         
@@ -869,7 +874,7 @@ class CellGraphicsItem(GraphicsTerminalObjectItem):
         self.addToGroup(primary_contour_item)
         
         if True:
-            image_sib = self.position.get_gallery_image(object_item, 'secondary__expanded')
+            image_sib = self.position.get_gallery_image(object_item, 'secondary__outside')
             secondary_gallery_item = QtGui.QGraphicsPixmapItem(QtGui.QPixmap(qimage2ndarray.array2qimage(image_sib)))
             secondary_gallery_item.setPos(0, self.PREDICTION_BAR_HEIGHT)
             self.secondary_gallery_item = secondary_gallery_item
@@ -883,10 +888,11 @@ class CellGraphicsItem(GraphicsTerminalObjectItem):
             composed_gallery_item.setPos(0, self.PREDICTION_BAR_HEIGHT)
             self.composed_gallery_item = composed_gallery_item
             
-            secondary_contour_item = HoverPolygonItem(QtGui.QPolygonF(map(lambda x: QtCore.QPointF(x[0],x[1]), self.position.get_crack_contour(object_item, 'secondary__expanded')[0])))
+            secondary_contour_item = HoverPolygonItem(QtGui.QPolygonF(map(lambda x: QtCore.QPointF(x[0],x[1]), self.position.get_crack_contour(object_item, 'secondary__outside')[0])))
             secondary_contour_item.setPos(0, self.PREDICTION_BAR_HEIGHT)
             
-            secondary_contour_item.setPen(QtGui.QPen(QtGui.QColor(self.position.get_class_color(object_item, 'secondary__expanded'))))
+#             secondary_contour_item.setPen(QtGui.QPen(QtGui.QColor(self.position.get_class_color(object_item, 'secondary__expanded'))))
+            secondary_contour_item.setPen(QtGui.QPen(QtGui.QColor("#00ca00")))
             secondary_contour_item.setAcceptHoverEvents(True)
             secondary_contour_item.setZValue(3)
             
@@ -916,8 +922,10 @@ class CellGraphicsItem(GraphicsTerminalObjectItem):
 class CellGraphicsTextItem(QtGui.QGraphicsTextItem, GraphicsTerminalObjectItem):
     def __init__(self, parent=None):
         QtGui.QGraphicsTextItem.__init__(self, parent)
+        
     @property
     def width(self):
+        print 'asdf'
         return self.textWidth()
         
         

@@ -282,8 +282,8 @@ def boehringer_mitotic_timing():
         ### BI6xxx
         BI6_no   = neg_ctrl + ["D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09", "D10", "D11",]
         BI6_smac = neg_ctrl + ["G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11",]
-        plot_('no BI2536 ', BI6_no, cons_nm, 'nM')
-        plot_('400nM BI87832 - BI2536', BI6_smac, cons_nm, 'nM')
+        plot_('no BI87832 - BI6727 ', BI6_no, cons_nm, 'nM')
+        plot_('400nM BI87832 - BI6727', BI6_smac, cons_nm, 'nM')
         
         ### Noco
         NO_no   = neg_ctrl + ["B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11",]

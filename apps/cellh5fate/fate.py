@@ -1348,8 +1348,8 @@ EXP_LOOKUP = {
             
 def fate_mutli_bi(plate_id):
     pm = CellFateAnalysisMultiHMM(plate_id, 
-                                  #rows=("H", ), 
-                                  #cols=(2,), 
+                                  rows=("H", ), 
+                                  cols=(2,), 
                                   **EXP_LOOKUP[plate_id])
     
     pm.fate_tracking(out_name='Raw class labels')

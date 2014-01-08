@@ -316,6 +316,9 @@ class CH5Position(object):
     def get_time_idx(self, index, object_='primary__primary'):
         return self['object'][object_][index]['time_idx']
     
+    def get_obj_label_id(self, index, object_='primary__primary'):
+        return self['object'][object_][index]['obj_label_id']
+    
     def get_time_indecies(self, index, object_='primary__primary'):
         inv_sort = numpy.argsort(numpy.argsort(numpy.array(index)))
         index.sort()
@@ -379,7 +382,7 @@ class CH5Position(object):
             else:
                 events.append(event_list)   
                 
-            if random is not None and event_id > random:
+            if random is not None and event_id >= random:
                 break 
         return events
     
