@@ -76,15 +76,20 @@ class OutlierDetection(object):
 		training_matrix_list = self.mapping[self.mapping['Group'].isin(test_on)][['Well', 'Site', 'PCA', "Gene Symbol", "siRNA ID"]].iterrows()
 
 		predictions = {}
+		distances = {}
 		for idx, (well, site, tm, t1, t2) in training_matrix_list:
 			print well, site, t1, t2, "->",
 			if tm.shape[0] == 0:
 				predictions[idx] = numpy.zeros((0, 0))
+				distances[idx] = numpy.zeros((0, 0))
 			else:
 				# tm = self._remove_nan_rows(tm)
-				predictions[idx] = self.predict_with_classifier(tm)
+				pred, dist = self.predict_with_classifier(tm)
+				predictions[idx] = pred
+				distances[idx] = dist
 			
 		self.mapping = self.mapping.join(pandas.DataFrame({'Predictions' : pandas.Series(predictions)}))
+		self.mapping = self.mapping.join(pandas.DataFrame({'Hyperplane distance' : pandas.Series(distances)}))
 			
 	def _remove_nan_rows(self, data):
 		data = data[:, self._non_nan_feature_idx]
@@ -105,6 +110,7 @@ class OutlierDetection(object):
 		
 		features = []
 		object_counts = []
+		c5_object_index = []
 		for i, row in m.iterrows():
 			well = row['Well']
 			site = str(row['Site'])
@@ -114,7 +120,7 @@ class OutlierDetection(object):
 			feature_matrix = ch5_pos.get_object_features()
 			a = ch5_pos.get_object_table('primary__primary')
 			
-			time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] == 7
+			time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] < 100
 			
 			feature_matrix = feature_matrix[time_8_idx, :]
 			
@@ -124,12 +130,14 @@ class OutlierDetection(object):
 			if object_count > 0:
 				features.append(feature_matrix)
 			else:
-				features.append(numpy.zeros((0, features[0].shape[1]))) 
+				features.append(numpy.zeros((0, features[0].shape[1])))
+			c5_object_index.append(numpy.where(time_8_idx)[0])
 			
 			print 'Reading', well, site, len(feature_matrix)
 		
 		m['Object features'] = features
 		m['Object count'] = object_counts
+		m['CellH5 object index'] = c5_object_index
 		
 	def compute_outlyingness(self):
 		def _outlier_count(x):
@@ -166,10 +174,11 @@ class OutlierDetection(object):
 		
 	def predict_with_classifier(self, test_matrix):
 		prediction = self.classifier.predict(test_matrix)
+		distance = self.classifier.decision_function(test_matrix)[:,0]
 		print "%d / %d outliers (%3.2f)" % ((prediction == -1).sum(),
 											 len(prediction),
 											 (prediction == -1).sum() / float(len(prediction)))
-		return prediction
+		return prediction, distance
 		
 	def _get_mapping_field_of_pos(self, well, pos, field):
 		return self.mapping[(self.mapping['Well'] == str(well)) & (self.mapping['Site'] == int(pos))][field].iloc[0]
@@ -260,29 +269,17 @@ class OutlierDetection(object):
 			
 			ch5_file = cellh5.CH5File(self.cellh5_file)
 			
-			if True:
-				import vigra, os
-				for id in numpy.where(prediction == -1)[0]:
-					well = str(self.mapping['Well'][i])
-					site = str(self.mapping['Site'][i])
-					ch5_pos = ch5_file.get_position(well, site)
-					img = ch5_pos.get_gallery_image_contour(id, color='#FFFFFF', scale=2.0)
-					try:
-						os.makedirs('%s/%s/out' % (well, site,))
-					except:
-						pass
-					vigra.impex.writeImage(img, '%s/%s/out/%6.3f_%6.3f.png' % (well, site, data[id, f_x], data[id, f_y]))
-				for id in numpy.where(prediction == 1)[0]:
-					try:
-						os.makedirs('%s/%s/in' % (well, site,))
-					except:
-						pass
-					well = self.mapping['Well'][i]
-					site = str(self.mapping['Site'][i])
-					ch5_pos = ch5_file.get_position(well, site)
-					img = ch5_pos.get_gallery_image_contour(id, color='#FFFFFF', scale=2.0)
-					vigra.impex.writeImage(img, '%s/%s/in/%6.3f_%6.3f.png' % (well, site, data[id, f_x], data[id, f_y]))
-					
+			import vigra
+			well = str(self.mapping['Well'][i])
+			site = str(self.mapping['Site'][i])
+			ch5_pos = ch5_file.get_position(well, site)
+			
+			img = ch5_pos.get_gallery_image_matrix(numpy.where(prediction == -1)[0], (30, 20))
+			vigra.impex.writeImage(img.swapaxes(1,0), '%s_%s_outlier.png' % (well, site))
+			
+			img = ch5_pos.get_gallery_image_matrix(numpy.where(prediction == 1)[0], (30, 20))
+			vigra.impex.writeImage(img.swapaxes(1,0), '%s_%s_inlier.png' % (well, site))
+
 			
 		x_min = -12
 		y_min = -25
@@ -448,12 +445,9 @@ class OutlierDetection(object):
 		plt.tight_layout()
 		plt.show()
 		
-	def make_pca_scatter(self):
-		
+	def make_pca_scatter(self):		
 		pcs = [(x, y) for x in range(4) for y in range(4)]
-		
-		
-		
+
 		for ii, (f_x, f_y) in enumerate(pcs):
 			ax = plt.subplot(4, 4, ii + 1)
 
@@ -499,31 +493,6 @@ class OutlierDetection(object):
 				y_min = min(y_min, y_min_cur)
 				x_max = max(x_max, x_max_cur)
 				y_max = max(y_max, y_max_cur)
-				
-				ch5_file = cellh5.CH5File(self.cellh5_file)
-				
-				if False:
-					import vigra, os
-					for id in numpy.where(prediction == -1)[0]:
-						well = str(self.mapping['Well'][i])
-						site = str(self.mapping['Site'][i])
-						ch5_pos = ch5_file.get_position(well, site)
-						img = ch5_pos.get_gallery_image_contour(id, color='#FFFFFF', scale=2.0)
-						try:
-							os.makedirs('%s/%s/out' % (well, site,))
-						except:
-							pass
-						vigra.impex.writeImage(img, '%s/%s/out/%6.3f_%6.3f.png' % (well, site, data[id, f_x], data[id, f_y]))
-					for id in numpy.where(prediction == 1)[0]:
-						try:
-							os.makedirs('%s/%s/in' % (well, site,))
-						except:
-							pass
-						well = self.mapping['Well'][i]
-						site = str(self.mapping['Site'][i])
-						ch5_pos = ch5_file.get_position(well, site)
-						img = ch5_pos.get_gallery_image_contour(id, color='#FFFFFF', scale=2.0)
-						vigra.impex.writeImage(img, '%s/%s/in/%6.3f_%6.3f.png' % (well, site, data[id, f_x], data[id, f_y]))
 						
 				
 			# x_min = -12
@@ -567,6 +536,29 @@ class OutlierDetection(object):
 		plt.axis('tight')
 		plt.subplots_adjust(wspace=0.01, hspace=0.01)
 		plt.show(block=True)	
+		
+	def make_outlier_galleries(self):
+		for i in range(len(self.mapping['PCA'])):
+			prediction = self.mapping['Predictions'][i]
+			ch5_file = cellh5.CH5File(self.cellh5_file)
+		
+			import vigra
+			well = str(self.mapping['Well'][i])
+			site = str(self.mapping['Site'][i])
+			ch5_pos = ch5_file.get_position(well, site)
+			
+			ch5_index = self.mapping["CellH5 object index"][i][prediction == -1]
+			dist =  self.mapping["Hyperplane distance"][i][prediction == -1]
+			sorted_ch5_index = zip(*sorted(zip(dist,ch5_index), reverse=True))[1]
+			
+			img = ch5_pos.get_gallery_image_matrix(sorted_ch5_index, (25, 20))
+			vigra.impex.writeImage(img.swapaxes(1,0), '%s_%s_outlier.png' % (well, site))
+			
+			ch5_index = self.mapping["CellH5 object index"][i][prediction == 1]
+			dist =  self.mapping["Hyperplane distance"][i][prediction == 1]
+			sorted_ch5_index = zip(*sorted(zip(dist,ch5_index), reverse=True))[1]
+			img = ch5_pos.get_gallery_image_matrix(sorted_ch5_index, (50, 20))
+			vigra.impex.writeImage(img.swapaxes(1,0), '%s_%s_inlier.png' % (well, site))
 		
 		
 		
@@ -627,10 +619,11 @@ if __name__ == "__main__":
 					)
   	ot.setup(
   			 rows=('C', 'D',), 
-  			 cols=(3,4,7,8, 9,12,18,19,24)
+  			 cols=(2,3,4,7,8,)
   			)
 	# ot.load_last('matthias_13-12-19-10-43_g0.0167_n0.0800.pkl')
 	
+ 	b = ot.od.make_outlier_galleries()
  	b = ot.od.make_pca_scatter()
 # 	a = ot.od.make_hit_list()
 #   	a = ot.od.make_heat_map()
