@@ -120,7 +120,7 @@ class OutlierDetection(object):
 			feature_matrix = ch5_pos.get_object_features()
 			a = ch5_pos.get_object_table('primary__primary')
 			
-			time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] < 100
+			time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] > 7
 			
 			feature_matrix = feature_matrix[time_8_idx, :]
 			
@@ -274,10 +274,10 @@ class OutlierDetection(object):
 			site = str(self.mapping['Site'][i])
 			ch5_pos = ch5_file.get_position(well, site)
 			
-			img = ch5_pos.get_gallery_image_matrix(numpy.where(prediction == -1)[0], (30, 20))
+			img = ch5_pos.get_gallery_image_matrix(numpy.where(prediction == -1)[0], (20, 20))
 			vigra.impex.writeImage(img.swapaxes(1,0), '%s_%s_outlier.png' % (well, site))
 			
-			img = ch5_pos.get_gallery_image_matrix(numpy.where(prediction == 1)[0], (30, 20))
+			img = ch5_pos.get_gallery_image_matrix(numpy.where(prediction == 1)[0], (20, 20))
 			vigra.impex.writeImage(img.swapaxes(1,0), '%s_%s_inlier.png' % (well, site))
 
 			
@@ -545,18 +545,27 @@ class OutlierDetection(object):
 			import vigra
 			well = str(self.mapping['Well'][i])
 			site = str(self.mapping['Site'][i])
+			print 'Exporting gallery matrices for', well, site 
 			ch5_pos = ch5_file.get_position(well, site)
 			
 			ch5_index = self.mapping["CellH5 object index"][i][prediction == -1]
 			dist =  self.mapping["Hyperplane distance"][i][prediction == -1]
-			sorted_ch5_index = zip(*sorted(zip(dist,ch5_index), reverse=True))[1]
-			
+			sorted_ch5_index = zip(*sorted(zip(dist,ch5_index), reverse=True))
+			if len(sorted_ch5_index) > 1:
+				sorted_ch5_index = sorted_ch5_index[1]
+			else:
+				sorted_ch5_index = []
+				
 			img = ch5_pos.get_gallery_image_matrix(sorted_ch5_index, (25, 20))
 			vigra.impex.writeImage(img.swapaxes(1,0), '%s_%s_outlier.png' % (well, site))
 			
 			ch5_index = self.mapping["CellH5 object index"][i][prediction == 1]
 			dist =  self.mapping["Hyperplane distance"][i][prediction == 1]
-			sorted_ch5_index = zip(*sorted(zip(dist,ch5_index), reverse=True))[1]
+			sorted_ch5_index = zip(*sorted(zip(dist,ch5_index), reverse=True))
+			if len(sorted_ch5_index) > 1:
+				sorted_ch5_index = sorted_ch5_index[1]
+			else:
+				sorted_ch5_index = []
 			img = ch5_pos.get_gallery_image_matrix(sorted_ch5_index, (50, 20))
 			vigra.impex.writeImage(img.swapaxes(1,0), '%s_%s_inlier.png' % (well, site))
 		
@@ -618,8 +627,8 @@ if __name__ == "__main__":
 					 'M:/experiments/Experiments_002300/002324/meta/CellCog/analysis/hdf5/_all_positions.ch5'
 					)
   	ot.setup(
-  			 rows=('C', 'D',), 
-  			 cols=(2,3,4,7,8,)
+  			 #rows=('C', 'D',), 
+  			 #cols=(2,3,4,7,8,)
   			)
 	# ot.load_last('matthias_13-12-19-10-43_g0.0167_n0.0800.pkl')
 	
