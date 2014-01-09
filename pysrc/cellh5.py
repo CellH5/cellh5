@@ -338,6 +338,9 @@ class CH5Position(object):
     def get_time_idx(self, index, object_='primary__primary'):
         return self['object'][object_][index]['time_idx']
     
+    def get_time_idx2(self, index, object_='primary__primary'):
+        return self['object'][object_]['time_idx'][index]
+    
     def get_obj_label_id(self, index, object_='primary__primary'):
         return self['object'][object_][index]['obj_label_id']
     
