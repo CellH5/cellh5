@@ -506,98 +506,110 @@ class OutlierDetection(object):
 		pylab.show()
 		
 	def make_pca_scatter(self):	
-		KK = 4
+		KK = min(4, self.pca_dims)
 			
-		pcs = [(x, y) for x in range(2) for y in range(2)]
+		pcs = [(x, y) for x in range(KK) for y in range(KK)]
 		legend_there = False
-		
 		for ii, (f_x, f_y) in enumerate(pcs):
-			ax = pylab.subplot(2, 2, ii + 1)
-			if f_x == f_y:
-				ax.axis('off')
+			if f_x >= f_y:
 				continue
+			
+			fig = pylab.figure()
+			pylab.title("PCA %d vs %d in N%d" % (f_x + 1, f_y+1, self.pca_dims))
 			
 			legend_points = []
 			legend_labels = []
 
 			treatment_group = self.mapping.groupby(['Gene Symbol','siRNA ID'])
 			
+			x_min, y_min = 1000000, 100000
+			x_max, y_max = -100000, -100000
+
 			for tg in treatment_group:
 				treatment = "%s %s" % tg[0]
 				wells = list(tg[1]['Well'])
 				pca_components = numpy.concatenate(list(tg[1]['PCA']))  
 				prediction = numpy.concatenate(list(tg[1]['Predictions']))  
 		
-				x_min, x_max = pca_components[:, f_y].min(), pca_components[:, f_y].max()
-				y_min, y_max = pca_components[:, f_x].min(), pca_components[:, f_x].max()
+				x_min_cur, x_max_cur = pca_components[:, f_x].min(), pca_components[:, f_x].max()
+				y_min_cur, y_max_cur = pca_components[:, f_y].min(), pca_components[:, f_y].max()
 				
+				x_min = min(x_min, x_min_cur)
+				y_min = min(y_min, y_min_cur)
+				x_max = max(x_max, x_max_cur)
+				y_max = max(y_max, y_max_cur)
+
+				ax = pylab.subplot(2, 1, 1)
+				ax.set_title("Outlier detection nu=%f, g=%f (%s)" %(self.nu, self.gamma, self.classifier.kernel))
+					
+				if "Taxol" in treatment:
+					color = 'blue'
+					if "No Reversine" in treatment:
+						color = "cyan"
+				elif "Noco" in treatment:
+					color = "red"
+					if "No Reversine" in treatment:
+						color = "orange"
+				else:
+					assert 'wt control' in treatment
+					color = "green"
+						
+				#if color=='green':
+				points = ax.scatter(pca_components[prediction == 1, f_x], pca_components[prediction == 1, f_y], c=color, marker="o", facecolors=color, zorder=999, edgecolor="none", s=20)
+				legend_points.append(points)
+				legend_labels.append("Inlier " + treatment)
+				
+				points = ax.scatter(pca_components[prediction == -1, f_x], pca_components[prediction == -1, f_y], c=color, marker="o", facecolors='none', zorder=999, edgecolor=color, s=20)
+				legend_points.append(points)
+				legend_labels.append("Outlier " + treatment)	
+				
+				ax = pylab.subplot(2, 1, 2)
+				ax.set_title("Outlier clustering")
+				cluster_vectors = numpy.concatenate(list(tg[1]['Outlier clustering']))
+				cluster_colors = {0:'k', 1:'r', 2:'g', 3:'b', 4:'y', 5:'m'}
+				for k in range(1, cluster_vectors.max()+1):
+					points = ax.scatter(pca_components[cluster_vectors == k, f_x], pca_components[cluster_vectors == k, f_y], c=cluster_colors[k], marker="o", facecolors=cluster_colors[k], zorder=999, edgecolor="none", s=20)
+						
 
 			
-				if f_y > f_x:	
-					if "Taxol" in treatment:
-						color = 'blue'
-						if "No Reversine" in treatment:
-							color = "cyan"
-					elif "Noco" in treatment:
-						color = "red"
-						if "No Reversine" in treatment:
-							color = "orange"
-					else:
-						assert 'wt control' in treatment
-						color = "green"
-							
-					#if color=='green':
-					points = ax.scatter(pca_components[prediction == 1, f_x], pca_components[prediction == 1, f_y], c=color, marker="o", facecolors=color, zorder=999, edgecolor="none", s=20)
-					legend_points.append(points)
-					legend_labels.append("Inlier " + treatment)
-					
-					points = ax.scatter(pca_components[prediction == -1, f_x], pca_components[prediction == -1, f_y], c=color, marker="o", facecolors='none', zorder=999, edgecolor=color, s=20)
-					legend_points.append(points)
-					legend_labels.append("Outlier " + treatment)	
-					
-				else:
-					cluster_vectors = numpy.concatenate(list(tg[1]['Outlier clustering']))
-					cluster_colors = {0:'k', 1:'r', 2:'g', 3:'b', 4:'y', 5:'m'}
-					for k in range(1, cluster_vectors.max()+1):
-						points = ax.scatter(pca_components[cluster_vectors == k, f_y], pca_components[cluster_vectors == k, f_x], c=cluster_colors[k], marker="o", facecolors=cluster_colors[k], zorder=999, edgecolor="none", s=20)
-						
-					
+			ax = pylab.subplot(2, 1, 1)	
+			xx, yy = numpy.meshgrid(numpy.linspace(x_min, x_max, 100), numpy.linspace(y_min, y_max, 100))
+			# Z = self.classifier.decision_function(numpy.c_[xx.ravel(), yy.ravel()])
+			matrix = numpy.zeros((100 * 100, self.pca_dims))
+			matrix[:, f_x] = xx.ravel()
+			matrix[:, f_y] = yy.ravel()
+			
+			
+			Z = self.classifier.decision_function(matrix)
+			Z = Z.reshape(xx.shape)
+
+			ax.contourf(xx, yy, Z, levels=numpy.linspace(Z.min(), 0, 17), cmap=pylab.matplotlib.cm.Reds_r, alpha=0.2)
+			ax.contour(xx, yy, Z, levels=[0], linewidths=1, colors='k')
+			ax.contourf(xx, yy, Z, levels=numpy.linspace(0, Z.max(), 17), cmap=pylab.matplotlib.cm.Greens, alpha=0.3)
 
 					
 			if not legend_there:
 				pylab.figlegend(legend_points, legend_labels, loc = 'lower center', ncol=4, labelspacing=0.1 )
 				lengend_there = True
 			
-			if f_y > f_x:	
-				x_min, x_max, y_min, y_max = y_min, y_max, x_min, x_max				
-								
-				xx, yy = numpy.meshgrid(numpy.linspace(x_min, x_max, 100), numpy.linspace(y_min, y_max, 100))
-				# Z = self.classifier.decision_function(numpy.c_[xx.ravel(), yy.ravel()])
-				matrix = numpy.zeros((100 * 100, self.pca_dims))
-				matrix[:, f_x] = xx.ravel()
-				matrix[:, f_y] = yy.ravel()
-				
-				
-				Z = self.classifier.decision_function(matrix)
-				Z = Z.reshape(xx.shape)
-	
-				ax.contourf(xx, yy, Z, levels=numpy.linspace(Z.min(), 0, 17), cmap=pylab.matplotlib.cm.Reds_r, alpha=0.2)
-				ax.contour(xx, yy, Z, levels=[0], linewidths=1, colors='k')
-				ax.contourf(xx, yy, Z, levels=numpy.linspace(0, Z.max(), 17), cmap=pylab.matplotlib.cm.Greens, alpha=0.3)
-
-				pylab.xlim((x_min, x_max))
-				pylab.ylim((y_min, y_max))
-			else:
-				pylab.xlim((x_min, x_max))
-				pylab.ylim((y_min, y_max))
+			ax = pylab.subplot(2, 1, 2)
+			pylab.xlim((x_min, x_max))
+			pylab.ylim((y_min, y_max))	
 			pylab.xticks([])
 			pylab.yticks([])
+			
+			ax = pylab.subplot(2, 1, 1)
+			pylab.xlim((x_min, x_max))
+			pylab.ylim((y_min, y_max))	
+			pylab.xticks([])
+			pylab.yticks([])
+			
 		
 
 		
-		pylab.axis('tight')
-		pylab.subplots_adjust(wspace=0.01, hspace=0.01)
-		pylab.show(block=True)	
+			pylab.axis('tight')
+			pylab.subplots_adjust(wspace=0.05, hspace=0.05)
+			pylab.show(block=True)	
 		
 	def make_outlier_galleries(self):
 		for i in range(len(self.mapping['PCA'])):
@@ -693,8 +705,9 @@ if __name__ == "__main__":
   			 #rows=( "B", 'C', 'D',"E"), 
   			 #cols=(6,7,8,12,13),
     			 locations=(("A",  8), ("B", 8), ("C", 8), ("D", 8),
-  						("H", 6), ("H", 7), ("G", 6), ("G", 7),
-  						("H",12), ("H",13), ("G",12), ("G",13),)
+  						("H", 6), ("H", 7), #("G", 6), ("G", 7),
+  						("H",12), ("H",13), #("G",12), ("G",13),
+  						)
   			)
 	# ot.load_last('matthias_13-12-19-10-43_g0.0167_n0.0800.pkl')
 	
