@@ -31,7 +31,7 @@ class OutlierDetection(object):
 		self.nu = nu
 		self.classifier = None
 		
-		self.pca_dims = 239
+		self.pca_dims = 2
 		
 # 	def read_mapping(self, sites=None, rows=None, cols=None):
 # 		self.mapping = pandas.read_csv(self.mapping_file, sep='\t')
@@ -63,7 +63,7 @@ class OutlierDetection(object):
 		self.feature_set = 'PCA'
 		print 'Training OneClass Classifier for', self.feature_set
 		training_matrix = self.get_data(train_on, self.feature_set)
-		# training_matrix = self.normalize_training_data(training_matrix)
+		#training_matrix = self.normalize_training_data(training_matrix)
 		
 		self.train_classifier(training_matrix)
 		
@@ -130,7 +130,7 @@ class OutlierDetection(object):
 			feature_matrix = ch5_pos.get_object_features()
 			a = ch5_pos.get_object_table('primary__primary')
 			
-			time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] > 8
+			time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] == 7
 			
 			feature_matrix = feature_matrix[time_8_idx, :]
 			
@@ -164,7 +164,7 @@ class OutlierDetection(object):
 	def train_pca(self, train_on=('neg', 'pos', 'target')):
 		training_matrix = self.get_data(train_on)
 		training_matrix = self.normalize_training_data(training_matrix)
-		print 'Compute PCA', 'is nan?', numpy.any(numpy.isnan(training_matrix))
+		print 'Compute PCA', 'found nans in features?', numpy.any(numpy.isnan(training_matrix))
 		self.pca = PCA(training_matrix)
 		
 	def predict_pca(self):
@@ -179,8 +179,13 @@ class OutlierDetection(object):
 		self.mapping['PCA'] = res
 	
 	def train_classifier(self, training_matrix):
-		self.classifier = self.classifier_class(kernel="linear", nu=self.nu, gamma=self.gamma)
+		self.classifier = self.classifier_class(kernel="rbf", nu=self.nu, gamma=self.gamma)
 		self.classifier.fit(training_matrix)
+# 		outlyer_importance = list(numpy.abs(self.classifier.coef_[0]))
+# 		features = self.mcellh5.object_feature_def()
+# 		for kk, (a, b) in enumerate([(x,y) for (y,x) in sorted(zip(outlyer_importance,features),reverse=True)]):
+# 			print "  ", kk, ":", a, b
+		
 		
 	def predict_with_classifier(self, test_matrix):
 		prediction = self.classifier.predict(test_matrix)
@@ -221,10 +226,10 @@ class OutlierDetection(object):
 		nan_cols = numpy.unique(numpy.where(numpy.isnan(data))[1])
 		self._non_nan_feature_idx = [x for x in range(data.shape[1]) if x not in nan_cols]
 		data = data[:, self._non_nan_feature_idx]
-		
+ 		
 		self._normalization_means = self._normalization_means[self._non_nan_feature_idx]
 		self._normalization_stds = self._normalization_stds[self._non_nan_feature_idx]
-		print 'normalize', numpy.any(numpy.isnan(data))
+		print ' normalize: found nans?', numpy.any(numpy.isnan(data))
 		
 		return data
 	
@@ -257,39 +262,40 @@ class OutlierDetection(object):
 			gmm.fit(training_data)
 			b = gmm.bic(training_data)
 			bics[k] = b
+		K = numpy.argmin(bics)
 		pylab.plot(bics)
+		pylab.vlines(K, bics.min(), bics.max())
+		pylab.xlabel("Number of clusters (k)")
+		pylab.ylabel("Baysian Information Criterion (BIC)")
 		pylab.show()
+		return K
 	
 	def cluster_outliers(self):
 		# setup clustering
 		print 'Setup clustering'
 		training_data = []
 		for _ , (data, prediction, g, s) in self.mapping[['PCA', 'Predictions', 'Gene Symbol', 'siRNA ID']].iterrows():
-			print "  ",g, s
-			data_i = data[prediction == -1,:]
+			print "  ", g, s
+			data_i = data[prediction == -1, :]
 			training_data.append(data_i)
 			
 		training_data = numpy.concatenate(training_data)
 		
-		self.cluster_get_k(training_data)
+		k = self.cluster_get_k(training_data)
 		
 		print 'Run clustering for training data shape', training_data.shape
-		km = sklearn.cluster.KMeans(2)
+		km = sklearn.cluster.KMeans(3)
 		km.fit(training_data)
 		
+		cluster_vectors = {}
+		
 		print 'Apply Clustering'
-		for _ , (data, prediction, g, s)  in self.mapping[['PCA', 'Predictions', 'Gene Symbol', 'siRNA ID']].iterrows():		
-			data_i = data[prediction == -1,:]
-			cluster_predict = km.predict(data_i)
-			print "  ", g, s, "cluster pureness-->",  (cluster_predict.sum() / float(len(cluster_predict)))
+		for idx , (data, prediction, g, s)  in self.mapping[['PCA', 'Predictions', 'Gene Symbol', 'siRNA ID']].iterrows():		
+			cluster_predict = km.predict(data) + 1
+			cluster_predict[prediction==1, :]= 0
+			cluster_vectors[idx] = cluster_predict
 			
-		
-			
-			
-			
-		
-			
-			
+		self.mapping['Outlier clustering'] = pandas.Series(cluster_vectors)
 
 	def plot(self):
 		f_x = 1
@@ -409,7 +415,7 @@ class OutlierDetection(object):
 		# cmap.set_under('w')
 					
 		print 'Heatmap', heatmap.max(), heatmap.min()	
-		fig = pylab.figure(figsize=(40,25))
+		#fig = pylab.figure(figsize=(40,25))
 		
 		ax = pylab.subplot(111)
 		pylab.pcolor(heatmap, cmap=cmap, vmin=0)
@@ -446,8 +452,9 @@ class OutlierDetection(object):
 	  	for label in ax.get_xticklabels() + ax.get_yticklabels(): 
 	  		label.set_fontsize(22) 
 		
+		pylab.tight_layout()
 		pylab.savefig('phenotypic_outlier_heatmap.pdf')
-		#pylab.show()
+		pylab.show()
 	
 		return heatmap
 	
@@ -498,93 +505,95 @@ class OutlierDetection(object):
 		pylab.tight_layout()
 		pylab.show()
 		
-	def make_pca_scatter(self):		
-		pcs = [(x, y) for x in range(4) for y in range(4)]
-
+	def make_pca_scatter(self):	
+		KK = 4
+			
+		pcs = [(x, y) for x in range(2) for y in range(2)]
+		legend_there = False
+		
 		for ii, (f_x, f_y) in enumerate(pcs):
-			ax = pylab.subplot(4, 4, ii + 1)
+			ax = pylab.subplot(2, 2, ii + 1)
+			if f_x == f_y:
+				ax.axis('off')
+				continue
+			
+			legend_points = []
+			legend_labels = []
+
+			treatment_group = self.mapping.groupby(['Gene Symbol','siRNA ID'])
+			
+			for tg in treatment_group:
+				treatment = "%s %s" % tg[0]
+				wells = list(tg[1]['Well'])
+				pca_components = numpy.concatenate(list(tg[1]['PCA']))  
+				prediction = numpy.concatenate(list(tg[1]['Predictions']))  
+		
+				x_min, x_max = pca_components[:, f_y].min(), pca_components[:, f_y].max()
+				y_min, y_max = pca_components[:, f_x].min(), pca_components[:, f_x].max()
+				
 
 			
-			x_min, y_min = 1000000, 100000
-			x_max, y_max = -100000, -100000
-			
-			# print len(self.mapping['PCA'])
-			for i in range(len(self.mapping['PCA'])):
-				data = self.mapping['PCA'][i]
-				prediction = self.mapping['Predictions'][i]
-				# print self.mapping['siRNA ID'][i], data.shape
-				
-				if "Taxol" in self.mapping['siRNA ID'][i]:
-					color = 'blue'
-				elif "Noco" in self.mapping['siRNA ID'][i]:
-					color = "red"
-				else:
-					color = "green"
+				if f_y > f_x:	
+					if "Taxol" in treatment:
+						color = 'blue'
+						if "No Reversine" in treatment:
+							color = "cyan"
+					elif "Noco" in treatment:
+						color = "red"
+						if "No Reversine" in treatment:
+							color = "orange"
+					else:
+						assert 'wt control' in treatment
+						color = "green"
+							
+					#if color=='green':
+					points = ax.scatter(pca_components[prediction == 1, f_x], pca_components[prediction == 1, f_y], c=color, marker="o", facecolors=color, zorder=999, edgecolor="none", s=20)
+					legend_points.append(points)
+					legend_labels.append("Inlier " + treatment)
 					
-				import re
-				rev_conc = re.search("^\d+", self.mapping['Gene Symbol'][i])
-				if rev_conc:
-					rev_conc = float(rev_conc.group())
-				else:
-					rev_conc = 0
+					points = ax.scatter(pca_components[prediction == -1, f_x], pca_components[prediction == -1, f_y], c=color, marker="o", facecolors='none', zorder=999, edgecolor=color, s=20)
+					legend_points.append(points)
+					legend_labels.append("Outlier " + treatment)	
 					
-				alpha = 1000.0 - rev_conc
-				alpha /= 1000
-				alpha += 0.2
-				alpha /= 1.2
-				
-	
-				ax.scatter(data[prediction == 1, f_x], data[prediction == 1, f_y], c=color, alpha=alpha, marker=".", zorder=999, edgecolor="none", s=20)
-				
-				ax.scatter(data[prediction == -1, f_x], data[prediction == -1, f_y], c=color, alpha=alpha, marker="d", zorder=999, edgecolor="none", s=10)
-				
-				
-				x_min_cur, x_max_cur = data[:, f_x].min(), data[:, f_x].max()
-				y_min_cur, y_max_cur = data[:, f_y].min(), data[:, f_y].max()
-			
-				x_min = min(x_min, x_min_cur)
-				y_min = min(y_min, y_min_cur)
-				x_max = max(x_max, x_max_cur)
-				y_max = max(y_max, y_max_cur)
+				else:
+					cluster_vectors = numpy.concatenate(list(tg[1]['Outlier clustering']))
+					cluster_colors = {0:'k', 1:'r', 2:'g', 3:'b', 4:'y', 5:'m'}
+					for k in range(1, cluster_vectors.max()+1):
+						points = ax.scatter(pca_components[cluster_vectors == k, f_y], pca_components[cluster_vectors == k, f_x], c=cluster_colors[k], marker="o", facecolors=cluster_colors[k], zorder=999, edgecolor="none", s=20)
 						
-				
-			# x_min = -12
-			# y_min = -25
+					
+
+					
+			if not legend_there:
+				pylab.figlegend(legend_points, legend_labels, loc = 'lower center', ncol=4, labelspacing=0.1 )
+				lengend_there = True
 			
-			# x_max = 42
-			# y_max = 42	
-			if f_x == f_y:
+			if f_y > f_x:	
+				x_min, x_max, y_min, y_max = y_min, y_max, x_min, x_max				
+								
+				xx, yy = numpy.meshgrid(numpy.linspace(x_min, x_max, 100), numpy.linspace(y_min, y_max, 100))
+				# Z = self.classifier.decision_function(numpy.c_[xx.ravel(), yy.ravel()])
+				matrix = numpy.zeros((100 * 100, self.pca_dims))
+				matrix[:, f_x] = xx.ravel()
+				matrix[:, f_y] = yy.ravel()
+				
+				
+				Z = self.classifier.decision_function(matrix)
+				Z = Z.reshape(xx.shape)
+	
+				ax.contourf(xx, yy, Z, levels=numpy.linspace(Z.min(), 0, 17), cmap=pylab.matplotlib.cm.Reds_r, alpha=0.2)
+				ax.contour(xx, yy, Z, levels=[0], linewidths=1, colors='k')
+				ax.contourf(xx, yy, Z, levels=numpy.linspace(0, Z.max(), 17), cmap=pylab.matplotlib.cm.Greens, alpha=0.3)
+
 				pylab.xlim((x_min, x_max))
 				pylab.ylim((y_min, y_max))
-				pylab.axis('off')
-				continue
-				
-			xx, yy = numpy.meshgrid(numpy.linspace(x_min, x_max, 100), numpy.linspace(y_min, y_max, 100))
-			# Z = self.classifier.decision_function(numpy.c_[xx.ravel(), yy.ravel()])
-			matrix = numpy.zeros((100 * 100, self.pca_dims))
-			matrix[:, f_x] = xx.ravel()
-			matrix[:, f_y] = yy.ravel()
-			
-			
-			Z = self.classifier.decision_function(matrix)
-			Z = Z.reshape(xx.shape)
-			# print Z
-			# Z = (Z - Z.min())
-			# Z = Z / Z.max()
-			# print Z.min(), Z.max()
-			# Z = numpy.log(Z+0.001)
-			
-			ax.contourf(xx, yy, Z, levels=numpy.linspace(Z.min(), Z.max(), 8), cmap=pylab.matplotlib.cm.Greens, hold='on', alpha=0.3)
-			# a = pylab.contour(xx, yy, Z, levels=[0], linewidths=2, colors='red')
-			# pylab.contourf(xx, yy, Z, levels=[0, Z.max()], colors='orange')
-		
-			pylab.xlim((x_min, x_max))
-			pylab.ylim((y_min, y_max))
+			else:
+				pylab.xlim((x_min, x_max))
+				pylab.ylim((y_min, y_max))
 			pylab.xticks([])
 			pylab.yticks([])
-			# pylab.xticklabels([])
-			# pylab.yticklabels([])
-			# pylab.axis('off')
+		
+
 		
 		pylab.axis('tight')
 		pylab.subplots_adjust(wspace=0.01, hspace=0.01)
@@ -637,8 +646,8 @@ class OutlierTest(object):
 							  rows=rows,
 							  cols=cols,
 							  locations=locations,
-							  gamma=239,
-							  nu=0.05
+							  gamma=0.01,
+							  nu=0.2
 							  )
 		self.od.read_feature()
 		
@@ -683,17 +692,17 @@ if __name__ == "__main__":
   	ot.setup(
   			 #rows=( "B", 'C', 'D',"E"), 
   			 #cols=(6,7,8,12,13),
-#    			 locations=(("A",  8), ("B", 8), ("C", 8), ("D", 8),
-#  						("H", 6), ("H", 7), ("G", 6), ("G", 7),
-#  						("H",12), ("H",13), ("G",12), ("G",13),)
+    			 locations=(("A",  8), ("B", 8), ("C", 8), ("D", 8),
+  						("H", 6), ("H", 7), ("G", 6), ("G", 7),
+  						("H",12), ("H",13), ("G",12), ("G",13),)
   			)
 	# ot.load_last('matthias_13-12-19-10-43_g0.0167_n0.0800.pkl')
 	
-	#b = ot.od.cluster_outliers()
+	b = ot.od.cluster_outliers()
 	
-#   	b = ot.od.make_pca_scatter()
+   	b = ot.od.make_pca_scatter()
 # 	a = ot.od.make_hit_list()
 	a = ot.od.make_heat_map()
-   	b = ot.od.make_outlier_galleries()
-
+   	#b = ot.od.make_outlier_galleries()
+   	#b = ot.od.cluster_outliers()
 
