@@ -5,7 +5,6 @@ import cPickle as pickle
 from numpy import recfromcsv
 import pandas
 import time
-import vigra
 import h5py
 import matplotlib.pyplot as mpl
 import os
@@ -58,7 +57,7 @@ rcParams['pdf.fonttype'] = 42
 rcParams['xtick.major.pad']= 8
 rcParams['ytick.major.pad']= 8
 
-SECURIN_BACKGROUND = 14
+SECURIN_BACKGROUND = 16
 
 class CellFateAnalysis(object):
     def __init__(self, plate_id, ch5_file, mapping_file, 
@@ -264,26 +263,28 @@ class CellFateAnalysis(object):
             
             feature_min = SECURIN_BACKGROUND 
             
-            fate_classes = [('mito_int', 'b', 'Mitosis - live interphase',),
-                            ('mito_int_apo','g', 'Mitosis - death in interphase'),
-                            ('mito_apo', 'r', 'Mitosis - death in mitosis')]
+            fate_classes = [(('mito_int', 'mito_int_mito_int_mito', 'mito_int_mito_int_apo', 'mito_int_mito_apo'), 'b', 'Mitosis - live interphase',),
+                            (('mito_int_apo',),'g', 'Mitosis - death in interphase'),
+                            (('mito_apo',), 'r', 'Mitosis - death in mitosis')]
             
-            for fate_name, fate_color, fate_label in fate_classes:
-                for track_1, track_2, track_ids in self.tracks[(w,p)][fate_name]:
-                    track_str = "".join(map(lambda x: "%02d" % x, track_2))
-                    mito_re = re.search(r'01+(?P<mito>(02|03)+)', track_str)
-                    if mito_re is not None:
-                        end = mito_re.end('mito') / 2
-                    else:
-                        print 'oarg?'
-                        print track_str
-                        print ""
-                        continue
-                    
-                    feature_values = numpy.array([feature_table[t, feature_idx] for t in track_ids[:end]])
-                    values = feature_values - feature_min
-                    values = values / numpy.mean(values[(self.onset_frame-1):(self.onset_frame+2)])
-                    ax.plot(numpy.arange(-self.onset_frame, len(values)-self.onset_frame, 1)*self.time_lapse, values[:len(values)], color=fate_color, linewidth=1, label=fate_label)
+            for fate_names, fate_color, fate_label in fate_classes:
+                for fate_name in fate_names:
+                    feature_values = []
+                    for track_1, track_2, track_ids in self.tracks[(w,p)][fate_name]:
+                        track_str = "".join(map(lambda x: "%02d" % x, track_2))
+                        mito_re = re.search(r'01+(?P<mito>(02|03)+)', track_str)
+                        if mito_re is not None:
+                            end = mito_re.end('mito') / 2
+                        else:
+                            print 'oarg?'
+                            print track_str
+                            print ""
+                            continue
+                        
+                        feature_values = numpy.array([feature_table[t, feature_idx] for t in track_ids[:end]])
+                        values = feature_values - feature_min
+                        values = values / numpy.mean(values[(self.onset_frame-1):(self.onset_frame+2)])
+                        ax.plot(numpy.arange(-self.onset_frame, len(values)-self.onset_frame, 1)*self.time_lapse, values[:len(values)], color=fate_color, linewidth=1, label=fate_label)
   
 #             handles, labels = ax.get_legend_handles_labels()
 #             lg = pylab.legend(handles, labels, loc=3, ncol=1)
@@ -336,26 +337,27 @@ class CellFateAnalysis(object):
             
             feature_min = SECURIN_BACKGROUND 
             
-            fate_classes = [('mito_int', 'b', 'Mitosis - live interphase',),
-                            ('mito_int_apo','g', 'Mitosis - death in interphase'),
-                            ('mito_apo', 'r', 'Mitosis - death in mitosis')]
+            fate_classes = [(('mito_int', 'mito_int_mito_int_mito', 'mito_int_mito_int_apo', 'mito_int_mito_apo'), 'b', 'Mitosis - live interphase',),
+                            (('mito_int_apo',),'g', 'Mitosis - death in interphase'),
+                            (('mito_apo',), 'r', 'Mitosis - death in mitosis')]
             
-            for fate_name, fate_color, fate_label in fate_classes:
+            for fate_names, fate_color, fate_label in fate_classes:
                 feature_values = []
-                for track_1, track_2, track_ids in self.tracks[(w,p)][fate_name]:
-                    track_str = "".join(map(lambda x: "%02d" % x, track_2))
-                    mito_re = re.search(r'01+(?P<mito>(02|03)+)', track_str)
-                    if mito_re is not None:
-                        end = mito_re.end('mito') / 2
-                    else:
-                        print 'oarg?'
-                        print track_str
-                        print ""
-                        continue
-                    values = numpy.array([feature_table[t, feature_idx] for t in track_ids[:end]])
-                    values -= feature_min
-                    values /= numpy.mean(values[(self.onset_frame-1):(self.onset_frame+2)])
-                    feature_values.append(values)
+                for fate_name in fate_names:
+                    for track_1, track_2, track_ids in self.tracks[(w,p)][fate_name]:
+                        track_str = "".join(map(lambda x: "%02d" % x, track_2))
+                        mito_re = re.search(r'01+(?P<mito>(02|03)+)', track_str)
+                        if mito_re is not None:
+                            end = mito_re.end('mito') / 2
+                        else:
+                            print 'oarg?'
+                            print track_str
+                            print ""
+                            continue
+                        values = numpy.array([feature_table[t, feature_idx] for t in track_ids[:end]])
+                        values -= feature_min
+                        values /= numpy.mean(values[(self.onset_frame-1):(self.onset_frame+2)])
+                        feature_values.append(values)
                 y = []
                 yerr = []
                 for tmp in izip_longest(*feature_values):
@@ -625,13 +627,13 @@ class CellFateAnalysis(object):
                     ax.set_title(title)
                     pylab.axis('off')
                     extent = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
-                    fig.savefig(self.output('tracks_short_%s.png' % title), bbox_inches=extent)  
+                    fig.savefig(self.output('tracks_short_%s_%d.png' % (title, TRACK_IMG_CROP)), bbox_inches=extent)  
 
                     ax.matshow(img, cmap=cmap, vmin=0, vmax=cmap.N-1) 
                     ax.set_title(title)
                     pylab.axis('off')
                     extent = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
-                    fig.savefig(self.output('tracks_full_%s.png' % title), bbox_inches=extent)
+                    fig.savefig(self.output('tracks_full_%s_%d.png' % (title, int(max_track_length*self.time_lapse))), bbox_inches=extent)
                 else:
                     print w, p, 'Nothing to plot'
             j+=1
@@ -987,7 +989,7 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
                                 
                                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
                                 ])
-        transmat = normalize(transmat, axis=1, eps=0)
+        transmat = normalize(transmat, axis=1, eps=1e-20)
         
         assert transmat.shape[0] == self.hmm_n_classes
         assert transmat.shape[1] == self.hmm_n_classes
@@ -1343,13 +1345,26 @@ EXP_LOOKUP = {
              'hmm_n_classes': 17,
              'hmm_n_obs': 5,
              'output_dir' : 'M:/experiments/Experiments_002300/002338/002338/_meta/fate',
+             },
+         '002377':
+            {
+             'ch5_file':     "M:/experiments/Experiments_002300/002377/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002300/002377/_meta/Mapping/002377.txt",
+             'time_lapse': 5.9, 
+             'events_before_frame': 125, # in frames
+             'onset_frame': 5, # in frames
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002300/002377/_meta/fate/test',
              }
+         
       }
             
 def fate_mutli_bi(plate_id):
     pm = CellFateAnalysisMultiHMM(plate_id, 
-                                  rows=("H", ), 
-                                  cols=(2,), 
+                                rows=("C", "D"), 
+                                cols=(2, 3, 4, 5), 
                                   **EXP_LOOKUP[plate_id])
     
     pm.fate_tracking(out_name='Raw class labels')
@@ -1406,45 +1421,45 @@ def fate_mutli_bi(plate_id):
 #                     (0,1.5),
 #                            )
     
-    pm.event_mean_fate_curves('Multi State HMM', 
-                    '_securin_degradation_per_fate_mean_long',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    True,
-                    pm.cmap,
-                    (-20,1200),
-                    (0,1.5),
-                           )
-    
-    pm.event_mean_fate_curves('Multi State HMM', 
-                    '_securin_degradation_per_fate_mean_short',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    False,
-                    pm.cmap,
-                    (-20,120),
-                    (0,1.5),
-                           )
-    
-    pm.event_fate_curves('Multi State HMM', 
-                    '_securin_degradation_per_fate_all_long',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    True,
-                    pm.cmap,
-                    (-20,1200),
-                    (0,1.5),
-                           )
-    
-    pm.event_fate_curves('Multi State HMM', 
-                    '_securin_degradation_per_fate_all_short',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    False,
-                    pm.cmap,
-                    (-20,120),
-                    (0,1.5),
-                           )
+#     pm.event_mean_fate_curves('Multi State HMM', 
+#                     '_securin_degradation_per_fate_mean_long',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     True,
+#                     pm.cmap,
+#                     (-20,1200),
+#                     (0,1.5),
+#                            )
+#     
+#     pm.event_mean_fate_curves('Multi State HMM', 
+#                     '_securin_degradation_per_fate_mean_short',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     False,
+#                     pm.cmap,
+#                     (-20,120),
+#                     (0,1.5),
+#                            )
+#     
+#     pm.event_fate_curves('Multi State HMM', 
+#                     '_securin_degradation_per_fate_all_long',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     True,
+#                     pm.cmap,
+#                     (-20,1200),
+#                     (0,1.5),
+#                            )
+#     
+#     pm.event_fate_curves('Multi State HMM', 
+#                     '_securin_degradation_per_fate_all_short',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     False,
+#                     pm.cmap,
+#                     (-20,120),
+#                     (0,1.5),
+#                            )
     
     print 'CellFateAnalysisMultiHMM done'
     
@@ -1454,7 +1469,8 @@ def fate_mutli_bi(plate_id):
 
 if __name__ == "__main__":
     #fate_mutli_bi('002200')
-    fate_mutli_bi('002338')
+    #fate_mutli_bi('002338')
+    fate_mutli_bi('002377')
     #fate_mitotic_time()
     print 'FINISH'
 

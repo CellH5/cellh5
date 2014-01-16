@@ -354,6 +354,44 @@ class ColoredConcentrationTimingBar(ColoredConcentrationTimingSpread):
         pylab.xlabel('Concentration (%s)' % self.conc_unit)
         pylab.ylabel('Mitotic duration (min)')
         
+def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
+    width=0.33
+        
+    labels = []
+    rects = []
+    x = 0 
+    for treatment, cluster_vec in treatment_dict.items():
+        labels.append(treatment)
+        hs = []
+        for cluster in range(cluster_vec.max()+1):
+            h = len((cluster_vec==cluster).nonzero()[0])
+            hs.append(float(h) / len(cluster_vec))
+            
+        bottom=0
+        for c, h in enumerate(hs):
+            rect = ax.bar(x, h, width, bottom=bottom, color=color_dict[c])
+            bottom+=h
+            rects.append(rect)
+        x +=1  
+          
+    rects.append(rect)
+    lg = ax.legend(rects, label_list, 
+                   loc=self.legend_loc, 
+                   ncol=self.legend_ncol,
+                   bbox_to_anchor=(-0.1, -0.3)
+                   )
+    lg.draw_frame(False)
+            
+    #ax.set_xticks(numpy.arange(len(fates))+width/2.0)
+    ax.set_xticklabels(labels, rotation=90)
+    ax.spines["right"].set_visible(False)
+    ax.spines["top"].set_visible(False)
+    ax.get_xaxis().tick_bottom()
+    ax.get_yaxis().tick_left()
+    #ax.set_xlim(-0.2,len(fates)-0.35)
+    
+    pylab.xlabel('Treatment')
+    pylab.ylabel('Cluster')
     
 class ConcentrationStackedBar(ColoredConcentrationTimingSpread):    
     def plot_stacked_fate_bar(self, ax, **options):
