@@ -989,7 +989,7 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
                                 
                                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
                                 ])
-        transmat = normalize(transmat, axis=1, eps=1e-20)
+        transmat = normalize(transmat, axis=1, eps=0)
         
         assert transmat.shape[0] == self.hmm_n_classes
         assert transmat.shape[1] == self.hmm_n_classes
