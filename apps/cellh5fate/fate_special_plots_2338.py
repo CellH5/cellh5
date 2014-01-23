@@ -217,12 +217,20 @@ def boehringer_concentration_cells_dying_in():
     pylab.show()
 
 
-def boehringer_mitotic_timing():
+def boehringer_mitotic_timing(exp_id):
     """ plots concentration versus mitotic timing for Taxol, Noco and BI
         color code == fate of beeing either Gascoigne class 1,3,5 (only first mitosis)
     """
-    mt_fle = "__mito_timing_2338.txt"
-    mc_fle = "__mito_classes_2338.txt"
+    mt_fle = "__mito_timing_%s.txt" % exp_id
+    mc_fle = "__mito_classes_%s.txt" % exp_id
+    
+    outdir = "fate_special_%s/" % exp_id 
+
+    try:
+        import os
+        os.makedirs(outdir)
+    except WindowsError:
+        pass
      
     def plot_spreads(title, wells, conc, conc_label):
         fig = pylab.figure(figsize=(9,6))
@@ -236,8 +244,8 @@ def boehringer_mitotic_timing():
         ax.set_title(title)
         pylab.tight_layout()
         lgd = ax.get_legend()
-        pylab.savefig('spread_%s.pdf' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
-        pylab.savefig('spread_%s.png' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
+        pylab.savefig(outdir + 'spread_%s.pdf' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
+        pylab.savefig(outdir + 'spread_%s.png' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
     
     def plot_bars(title, wells, conc, conc_label):
         fig = pylab.figure(figsize=(9,6))
@@ -251,8 +259,8 @@ def boehringer_mitotic_timing():
         ax.set_title(title)
         pylab.tight_layout()
         lgd = ax.get_legend()
-        pylab.savefig('bars_%s.pdf' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
-        pylab.savefig('bars_%s.png' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
+        pylab.savefig(outdir + 'bars_%s.pdf' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
+        pylab.savefig(outdir + 'bars_%s.png' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
         
     def plot_stacked_bars(title, wells, conc, conc_label):
         fig = pylab.figure(figsize=(9,6))
@@ -266,8 +274,8 @@ def boehringer_mitotic_timing():
         ax.set_title(title)
         pylab.tight_layout()
         lgd = ax.get_legend()
-        pylab.savefig('sbars_%s.pdf' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
-        pylab.savefig('sbars_%s.png' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
+        pylab.savefig(outdir + 'sbars_%s.pdf' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
+        pylab.savefig(outdir + 'sbars_%s.png' % title, bbox_extra_artists=(lgd,), bbox_inches='tight')
      
     for plot_ in [plot_spreads, plot_bars, plot_stacked_bars]:   
         cons_nm = ["%s" % c for c in ['0',] + map(str, [0.78, 1.56, 3.13, 6.25, 12.5, 25, 50, 100, 200, 400])]
@@ -300,5 +308,5 @@ def boehringer_mitotic_timing():
     pylab.show()
 
 if __name__ == "__main__":
-    boehringer_mitotic_timing()
+    boehringer_mitotic_timing('2338')
     print 'Finished boehringer_mitotic_timing'

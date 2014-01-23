@@ -73,6 +73,8 @@ class CellFateAnalysis(object):
                  hmm_n_classes=None,
                  hmm_n_obs=None,
                  
+                 securin_region=None,
+                 
                  sites=None, 
                  rows=None, 
                  cols=None, 
@@ -108,8 +110,10 @@ class CellFateAnalysis(object):
         hex_col = list(self.class_colors) 
         
         rgb_col = map(lambda x: hex_to_rgb(x), ['#FFFFFF'] + hex_col)
+        rgb_col_cycle3 = map(lambda x: hex_to_rgb(x), ['#FFFFFF'] + hex_col[:-1] + hex_col[:-1] + hex_col[:-1] +[hex_col[-1]])
         
         self.cmap = matplotlib.colors.ListedColormap(rgb_col, 'classification_cmap')
+        self.cmap_cycle_3 = matplotlib.colors.ListedColormap(rgb_col_cycle3, 'classification_cycle_3_cmap')
         self.tracks = {}
         
         for _, (w, p) in self.mcellh5.mapping[['Well','Site']].iterrows(): 
@@ -989,7 +993,7 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
                                 
                                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
                                 ])
-        transmat = normalize(transmat, axis=1, eps=0)
+        transmat = normalize(transmat, axis=1, eps=0 )
         
         assert transmat.shape[0] == self.hmm_n_classes
         assert transmat.shape[1] == self.hmm_n_classes
@@ -1332,7 +1336,8 @@ EXP_LOOKUP = {
              'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
              'hmm_n_classes': 17,
              'hmm_n_obs': 5,
-             #'output_dir' : 'M:/experiments/Experiments_002200/002200/_meta/fate',
+             'output_dir' : 'M:/experiments/Experiments_002200/002200/_meta/fate',
+             'securin_region' : "tertiary__expanded"
              },
         '002338':
             {
@@ -1345,6 +1350,7 @@ EXP_LOOKUP = {
              'hmm_n_classes': 17,
              'hmm_n_obs': 5,
              'output_dir' : 'M:/experiments/Experiments_002300/002338/002338/_meta/fate',
+             'securin_region' : "tertiary__expanded"
              },
          '002377':
             {
@@ -1357,29 +1363,72 @@ EXP_LOOKUP = {
              'hmm_n_classes': 17,
              'hmm_n_obs': 5,
              'output_dir' : 'M:/experiments/Experiments_002300/002377/_meta/fate/test',
-             }
-         
+             'securin_region' : "secondary__expanded"
+             },
+              
+              '002325':
+            {
+             'ch5_file':     "M:/experiments/Experiments_002300/002325/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002300/002325/_meta/Mapping/002325.txt",
+             'time_lapse': 4.6, 
+             'events_before_frame': 160, # in frames
+             'onset_frame': 5, # in frames
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002300/002325/_meta/fate',
+             'securin_region' : "secondary__expanded"
+             },
+              
+              '002288':
+            {
+             'ch5_file':     "M:/experiments/Experiments_002200/002288/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002200/002288/_meta/Mapping/002288_1.txt",
+             'time_lapse': 4.5, 
+             'events_before_frame': 160, # in frames
+             'onset_frame': 5, # in frames
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002200/002288/_meta/fate',
+             'securin_region' : "tertiary__expanded"
+             },
+              
+              '002301':
+            {
+             'ch5_file':     "M:/experiments/Experiments_002300/002301/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002300/002301/_meta/Mapping/002301_01.txt",
+             'time_lapse': 4.6, 
+             'events_before_frame': 160, # in frames
+             'onset_frame': 5, # in frames
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002300/002301/_meta/fate',
+             'securin_region' : "tertiary__expanded"
+             },        
       }
             
 def fate_mutli_bi(plate_id):
     pm = CellFateAnalysisMultiHMM(plate_id, 
-                                rows=("C", "D"), 
-                                cols=(2, 3, 4, 5), 
+#                                 rows=("D", ), 
+#                                 cols=(3,), 
                                   **EXP_LOOKUP[plate_id])
     
     pm.fate_tracking(out_name='Raw class labels')
     pm.setup_hmm()
     pm.predict_hmm('Raw class labels', 'Multi State HMM')   
     
-    pm.plot_tracks(['Raw class labels', 'Multi State HMM', 'Multi State HMM',], 
-                   [pm.cmap, CMAP17, CMAP17_MULTI],
-                   ['Raw class labels', 'HMM Multi simple', 'HMM Multi full'],
-                    '_trajectories_all')
+    pm.plot_tracks(['Raw class labels', 'Multi State HMM', 'Multi State HMM', 'Multi State HMM',], 
+                   [pm.cmap, pm.cmap_cycle_3, CMAP17, CMAP17_MULTI],
+                   ['Raw class labels', 'HMM class labels', 'HMM Multi simple', 'HMM Multi full'],
+                    'trajectories_all')
      
     pm.classify_tracks('Multi State HMM')
-    pm.plot_mitotic_timing('Multi State HMM')
+    #pm.plot_mitotic_timing('Multi State HMM')
     pm.cmap = CMAP17
     pm.plot('__fate_all', 2)
+    securin_region = EXP_LOOKUP[plate_id]['securin_region']
      
 #     pm.event_curves('Multi State HMM',
 #                     '_securin_degradation_short',
@@ -1421,45 +1470,45 @@ def fate_mutli_bi(plate_id):
 #                     (0,1.5),
 #                            )
     
-#     pm.event_mean_fate_curves('Multi State HMM', 
-#                     '_securin_degradation_per_fate_mean_long',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     True,
-#                     pm.cmap,
-#                     (-20,1200),
-#                     (0,1.5),
-#                            )
-#     
-#     pm.event_mean_fate_curves('Multi State HMM', 
-#                     '_securin_degradation_per_fate_mean_short',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     False,
-#                     pm.cmap,
-#                     (-20,120),
-#                     (0,1.5),
-#                            )
-#     
-#     pm.event_fate_curves('Multi State HMM', 
-#                     '_securin_degradation_per_fate_all_long',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     True,
-#                     pm.cmap,
-#                     (-20,1200),
-#                     (0,1.5),
-#                            )
-#     
-#     pm.event_fate_curves('Multi State HMM', 
-#                     '_securin_degradation_per_fate_all_short',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     False,
-#                     pm.cmap,
-#                     (-20,120),
-#                     (0,1.5),
-#                            )
+    pm.event_mean_fate_curves('Multi State HMM', 
+                    '_securin_degradation_per_fate_mean_long',
+                    securin_region,
+                    'n2_avg',
+                    True,
+                    pm.cmap,
+                    (-20,1200),
+                    (0,1.5),
+                           )
+      
+    pm.event_mean_fate_curves('Multi State HMM', 
+                    '_securin_degradation_per_fate_mean_short',
+                    securin_region,
+                    'n2_avg',
+                    False,
+                    pm.cmap,
+                    (-20,120),
+                    (0,1.5),
+                           )
+      
+    pm.event_fate_curves('Multi State HMM', 
+                    '_securin_degradation_per_fate_all_long',
+                    securin_region,
+                    'n2_avg',
+                    True,
+                    pm.cmap,
+                    (-20,1200),
+                    (0,1.5),
+                           )
+      
+    pm.event_fate_curves('Multi State HMM', 
+                    '_securin_degradation_per_fate_all_short',
+                    securin_region,
+                    'n2_avg',
+                    False,
+                    pm.cmap,
+                    (-20,120),
+                    (0,1.5),
+                           )
     
     print 'CellFateAnalysisMultiHMM done'
     
@@ -1470,7 +1519,10 @@ def fate_mutli_bi(plate_id):
 if __name__ == "__main__":
     #fate_mutli_bi('002200')
     #fate_mutli_bi('002338')
-    fate_mutli_bi('002377')
+    #fate_mutli_bi('002377')
+    #fate_mutli_bi('002325')
+    #fate_mutli_bi('002288')
+    fate_mutli_bi('002301')
     #fate_mitotic_time()
     print 'FINISH'
 
