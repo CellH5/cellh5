@@ -257,18 +257,20 @@ class ColoredConcentrationTimingSpread(ConcentrationLine):
                        1:'g',
                        2:'r', 
                        }
-        def get_color(color_list):
-            return [color_table[c] for c in color_list]
-        
+        fate_lookup = {
+                       0: (0,1,2,4,), 
+                       1: (3,),
+                       2: (5,),
+                       }
         width=0.25
-        fate_lookup = {0:0,1:3,2:5}
+
         rects = []
         for ind, (x, y, f) in enumerate(zip(x_spread, values, fates)):
             ax.vlines(ind-0.5, 0, 2000, alpha=0.5, linestyle=':')
             f_ = f[:len(y)]
             for wi in range(3):
-                y_ = y[(f==fate_lookup[wi]).nonzero()[0]]
-                x_ = x[(f==fate_lookup[wi]).nonzero()[0]]
+                y_ = y[(numpy.in1d(f, fate_lookup[wi])).nonzero()[0]]
+                x_ = x[(numpy.in1d(f, fate_lookup[wi])).nonzero()[0]]
                 rect = ax.scatter(x_+((wi-1)*width), y_, color=color_table[wi], s=20, marker='.', )#facecolor='none')
             
                 rects.append(rect)
@@ -314,18 +316,19 @@ class ColoredConcentrationTimingBar(ColoredConcentrationTimingSpread):
         color_table = {0:'b', 
                        1:'g',
                        2:'r', 
-                       #-1:(1, 0, 1)
                        }
-        def get_color(color_list):
-            return [color_table[c] for c in color_list]
+        fate_lookup = {
+                       0: (0,1,2,4,), 
+                       1: (3,),
+                       2: (5,),
+                       }
         
         width=0.25
-        fate_lookup = {0:0,1:3,2:5}
         rects = []
         for x, y, f in zip(x_spread, values, fates):
             f_ = f[:len(y)]
             for wi in range(3):
-                y_ = y[(f==fate_lookup[wi]).nonzero()[0]]
+                y_ = y[(numpy.in1d(f,fate_lookup[wi])).nonzero()[0]]
                 if len(y_) > 0:
                     m = numpy.mean(y_)
                     s= numpy.std(y_)
@@ -401,31 +404,26 @@ class ConcentrationStackedBar(ColoredConcentrationTimingSpread):
                 height = rect.get_height()
                 ax.text(rect.get_x()+rect.get_width()/2., height+30, txt,
                 ha='center', va='bottom', size=14)
-
+        
         x_spread = []
-        
-        
-            
         fates = [self.fate_classes[w] for w in self.wells]
         for v_idx, v in enumerate(fates):
             x_spread.append(v_idx)
-        color_table = {0:'b', 
-                       1:'g',
-                       2:'r', 
-                       #-1:(1, 0, 1)
+        
+        color_table = {0:'b', 1:'g', 2:'r',}
+        fate_lookup = {
+                       0: (0,1,2,4,), 
+                       1: (3,),
+                       2: (5,),
                        }
-        def get_color(color_list):
-            return [color_table[c] for c in color_list]
         
         width=0.33
-        fate_lookup = {0:0,1:3,2:5}
         rects = []
         
         for x, f in zip(x_spread, fates):
-            
             hs = []
             for wi in range(3):
-                h = len((f==fate_lookup[wi]).nonzero()[0])
+                h = len((numpy.in1d(f, fate_lookup[wi])).nonzero()[0])
                 hs.append(h)
                 
             hs = numpy.array(hs).astype(numpy.float32)
