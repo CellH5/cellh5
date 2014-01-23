@@ -716,9 +716,10 @@ class CH5File(object):
 
 
 class CH5MappedFile(CH5File):
-    def read_mapping(self, mapping_file, sites=None, rows=None, cols=None, locations=None):
+    def read_mapping(self, mapping_file, sites=None, rows=None, cols=None, locations=None, plate_name=''):
         self.mapping_file = mapping_file
         self.mapping = pandas.read_csv(self.mapping_file, sep='\t')
+        self.mapping['Plate'] = plate_name
 
         if sites is not None:
             self.mapping = self.mapping[self.mapping['Site'].isin(sites)]
@@ -746,6 +747,10 @@ class CH5MappedFile(CH5File):
         if treatment_column is None:
             treatment_column = ['siRNA ID', 'Gene Symbol']
         return self._get_mapping_field_of_pos(well, pos, treatment_column)
+    
+
+            
+    
 
 
 class CH5TestBase(unittest.TestCase):
