@@ -58,23 +58,32 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
 
 class OutlierDetection(object):
     classifier_class = OneClassSVM
-    def __init__(self, name, mapping_file, cellh5_file, training_sites=(1,), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
+    def __init__(self, name, mapping_files, cellh5_files, training_sites=(1,), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
         assert gamma != None
         assert pca_dims != None
         assert kernel != None
         assert nu != None
         
         self.name = name
-        output_dir = None
         
-        self.mapping_file = mapping_file
-        self.cellh5_file = cellh5_file
+        self.mapping_files = mapping_files
+        self.cellh5_files = cellh5_files
         
-        self.mcellh5  = cellh5.CH5MappedFile(cellh5_file)
+        mappings = []
+        for plate_name, mapping_file in mapping_files.items():
+            assert plate_name in cellh5_files.keys()
+            cellh5_file = cellh5_files[plate_name]
         
-        self.mcellh5.read_mapping(mapping_file, sites=training_sites, rows=rows, cols=cols, locations=locations)
-        self.mapping = self.mcellh5.mapping
+            plate_cellh5  = cellh5.CH5MappedFile(cellh5_file)
         
+            plate_cellh5.read_mapping(mapping_file, sites=training_sites, rows=rows, cols=cols, locations=locations, plate_name=plate_name)
+            plate_mappings = plate_cellh5.mapping
+            
+            mappings.append(plate_mappings)
+            
+        self.mapping = pandas.concat(mappings, ignore_index=True)
+        del mappings
+
         self.gamma = gamma
         self.nu = nu
         self.classifier = None
@@ -83,11 +92,16 @@ class OutlierDetection(object):
         self.kernel = kernel
         plate_id = name
         self.plate_id = name
+    
+        output_dir = None
+        self.set_output_dir(output_dir, plate_id)
+        
+    def set_output_dir(self, output_dir, plate_id):
         
         self.output_dir = output_dir
         if output_dir is None:
             self.output_dir = plate_id +"/" + datetime.datetime.now().strftime("%y-%m-%d-%H-%M")
-            self.output_dir += "-p%d-k%s-n%f-g%f" % (pca_dims, kernel, nu, gamma)
+            self.output_dir += "-p%d-k%s-n%f-g%f" % (self.pca_dims, self.kernel, self.nu, self.gamma)
             try:
                 os.makedirs(self.output_dir)
             except:
@@ -184,39 +198,46 @@ class OutlierDetection(object):
         return data
             
     def read_feature(self):
-        m = self.mapping
-        ch5_file = cellh5.CH5File(self.cellh5_file)
+        # init new columns
+        self.mapping['Object features'] = 0
+        self.mapping['Object count'] = 0
+        self.mapping['CellH5 object index'] = 0
         
-        features = []
-        object_counts = []
-        c5_object_index = []
-        for i, row in m.iterrows():
-            well = row['Well']
-            site = str(row['Site'])
+        # read features from each plate
+        for plate_name, cellh5_file in self.cellh5_files.items(): 
+            ch5_file = cellh5.CH5File(cellh5_file)
+            features = []
+            object_counts = []
+            c5_object_index = []
             
-            ch5_pos = ch5_file.get_position(well, site)
+            for i, row in self.mapping[self.mapping['Plate']==plate_name].iterrows():
+                well = row['Well']
+                site = str(row['Site'])
+                
+                ch5_pos = ch5_file.get_position(well, site)
+                
+                feature_matrix = ch5_pos.get_object_features()
+                a = ch5_pos.get_object_table('primary__primary')
+                
+                time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] >= 7
+                
+                feature_matrix = feature_matrix[time_8_idx, :]
+                
+                object_count = len(feature_matrix)
+                object_counts.append(object_count)
+                
+                if object_count > 0:
+                    features.append(feature_matrix)
+                else:
+                    features.append(numpy.zeros((0, features[0].shape[1])))
+                c5_object_index.append(numpy.where(time_8_idx)[0])
+                
+                print 'Reading', plate_name, well, site, len(feature_matrix)
             
-            feature_matrix = ch5_pos.get_object_features()
-            a = ch5_pos.get_object_table('primary__primary')
-            
-            time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] >= 7
-            
-            feature_matrix = feature_matrix[time_8_idx, :]
-            
-            object_count = len(feature_matrix)
-            object_counts.append(object_count)
-            
-            if object_count > 0:
-                features.append(feature_matrix)
-            else:
-                features.append(numpy.zeros((0, features[0].shape[1])))
-            c5_object_index.append(numpy.where(time_8_idx)[0])
-            
-            print 'Reading', well, site, len(feature_matrix)
-        
-        m['Object features'] = features
-        m['Object count'] = object_counts
-        m['CellH5 object index'] = c5_object_index
+            plate_idx = self.mapping['Plate'] == plate_name
+            self.mapping.loc[plate_idx, 'Object features'] = features
+            self.mapping.loc[plate_idx,'Object count'] = object_counts
+            self.mapping.loc[plate_idx,'CellH5 object index'] = c5_object_index
         
     def compute_outlyingness(self):
         def _outlier_count(x):
@@ -389,6 +410,7 @@ class OutlierDetection(object):
         
         x_min, y_min = 1000000, 100000
         x_max, y_max = -100000, -100000
+        ch5_file = cellh5.CH5File(self.cellh5_file)
         
         print len(self.mapping['PCA'])
         for i in range(len(self.mapping['PCA'])):
@@ -411,7 +433,7 @@ class OutlierDetection(object):
             x_max = max(x_max, x_max_cur)
             y_max = max(y_max, y_max_cur)
             
-            ch5_file = cellh5.CH5File(self.cellh5_file)
+            
             
             import vigra
             well = str(self.mapping['Well'][i])
@@ -723,9 +745,7 @@ class OutlierDetection(object):
                 sorted_ch5_index = []
             img = ch5_pos.get_gallery_image_matrix(sorted_ch5_index, (20, 25))
             vigra.impex.writeImage(img.swapaxes(1,0), self.output('xgal_%s_%s_%s_%s_inlier.png' % (well, site, ge, si, )))
-        
-        
-        
+             
 class OutlierTest(object):
     def __init__(self, name, mapping_file, ch5_file):
         self.name = name
@@ -781,6 +801,7 @@ def sara_screen_analysis():
      
 if __name__ == "__main__":
     
+### Matthias Begin
     if False:
     
         for kernel in ['linear', 'rbf']:
@@ -807,11 +828,16 @@ if __name__ == "__main__":
     #                     ot.od.make_heat_map()
     #                     ot.od.make_outlier_galleries()
     else:
-        ot = OutlierTest('matthias_full',
-                         'M:/experiments/Experiments_002300/002324/meta/CellCog/mapping/MD9_Grape_over_Time.txt',
-                         'M:/experiments/Experiments_002300/002324/meta/CellCog/analysis/hdf5/_all_positions.ch5'
+        ot = OutlierTest('matthias_od',
+                         {'matthias_002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/mapping/MD9_Grape_over_Time.txt'},
+                         {'matthias_002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/analysis/hdf5/_all_positions.ch5'}
                         ) 
         ot.setup(
+                locations=(
+                       ("A",  8), ("B", 8), ("C", 8), ("D", 8),
+                         ("H", 6), ("H", 7), #("G", 6), ("G", 7),
+                         ("H",12), ("H",13), #("G",12), ("G",13),
+                        ),
                 gamma=0.005,
                 nu=0.15,
                 pca_dims=239,
@@ -821,4 +847,4 @@ if __name__ == "__main__":
         ot.od.make_pca_scatter()
         ot.od.make_heat_map()
         ot.od.make_outlier_galleries()
-
+### Matthias End
