@@ -653,7 +653,7 @@ class CH5MappedFile(CH5File):
             self.mapping = self.mapping[self.mapping['Column'].isin(cols)]
             
         if locations is not None:
-            self.mapping = self.mapping[reduce(pandas.Series.__or__, [self.mapping['Row'].isin(c) & (self.mapping['Column'] == r) for c, r in locations])]
+            self.mapping = self.mapping[reduce(pandas.Series.__or__, [(self.mapping['Row'] == c) & (self.mapping['Column'] == r) for c, r in locations])]
         
         self.mapping.reset_index(inplace=True)
 
@@ -850,6 +850,54 @@ class TestCH5Examples(CH5TestBase):
         for event in events[:5]:
             image.append(self.pos.get_gallery_image(tuple(event)))
         #vigra.impex.writeImage(numpy.concatenate(image, axis=0).swapaxes(1,0), 'mitotic_events.png')
+        
+        
+def repack_cellh5(cellh5_older):
+    """copies a cellh5 folder wellbased into one single postition file"""
+    import glob, re, os
+    PLATE_PREFIX = '/sample/0/plate/'
+    WELL_PREFIX = PLATE_PREFIX + '%s/experiment/'
+    POSITION_PREFIX = WELL_PREFIX + '%s/position/'
+    
+    def get_plate_and_postion(hf_file):
+        plate = hf_file[PLATE_PREFIX].keys()[0]
+        well = hf_file[WELL_PREFIX % plate].keys()[0]
+        position = hf_file[POSITION_PREFIX % (plate, well)].keys()[0]
+        return plate, well, position
+    
+    flist = sorted(glob.glob('%s/*.ch5' % cellh5_older))
+    
+    f = h5py.File('%s/_all_positions_with_data.h5' % cellh5_older, 'w')
+    
+    reg = re.compile('^[A-Z]\d{2}_\d{2}')
+    cnt = 0
+    for fname in flist:
+        if reg.search(os.path.split(fname)[1]) is not None:
+            print cnt, fname
+            if cnt == 0:
+                # write definition
+                fh = h5py.File(fname, 'r')  
+                f.copy(fh['/definition'], 'definition')
+                fh.close()
+            # copy suff
+            fh = h5py.File(fname, 'r')  
+            fplate, fwell, fpos = get_plate_and_postion(fh)
+            #print (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
+            f.copy( fh[(POSITION_PREFIX + '%s') % (fplate, fwell, fpos)], (POSITION_PREFIX + '%s') % (fplate, fwell, fpos))
+            fh.close()
+            cnt += 1
+    f.close()
+        
 
 if __name__ == '__main__':
-    unittest.main()
+#     unittest.main()
+    for plate in [  "2013-05-26_SP6_noco01",
+                    "2013-05-25_SP7_noco01",
+                    "2013-05-31_SP1_noco01",
+                    "2013-05-29_SP3_noco01",
+                    "2013-05-30_SP2_noco01",
+                    "2013-05-27_SP5_noco01",
+                    "2013-05-28_SP4_noco01",
+                    "2013-05-24_SP8_noco01"]:
+        
+        repack_cellh5("M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/%s/_meta/Cellcognition/Analysis1/Analysis1/hdf5" % plate)
