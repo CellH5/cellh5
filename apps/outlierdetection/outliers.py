@@ -1,5 +1,6 @@
 import numpy
 import pylab
+import vigra
 
 from sklearn.svm import OneClassSVM
 import sklearn.cluster
@@ -219,7 +220,7 @@ class OutlierDetection(object):
                 feature_matrix = ch5_pos.get_object_features()
                 a = ch5_pos.get_object_table('primary__primary')
                 
-                time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] >= 7
+                time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] == 7
                 
                 feature_matrix = feature_matrix[time_8_idx, :]
                 
@@ -308,7 +309,7 @@ class OutlierDetection(object):
         
     def get_data(self, target, type='Object features'):
         print ' get_data for', self.mapping[self.mapping['Group'].isin(target)].reset_index()['siRNA ID']
-        return numpy.concatenate(self.mapping[self.mapping['Group'].isin(target)].reset_index()[type])
+        return numpy.concatenate(list(self.mapping[self.mapping['Group'].isin(target)].reset_index()[type]))
     
     def normalize_training_data(self, data):
         self._normalization_means = data.mean(axis=0)
@@ -502,7 +503,7 @@ class OutlierDetection(object):
                 if target_count.sum() == 0:
                     value = -1
                 else:
-                    value = numpy.nansum(target_value * target_count) / float(target_count.sum())
+                    value = (target_value * target_count).sum() / float(target_count.sum())
                     # value = nanmean(target_value) 
                 
                 
@@ -717,12 +718,13 @@ class OutlierDetection(object):
             ge = self.mapping['Gene Symbol'][i]
             si = self.mapping['siRNA ID'][i]
             
-            ch5_file = cellh5.CH5File(self.cellh5_file)
-        
-            import vigra
             well = str(self.mapping['Well'][i])
             site = str(self.mapping['Site'][i])
-            print 'Exporting gallery matrices for', well, site 
+            plate_name = str(self.mapping['Plate'][i])
+            print 'Exporting gallery matrices for', plate_name, well, site 
+            
+            ch5_file = cellh5.CH5File(self.cellh5_files[plate_name])
+            
             ch5_pos = ch5_file.get_position(well, site)
             
             ch5_index = self.mapping["CellH5 object index"][i][prediction == -1]
@@ -734,7 +736,7 @@ class OutlierDetection(object):
                 sorted_ch5_index = []
                 
             img = ch5_pos.get_gallery_image_matrix(sorted_ch5_index, (20, 25))
-            vigra.impex.writeImage(img.swapaxes(1,0), self.output('xgal_%s_%s_%s_%s_outlier.png' % (well, site, ge, si, )))
+            vigra.impex.writeImage(img.swapaxes(1,0), self.output('xgal_%s_%s_%s_%s_%s_outlier.png' % (plate_name, well, site, ge, si, )))
             
             ch5_index = self.mapping["CellH5 object index"][i][prediction == 1]
             dist =  self.mapping["Hyperplane distance"][i][prediction == 1]
@@ -744,7 +746,7 @@ class OutlierDetection(object):
             else:
                 sorted_ch5_index = []
             img = ch5_pos.get_gallery_image_matrix(sorted_ch5_index, (20, 25))
-            vigra.impex.writeImage(img.swapaxes(1,0), self.output('xgal_%s_%s_%s_%s_inlier.png' % (well, site, ge, si, )))
+            vigra.impex.writeImage(img.swapaxes(1,0), self.output('xgal_%s_%s_%s_%s_%s_inlier.png' % (plate_name,  well, site, ge, si, )))
              
 class OutlierTest(object):
     def __init__(self, name, mapping_file, ch5_file):
@@ -791,17 +793,16 @@ class OutlierTest(object):
         # self.od.__class__ = OutlierDetection
         
         
-def sara_screen_analysis():
+def sara_screen_analysis_old():
     ot = OutlierTest('testing', 'dc', 'dc')
     ot.load_last('backup/testing_13-07-23-13-24_g0.0050_n0.0500.pkl')
     # ot.load_last()
     # ot.od.plot()
     a = ot.od.make_hit_list()
     a = ot.od.make_heat_map()
-     
-if __name__ == "__main__":
     
-### Matthias Begin
+def matthias_screen_analysis():
+    ### Matthias Begin
     if False:
     
         for kernel in ['linear', 'rbf']:
@@ -838,9 +839,9 @@ if __name__ == "__main__":
                          ("H", 6), ("H", 7), #("G", 6), ("G", 7),
                          ("H",12), ("H",13), #("G",12), ("G",13),
                         ),
-                gamma=0.005,
-                nu=0.15,
-                pca_dims=239,
+                gamma=2,
+                nu=0.2,
+                pca_dims=2,
                 kernel='rbf'
                 )
         ot.od.cluster_outliers()                    
@@ -848,3 +849,31 @@ if __name__ == "__main__":
         ot.od.make_heat_map()
         ot.od.make_outlier_galleries()
 ### Matthias End
+     
+     
+def sara_screen_analysis():
+    ot = OutlierTest('sarax_od',
+                     {'SP_9': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/MD/SP9.txt'},
+                     {'SP_9': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/Cellcognition/Analysis1/Analysis1/hdf5/_all_positions.ch5'}
+                    ) 
+    ot.setup(
+            locations=(
+                   ("A",  8), ("B", 8), ("C", 8), ("D", 8),
+                     ("H", 6), ("H", 7), #("G", 6), ("G", 7),
+                     ("H",12), ("H",13), #("G",12), ("G",13),
+                    ),
+            gamma=2,
+            nu=0.2,
+            pca_dims=2,
+            kernel='rbf'
+            )
+    ot.od.cluster_outliers()                    
+    ot.od.make_pca_scatter()
+    ot.od.make_heat_map()
+    ot.od.make_outlier_galleries()
+
+if __name__ == "__main__":
+    sara_screen_analysis()
+
+
+    print 'finished'
