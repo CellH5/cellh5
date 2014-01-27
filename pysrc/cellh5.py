@@ -970,14 +970,4 @@ def repack_cellh5(cellh5_older):
         
 
 if __name__ == '__main__':
-#     unittest.main()
-
-                    "2013-05-25_SP7_noco01",
-                    "2013-05-31_SP1_noco01",
-                    "2013-05-29_SP3_noco01",
-                    "2013-05-30_SP2_noco01",
-                    "2013-05-27_SP5_noco01",
-                    "2013-05-28_SP4_noco01",
-                    "2013-05-24_SP8_noco01"]:
-        
-        repack_cellh5("M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/%s/_meta/Cellcognition/Analysis1/Analysis1/hdf5" % plate)
+    unittest.main()
