@@ -410,14 +410,14 @@ class ConcentrationStackedBar(ColoredConcentrationTimingSpread):
         for v_idx, v in enumerate(fates):
             x_spread.append(v_idx)
         
-        color_table = {0:'b', 1:'g', 2:'r',}
+        color_table = {0:'b', 1:'#00CD00', 2:'r',}
         fate_lookup = {
                        0: (0,1,2,4,), 
                        1: (3,),
                        2: (5,),
                        }
         
-        width=0.33
+        width=0.9
         rects = []
         
         for x, f in zip(x_spread, fates):
@@ -430,7 +430,7 @@ class ConcentrationStackedBar(ColoredConcentrationTimingSpread):
             hs /= hs.sum()
             bottom=0
             for wi in range(3):
-                rect = ax.bar(x, hs[wi], width, bottom=bottom,color=color_table[wi])
+                rect = ax.bar(x, hs[wi], width, bottom=bottom, color=color_table[wi], edgecolor = "none")
                 bottom+=hs[wi]
                 #autolabel(rect, len(y_))
                 rects.append(rect)
@@ -448,7 +448,7 @@ class ConcentrationStackedBar(ColoredConcentrationTimingSpread):
         ax.spines["top"].set_visible(False)
         ax.get_xaxis().tick_bottom()
         ax.get_yaxis().tick_left()
-        ax.set_xlim(-0.2,len(fates)-0.35)
+        ax.set_xlim(-width/2.0,len(fates)+width/2.0)
         
         pylab.xlabel('Concentration (%s)' % self.conc_unit)
         pylab.ylabel('Frequency (%)')
