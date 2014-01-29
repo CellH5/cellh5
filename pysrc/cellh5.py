@@ -947,7 +947,7 @@ def repack_cellh5(cellh5_older):
     
     flist = sorted(glob.glob('%s/*.ch5' % cellh5_older))
     
-    f = h5py.File('%s/_all_positions_with_data.h5' % cellh5_older, 'w')
+    f = h5py.File('%s/_all_positions_with_data.ch5' % cellh5_older, 'w')
     
     reg = re.compile('^[A-Z]\d{2}_\d{2}')
     cnt = 0
@@ -968,6 +968,7 @@ def repack_cellh5(cellh5_older):
             cnt += 1
     f.close()
         
-
 if __name__ == '__main__':
     unittest.main()
+    
+    
