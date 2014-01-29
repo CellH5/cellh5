@@ -14,6 +14,7 @@ import zlib
 import h5py
 import numpy
 import base64
+import warnings
 import unittest
 import functools
 import collections
@@ -581,9 +582,10 @@ class CH5CachedPosition(CH5Position):
 
 
 class CH5File(object):
-    POSITION_CLS = CH5CachedPosition
-    def __init__(self, filename, mode='r'):
+
+    def __init__(self, filename, mode='r', cached=True):
         self.filename = filename
+        self._cached = cached
         self._file_handle = h5py.File(filename, mode)
         self.plate = self._get_group_members('/sample/0/plate/')[0]
         self.wells = self._get_group_members('/sample/0/plate/%s/experiment/' % self.plate)
@@ -592,15 +594,25 @@ class CH5File(object):
             self.positions[w] = self._get_group_members('/sample/0/plate/%s/experiment/%s/position/' % (self.plate, w))
 
         self._position_group = {}
-        for w, pos_list in self.positions.items():
-            for p in pos_list:
-                try:
-                    self._position_group[(w,p)] = CH5File.POSITION_CLS(self.plate, w, p, '/sample/0/plate/%s/experiment/%s/position/%s' % (self.plate, w, p), self)
-                except KeyError:
-                    print 'CellH5 Warning: Position', (w,p), 'could not be loaded...'
+        for well, positions in self.positions.iteritems():
+            for pos in positions:
+                self._position_group[(well, pos)] = self._open_position(
+                    self.plate, well, pos)
 
         self.current_pos = self._position_group.values()[0]
 
+    def _open_position(self, plate, well, position):
+        path = ("/sample/0/plate/%s/experiment/%s/position/%s"
+                %(plate, well, position))
+
+        try:
+            if self._cached:
+                return CH5CachedPosition(plate, well, position, path, self)
+            else:
+                return CH5Position(plate, well, position, path, self)
+        except KeyError:
+            warnings.warn(("Warning: cellh5 - well, position (%s, %s)"
+                           "could not be loaded ") %(well, position))
     def get_position(self, well, pos):
         return self._position_group[(well, str(pos))]
 
@@ -608,9 +620,9 @@ class CH5File(object):
         return self._file_handle
 
     def iter_positions(self):
-        for w, pos_list in self.positions.items():
-            for p in pos_list:
-                yield w, p, self._position_group[(w,p)]
+        for well, positions in self.positions.items():
+            for pos in positions:
+                yield self._position_group[(well, pos)]
 
     def set_current_pos(self, well, pos):
         self.current_pos = self.get_position(well, pos)
