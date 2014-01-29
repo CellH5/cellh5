@@ -9,22 +9,25 @@
     See AUTHORS.txt for author contributions.
 """
 
-import numpy
-import h5py
-import collections
-import functools
-import base64
-import zlib
 import os
+import zlib
+import h5py
+import numpy
+import base64
 import unittest
-
-import matplotlib.pyplot as mpl
-from matplotlib.colors import hex2color
-from collections import defaultdict
+import functools
+import collections
 
 import pandas
 
-VERSION_NUM = (1,0)
+import matplotlib
+matplotlib.use('Qt4Agg', warn=False)
+import matplotlib.pyplot as mpl
+
+from matplotlib.colors import hex2color
+
+
+VERSION_NUM = (1, 0)
 VERSION = '.'.join(map(str, VERSION_NUM))
 
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
@@ -32,12 +35,14 @@ GALLERY_SIZE = 60
 
 import time
 def profile(func):
+    """Decorator function for profiling."""
     def wrap(*args, **kwargs):
         t0 = time.time()
         result = func(*args, **kwargs)
         print "function: %s, %.2fs" %(func.__name__, (time.time()-t0))
         return result
     return wrap
+
 
 def hex2rgb(color, mpl=False):
     """Return the rgb color as python int in the range 0-255."""
@@ -52,7 +57,7 @@ def hex2rgb(color, mpl=False):
 
 
 class memoize(object):
-    """cache the return value of a method
+    """Cache the return value of a method
 
     This class is meant to be used as a decorator of methods. The return value
     from a given method invocation will be cached on the instance whose method
@@ -70,6 +75,7 @@ class memoize(object):
     """
     def __init__(self, func):
         self.func = func
+        self.cache = {}
 
     def __get__(self, obj, objtype=None):
         if obj is None:
@@ -77,16 +83,20 @@ class memoize(object):
         return functools.partial(self, obj)
 
     def __call__(self, *args, **kw):
+        key = (self.func, args, frozenset(kw.items()))
+
         obj = args[0]
+        if not hasattr(object, "_cache"):
+            obj._cache = dict()
+
         try:
-            cache = obj.__cache
-        except AttributeError:
-            cache = obj.__cache = {}
-        key = (self.func, args[1:], frozenset(kw.items()))
-        if key in cache:
-            res = cache[key]
-        else:
-            res = cache[key] = self.func(*args, **kw)
+            res = obj._cache[key]
+        except KeyError:
+            res = obj._cache[key] = self.func(*args, **kw)
+        except TypeError:
+            # if key is not hashable (e.g ndarrays)
+            res = self.func(*args, **kw)
+
         return res
 
 
@@ -108,7 +118,7 @@ class CH5Position(object):
 
     def _get_tracking_lookup(self, obj_idx='obj_idx1'):
         dset_tracking_idx1 = self.get_tracking()[obj_idx]
-        tracking_lookup_idx1 = defaultdict()
+        tracking_lookup_idx1 = collections.defaultdict()
         for i, o in enumerate(dset_tracking_idx1):
             tracking_lookup_idx1.setdefault(o, []).append(i)
         return tracking_lookup_idx1
@@ -126,6 +136,7 @@ class CH5Position(object):
         if indices is None:
             return self[path].value
         else:
+            # read probs only once per cell, reading from share is too slow
             ishape = indices.shape
             indices = indices.flatten()
             indices2 = numpy.unique(indices)
@@ -141,7 +152,8 @@ class CH5Position(object):
     def has_classification(self, object_):
         return 'object_classification' in self['feature'][object_]
 
-    def get_crack_contour(self, index, object_='primary__primary', bb_corrected=True):
+    def get_crack_contour(self, index, object_='primary__primary',
+                          bb_corrected=True):
         if not isinstance(index, (list, tuple)):
             index = (index,)
         crack_list = []
@@ -506,11 +518,10 @@ class CH5CachedPosition(CH5Position):
     def __init__(self, *args, **kwargs):
         super(CH5CachedPosition, self).__init__(*args, **kwargs)
 
-    # ndarray is not hashable
-    # @memoize
-    # def get_prediction_probabilities(self, *args, **kwargs):
-    #     return super(CH5CachedPosition, self).get_prediction_probabilities(
-    #         *args, **kwargs)
+    @memoize
+    def get_prediction_probabilities(self, *args, **kwargs):
+        return super(CH5CachedPosition, self).get_prediction_probabilities(
+            *args, **kwargs)
 
     @memoize
     def get_events(self, *args, **kwargs):
@@ -847,6 +858,4 @@ class TestCH5Examples(CH5TestBase):
 
 
 if __name__ == '__main__':
-    import matplotlib
-    matplotlib.use('Qt4Agg', warn=False)
     unittest.main()
