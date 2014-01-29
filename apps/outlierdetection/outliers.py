@@ -59,7 +59,7 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
 
 class OutlierDetection(object):
     classifier_class = OneClassSVM
-    def __init__(self, name, mapping_files, cellh5_files, training_sites=(1,), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
+    def __init__(self, name, mapping_files, cellh5_files, training_sites=(1,2,3,4), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
         assert gamma != None
         assert pca_dims != None
         assert kernel != None
@@ -163,17 +163,17 @@ class OutlierDetection(object):
     
     def predict(self, test_on=('target', 'pos', 'neg')):
         print 'Predicting OneClass Classifier for', self.feature_set
-        training_matrix_list = self.mapping[self.mapping['Group'].isin(test_on)][['Well', 'Site', self.feature_set, "Gene Symbol", "siRNA ID"]].iterrows()
+        testing_matrix_list = self.mapping[self.mapping['Group'].isin(test_on)][['Well', 'Site', self.feature_set, "Gene Symbol", "siRNA ID"]].iterrows()
 
         predictions = {}
         distances = {}
         
         log_file_handle = open(self.output('_outlier_detection_log.txt'), 'w')
         
-        for idx, (well, site, tm, t1, t2) in training_matrix_list:
+        for idx, (well, site, tm, t1, t2) in  testing_matrix_list:
             print well, site, t1, t2, "->",
             log_file_handle.write("%s\t%d\t%s\t%s" % (well, site, t1, t2))
-            if tm.shape[0] == 0:
+            if isinstance(tm, (float,)) or (tm.shape[0] == 0):
                 predictions[idx] = numpy.zeros((0, 0))
                 distances[idx] = numpy.zeros((0, 0))
             else:
@@ -220,18 +220,22 @@ class OutlierDetection(object):
                 feature_matrix = ch5_pos.get_object_features()
                 a = ch5_pos.get_object_table('primary__primary')
                 
-                time_8_idx = ch5_pos['object']["primary__primary"]['time_idx'] == 7
+                time_8_idx = ch5_pos['object']["primary__primary"]['time_idx']
+
+                if len(time_8_idx) > 0:
+                    feature_matrix = feature_matrix[time_8_idx == 0, :]
+                    object_count = len(feature_matrix)
+                else:
+                    feature_matrix = []
+                    object_count = 0
                 
-                feature_matrix = feature_matrix[time_8_idx, :]
-                
-                object_count = len(feature_matrix)
                 object_counts.append(object_count)
                 
                 if object_count > 0:
                     features.append(feature_matrix)
                 else:
                     features.append(numpy.zeros((0, features[0].shape[1])))
-                c5_object_index.append(numpy.where(time_8_idx)[0])
+                c5_object_index.append(numpy.where(time_8_idx == 0)[0])
                 
                 print 'Reading', plate_name, well, site, len(feature_matrix)
             
@@ -309,7 +313,7 @@ class OutlierDetection(object):
         
     def get_data(self, target, type='Object features'):
         print ' get_data for', self.mapping[self.mapping['Group'].isin(target)].reset_index()['siRNA ID']
-        return numpy.concatenate(list(self.mapping[self.mapping['Group'].isin(target)].reset_index()[type]))
+        return numpy.concatenate(list(self.mapping[self.mapping['Group'].isin(target) & (self.mapping['Object count'] > 0)].reset_index()[type]))
     
     def normalize_training_data(self, data):
         self._normalization_means = data.mean(axis=0)
@@ -485,95 +489,97 @@ class OutlierDetection(object):
         del self.mapping['Object features']
         
     def make_heat_map(self):
-        rows = sorted(numpy.unique(self.mapping['Row']))
-        
-        cols = sorted(numpy.unique(self.mapping['Column']))
-        
-        target_col = 'Outlyingness'
-        fig = pylab.figure()
-        
-        heatmap = numpy.zeros((len(rows), len(cols)), dtype=numpy.float32)
-        
-        for r_idx, r in enumerate(rows):
-            for c_idx, c in enumerate(cols):
-                target_value = self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)][target_col]
-                target_count = self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['Object count']
-                target_grp = self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['Group']
-                
-                if target_count.sum() == 0:
-                    value = -1
-                else:
-                    value = (target_value * target_count).sum() / float(target_count.sum())
-                    # value = nanmean(target_value) 
-                
-                
-                if numpy.isnan(value):
-                    print 'Warning: there are nans...'
-                if target_count.sum() > 0:
-                    heatmap[r_idx, c_idx] = value
-#                 else:
-#                     heatmap[r_idx, c_idx] = -1
-#                     
-#                 if target_grp.iloc[0] in ('neg', 'pos'):
-#                     heatmap[r_idx, c_idx] = -1
-                
-        cmap = pylab.matplotlib.cm.Greens
-        cmap.set_under(pylab.matplotlib.cm.Oranges(0))
-        # cmap.set_under('w')
+        for plate_name in self.cellh5_files.keys():
+            rows = sorted(numpy.unique(self.mapping['Row']))
+            cols = sorted(numpy.unique(self.mapping['Column']))
+            
+            target_col = 'Outlyingness'
+            fig = pylab.figure(figsize=(len(cols)+3, len(rows)+3))
+            
+            heatmap = numpy.zeros((len(rows), len(cols)), dtype=numpy.float32)
+            
+            for r_idx, r in enumerate(rows):
+                for c_idx, c in enumerate(cols):
+                    target_value = self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c) & (self.mapping['Plate'] == plate_name)][target_col]
+                    target_count = self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c) & (self.mapping['Plate'] == plate_name)]['Object count']
+                    target_grp =   self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c) & (self.mapping['Plate'] == plate_name)]['Group']
                     
-        print 'Heatmap', heatmap.max(), heatmap.min()    
-        #fig = pylab.figure(figsize=(40,25))
-        
-        ax = pylab.subplot(111)
-        pylab.pcolor(heatmap, cmap=cmap, vmin=0)
-        pylab.colorbar()
-
-        for r_idx, r in enumerate(rows):
-            for c_idx, c in enumerate(cols):
-                try:
-                    text_grp = str(self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['Group'].iloc[0])
-                    text_gene = str(self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['siRNA ID'].iloc[0])
-                    text_gene2 = str(self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['Gene Symbol'].iloc[0])
-                    count = self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c)]['Object count'].sum()
-                except IndexError:
-                    text_grp = "empty"
-                    text_gene = "empty"
-                    text_gene2 = "empty"
-                    count = -1
+                    if target_count.sum() == 0:
+                        value = -1
+                    else:
+                        value = (target_value * target_count).sum() / float(target_count.sum())
+                        # value = nanmean(target_value) 
                     
-                t = pylab.text(c_idx + 0.5, r_idx + 0.5, '%s\n%s\n%s' % (text_grp, text_gene, text_gene2), horizontalalignment='center', verticalalignment='center', fontsize=8)
-                if heatmap[r_idx, c_idx] > 0.3:
-                    t.set_color('w')
                     
-        # put the major ticks at the middle of each cell
-        ax.set_xticks(numpy.arange(heatmap.shape[1]) + 0.5, minor=False)
-        ax.set_yticks(numpy.arange(heatmap.shape[0]) + 0.5, minor=False)
-        
-        # want a more natural, table-like display
-        # ax.invert_yaxis()
-        ax.xaxis.tick_top()
-        
-        ax.set_xticklabels(list(cols), minor=False)
-        ax.set_yticklabels(list(rows), minor=False)
-        
-        for label in ax.get_xticklabels() + ax.get_yticklabels(): 
-             label.set_fontsize(22) 
-        
-        pylab.tight_layout()
-        pylab.savefig(self.output('outlier_heatmap.pdf'))
+                    if numpy.isnan(value):
+                        print 'Warning: there are nans...'
+                    if target_count.sum() > 0:
+                        heatmap[r_idx, c_idx] = value
+    #                 else:
+    #                     heatmap[r_idx, c_idx] = -1
+    #                     
+    #                 if target_grp.iloc[0] in ('neg', 'pos'):
+    #                     heatmap[r_idx, c_idx] = -1
+                    
+            cmap = pylab.matplotlib.cm.Greens
+            cmap.set_under(pylab.matplotlib.cm.Oranges(0))
+            # cmap.set_under('w')
+                        
+            print 'Heatmap', heatmap.max(), heatmap.min()    
+            #fig = pylab.figure(figsize=(40,25))
+            
+            ax = pylab.subplot(111)
+            pylab.pcolor(heatmap, cmap=cmap, vmin=0)
+            pylab.colorbar()
+            ax.set_xlim(0,len(cols))
     
-        return heatmap
+            for r_idx, r in enumerate(rows):
+                for c_idx, c in enumerate(cols):
+                    try:
+                        text_grp = str(self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c) & (self.mapping['Plate'] == plate_name)]['Group'].iloc[0])
+                        text_gene = str(self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c) & (self.mapping['Plate'] == plate_name)]['siRNA ID'].iloc[0])
+                        text_gene2 = str(self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c) & (self.mapping['Plate'] == plate_name)]['Gene Symbol'].iloc[0])
+                        count = self.mapping[(self.mapping['Row'] == r) & (self.mapping['Column'] == c) & (self.mapping['Plate'] == plate_name)]['Object count'].sum()
+                    except IndexError:
+                        text_grp = "empty"
+                        text_gene = "empty"
+                        text_gene2 = "empty"
+                        count = -1
+                        
+                    t = pylab.text(c_idx + 0.5, r_idx + 0.5, '%s\n%s\n%s' % (text_grp, text_gene, text_gene2), horizontalalignment='center', verticalalignment='center', fontsize=8)
+                    if heatmap[r_idx, c_idx] > 0.3:
+                        t.set_color('w')
+                        
+            # put the major ticks at the middle of each cell
+            ax.set_xticks(numpy.arange(heatmap.shape[1]) + 0.5, minor=False)
+            ax.set_yticks(numpy.arange(heatmap.shape[0]) + 0.5, minor=False)
+            
+            # want a more natural, table-like display
+            # ax.invert_yaxis()
+            ax.xaxis.tick_top()
+            
+            ax.set_xticklabels(list(cols), minor=False)
+            ax.set_yticklabels(list(rows), minor=False)
+            
+            for label in ax.get_xticklabels() + ax.get_yticklabels(): 
+                 label.set_fontsize(22) 
+            
+            #pylab.title("%s %s" % (self.name, plate_name))
+            
+            pylab.tight_layout()
+            pylab.savefig(self.output('outlier_heatmap_%s.pdf' % plate_name))
+        
     
     def make_hit_list(self):
-        group_on = 'siRNA ID'
+        group_on = ['Plate', 'siRNA ID', 'Gene Symbol']
         # group_on = 'Gene Symbol'
         
-        group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'target')].groupby([group_on])
+        group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'target')].groupby(group_on)
         
-        neg_group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'neg')].groupby([group_on])
+        neg_group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'neg')].groupby(group_on)
         neg_mean = neg_group.mean()['Outlyingness'].mean()
         
-        pos_group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'pos')].groupby([group_on])
+        pos_group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'pos')].groupby(group_on)
         pos_mean = pos_group.mean()['Outlyingness'].mean()        
         
         means = group.mean()['Outlyingness']
@@ -592,8 +598,9 @@ class OutlierDetection(object):
 #             g_ = str(group.get_group(g)['siRNA ID'].iloc[0])
 #             genes.append(g + ' ' + g_)
             
-            genes.append(g)
+            genes.append("%s %s %s" % g)
             
+        fig = pylab.figure(figsize=(len(genes)/4 + 5, 8))
         ax = pylab.subplot(111)
         ax.errorbar(range(len(means)), means, yerr=stds, fmt='o')
         ax.set_xticks(range(len(means)), minor=False)
@@ -601,7 +608,7 @@ class OutlierDetection(object):
         ax.axhline(means.mean(), label='Target mean')
         ax.axhline(means.mean() + means.std() * 2, color='k', label='Target cutoff at 2 sigma')
         ax.axhline(neg_mean, color='g', label='Negative control mean')
-        ax.axhline(pos_mean, color='r', label='Positive control mean')
+        #ax.axhline(pos_mean, color='r', label='Positive control mean')
         
         pylab.legend(loc=2)
         pylab.ylabel('Outlyingness (OC-SVM)')
@@ -609,6 +616,8 @@ class OutlierDetection(object):
         pylab.title('Outliers grouped by gene')
         
         pylab.tight_layout()
+        
+        pylab.savefig(self.output('hit_list.pdf'))
         pylab.show()
         
     def make_pca_scatter(self):    
@@ -729,7 +738,7 @@ class OutlierDetection(object):
             
             ch5_index = self.mapping["CellH5 object index"][i][prediction == -1]
             dist =  self.mapping["Hyperplane distance"][i][prediction == -1]
-            sorted_ch5_index = zip(*sorted(zip(dist,ch5_index), reverse=True))
+            sorted_ch5_index = zip(*sorted(zip(dist, ch5_index), reverse=True))
             if len(sorted_ch5_index) > 1:
                 sorted_ch5_index = sorted_ch5_index[1]
             else:
@@ -853,24 +862,31 @@ def matthias_screen_analysis():
      
 def sara_screen_analysis():
     ot = OutlierTest('sarax_od',
-                     {'SP_9': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/MD/SP9.txt'},
-                     {'SP_9': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/Cellcognition/Analysis1/Analysis1/hdf5/_all_positions.ch5'}
+                     {'SP_9': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/MD/SP9.txt',
+                      'SP_8': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-24_SP8_noco01/_meta/MD/SP8.txt'},
+                     
+                     {'SP_9': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/Cellcognition/Analysis1/Analysis1/hdf5/_all_positions_with_data.h5',
+                      'SP_8': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-24_SP8_noco01/_meta/Cellcognition/Analysis1/Analysis1/hdf5/_all_positions_with_data.h5'}
                     ) 
     ot.setup(
-            locations=(
-                   ("A",  8), ("B", 8), ("C", 8), ("D", 8),
-                     ("H", 6), ("H", 7), #("G", 6), ("G", 7),
-                     ("H",12), ("H",13), #("G",12), ("G",13),
-                    ),
-            gamma=2,
-            nu=0.2,
-            pca_dims=2,
+#             locations=(
+#                    ("A",  8), ("B", 8), ("C", 8), ("D", 8),
+#                      ("H", 6), ("H", 7), ("G", 6), ("G", 7),
+#                      ("H",12), ("H",13), ("G",12), ("G",13),
+#                     ),
+            rows = list("ABCDEFGHIJKLMNOP")[:],
+            cols = tuple(range(1,24)),
+            gamma=0.0005,
+            nu=0.15,
+            pca_dims=100,
             kernel='rbf'
             )
-    ot.od.cluster_outliers()                    
-    ot.od.make_pca_scatter()
+    #ot.od.cluster_outliers()                    
+    #ot.od.make_pca_scatter()
+    ot.od.make_hit_list()
     ot.od.make_heat_map()
-    ot.od.make_outlier_galleries()
+    #ot.od.make_outlier_galleries()
+    
 
 if __name__ == "__main__":
     sara_screen_analysis()
