@@ -852,9 +852,9 @@ class TestCH5Examples(CH5TestBase):
         #vigra.impex.writeImage(numpy.concatenate(image, axis=0).swapaxes(1,0), 'mitotic_events.png')
         
         
-def repack_cellh5(cellh5_older):
+def repack_cellh5(cellh5_folder):
     """copies a cellh5 folder wellbased into one single postition file"""
-    import glob, re, os
+    import glob, re
     PLATE_PREFIX = '/sample/0/plate/'
     WELL_PREFIX = PLATE_PREFIX + '%s/experiment/'
     POSITION_PREFIX = WELL_PREFIX + '%s/position/'
@@ -865,9 +865,9 @@ def repack_cellh5(cellh5_older):
         position = hf_file[POSITION_PREFIX % (plate, well)].keys()[0]
         return plate, well, position
     
-    flist = sorted(glob.glob('%s/*.ch5' % cellh5_older))
+    flist = sorted(glob.glob('%s/*.ch5' % cellh5_folder))
     
-    f = h5py.File('%s/_all_positions_with_data.ch5' % cellh5_older, 'w')
+    f = h5py.File('%s/_all_positions_with_data.ch5' % cellh5_folder, 'w')
     
     reg = re.compile('^[A-Z]\d{2}_\d{2}')
     cnt = 0
@@ -888,6 +888,56 @@ def repack_cellh5(cellh5_older):
             cnt += 1
     f.close()
         
+def repack_cellh5_and_combine(cellh5_folder, cellh5_folder_2, rel_path_src, rel_path_dest):
+    """copies a cellh5 folder wellbased into one single postition file
+       and copies stuff from another cellh5 into that one (usefull if the same exp 
+       ran twice)
+    """
+    import glob, re
+    PLATE_PREFIX = '/sample/0/plate/'
+    WELL_PREFIX = PLATE_PREFIX + '%s/experiment/'
+    POSITION_PREFIX = WELL_PREFIX + '%s/position/'
+    
+    def get_plate_and_postion(hf_file):
+        plate = hf_file[PLATE_PREFIX].keys()[0]
+        well = hf_file[WELL_PREFIX % plate].keys()[0]
+        position = hf_file[POSITION_PREFIX % (plate, well)].keys()[0]
+        return plate, well, position
+    
+    flist = sorted(glob.glob('%s/*.ch5' % cellh5_folder))
+    
+    f = h5py.File('%s/_all_positions_with_data_combined.ch5' % cellh5_folder, 'w')
+    
+    reg = re.compile('^[A-Z]\d{2}_\d{2}')
+    cnt = 0
+    for fname in flist:
+        if reg.search(os.path.split(fname)[1]) is not None:
+            print cnt, fname
+            if cnt == 0:
+                # write definition
+                fh = h5py.File(fname, 'r')  
+                fh_2 = h5py.File(os.path.join(cellh5_folder_2, os.path.split(fname)[1]), 'r')
+                f.copy(fh['/definition'], 'definition')
+                for rps, rpd in zip(rel_path_src, rel_path_dest):
+                    f.copy(fh_2['/definition/%s'% rps], 'definition/%s' % rpd)
+                
+                fh.close()
+                fh_2.close()
+            # copy suff
+            fh = h5py.File(fname, 'r')  
+            fh_2 = h5py.File(os.path.join(cellh5_folder_2, os.path.split(fname)[1]), 'r')
+            fplate, fwell, fpos = get_plate_and_postion(fh)
+            #print (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
+            pos_path_in_ch5 = (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
+            f.copy(fh[pos_path_in_ch5], pos_path_in_ch5)
+            for rps, rpd in zip(rel_path_src, rel_path_dest):
+                f.copy(fh_2[pos_path_in_ch5 + ("/%s" % rps)], pos_path_in_ch5 + ("/%s" % rpd))
+            
+            fh.close()
+            fh_2.close()
+            cnt += 1
+            
+    f.close()
 if __name__ == '__main__':
     unittest.main()
     
