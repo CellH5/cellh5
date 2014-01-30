@@ -291,7 +291,6 @@ class CH5Position(object):
         return image_list
 
     def get_gallery_image_generator(self, index, object_='primary__primary'):
-        image_list = []
         channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
