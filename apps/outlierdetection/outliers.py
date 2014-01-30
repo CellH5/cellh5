@@ -96,6 +96,8 @@ class OutlierDetection(object):
     
         output_dir = None
         self.set_output_dir(output_dir, plate_id)
+        self._rf_time_predicate_cmp = None
+        self._rf_time_predicate_value = None
         
     def set_output_dir(self, output_dir, plate_id):
         
@@ -197,6 +199,15 @@ class OutlierDetection(object):
             data = data[self._non_nan_sample_idx, :]
         data = (data - self._normalization_means) / self._normalization_stds
         return data
+    
+    
+    def set_read_feature_time_predicate(self, cmp, value):
+        self._rf_time_predicate_cmp = cmp
+        self._rf_time_predicate_value = value
+        
+    def set_read_feature_feature_predicate(self, cmp, value):
+        self._rf_time_predicate_cmp = cmp
+        self._rf_time_predicate_value = value
             
     def read_feature(self):
         # init new columns
@@ -218,12 +229,16 @@ class OutlierDetection(object):
                 ch5_pos = ch5_file.get_position(well, site)
                 
                 feature_matrix = ch5_pos.get_object_features()
-                a = ch5_pos.get_object_table('primary__primary')
                 
-                time_8_idx = ch5_pos['object']["primary__primary"]['time_idx']
+                time_idx = ch5_pos['object']["primary__primary"]['time_idx']
 
-                if len(time_8_idx) > 0:
-                    feature_matrix = feature_matrix[time_8_idx == 0, :]
+                if len(time_idx) > 0:
+                    if self._rf_time_predicate_cmp is not None:
+                        time_idx_2 = self._rf_time_predicate_cmp(time_idx, self._rf_time_predicate_value)
+                    else:
+                        time_idx_2 = numpy.ones(len(time_idx), dtype=numpy.bool)
+                    
+                    feature_matrix = feature_matrix[time_idx_2, :]
                     object_count = len(feature_matrix)
                 else:
                     feature_matrix = []
@@ -235,9 +250,9 @@ class OutlierDetection(object):
                     features.append(feature_matrix)
                 else:
                     features.append(numpy.zeros((0, features[0].shape[1])))
-                c5_object_index.append(numpy.where(time_8_idx == 0)[0])
+                c5_object_index.append(numpy.where(time_idx_2)[0])
                 
-                print 'Reading', plate_name, well, site, len(feature_matrix)
+                print 'Reading', plate_name, well, site, len(feature_matrix), 'using time', self._rf_time_predicate_cmp.__name__, self._rf_time_predicate_value
             
             plate_idx = self.mapping['Plate'] == plate_name
             self.mapping.loc[plate_idx, 'Object features'] = features
@@ -775,6 +790,7 @@ class OutlierTest(object):
                               pca_dims=pca_dims,
                               kernel=kernel
                               )
+        self.od.set_read_feature_time_predicate(numpy.equal, 0)
         self.od.read_feature()
         
         self.od.train_pca()
@@ -862,11 +878,15 @@ def matthias_screen_analysis():
      
 def sara_screen_analysis():
     ot = OutlierTest('sarax_od',
-                     {'SP_9': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/MD/SP9.txt',
-                      'SP_8': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-24_SP8_noco01/_meta/MD/SP8.txt'},
+                     {
+                      'SP_9': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/MD/SP9.txt',
+                     # 'SP_8': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-24_SP8_noco01/_meta/MD/SP8.txt'
+                      },
                      
-                     {'SP_9': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/Cellcognition/Analysis1/Analysis1/hdf5/_all_positions_with_data.h5',
-                      'SP_8': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-24_SP8_noco01/_meta/Cellcognition/Analysis1/Analysis1/hdf5/_all_positions_with_data.h5'}
+                     {
+                      'SP_9': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-17_SP9_noco01/_meta/Cellcognition/Analysis1/Analysis1/hdf5/_all_positions_with_data.h5',
+                      #'SP_8': 'M:/members/SaCl/Adhesion_Screen/6h_noco_timepoint/2013-05-24_SP8_noco01/_meta/Cellcognition/Analysis1/Analysis1/hdf5/_all_positions_with_data.h5'
+                      }
                     ) 
     ot.setup(
 #             locations=(
@@ -874,8 +894,8 @@ def sara_screen_analysis():
 #                      ("H", 6), ("H", 7), ("G", 6), ("G", 7),
 #                      ("H",12), ("H",13), ("G",12), ("G",13),
 #                     ),
-            rows = list("ABCDEFGHIJKLMNOP")[:],
-            cols = tuple(range(1,24)),
+            rows = list("ABCDEFGHIJKLMNOP")[:5],
+            cols = tuple(range(1,4)),
             gamma=0.0005,
             nu=0.15,
             pca_dims=100,
@@ -883,9 +903,10 @@ def sara_screen_analysis():
             )
     #ot.od.cluster_outliers()                    
     #ot.od.make_pca_scatter()
+    
     ot.od.make_hit_list()
     ot.od.make_heat_map()
-    #ot.od.make_outlier_galleries()
+    ot.od.make_outlier_galleries()
     
 
 if __name__ == "__main__":
