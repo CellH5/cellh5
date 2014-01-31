@@ -59,7 +59,7 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
 
 class OutlierDetection(object):
     classifier_class = OneClassSVM
-    def __init__(self, name, mapping_files, cellh5_files, training_sites=(1,2,3,4), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
+    def __init__(self, name, mapping_files, cellh5_files, training_sites=(1,2,3,4,), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
         assert gamma != None
         assert pca_dims != None
         assert kernel != None
@@ -329,8 +329,11 @@ class OutlierDetection(object):
         return data, treatment 
         
     def get_data(self, target, type='Object features'):
-        print ' get_data for', self.mapping[self.mapping['Group'].isin(target)].reset_index()['siRNA ID']
-        return numpy.concatenate(list(self.mapping[self.mapping['Group'].isin(target) & (self.mapping['Object count'] > 0)].reset_index()[type]))
+        tmp = self.mapping[self.mapping['Group'].isin(target) & (self.mapping['Object count'] > 0)].reset_index()
+        print '**** get_data for', len(tmp['siRNA ID']), '***'
+        print tmp['siRNA ID'].unique()
+        print '*************************'
+        return numpy.concatenate(list(tmp[type]))
     
     def normalize_training_data(self, data):
         self._normalization_means = data.mean(axis=0)
@@ -511,7 +514,7 @@ class OutlierDetection(object):
             cols = sorted(numpy.unique(self.mapping['Column']))
             
             target_col = 'Outlyingness'
-            fig = pylab.figure(figsize=(len(cols)+3, len(rows)+3))
+            fig = pylab.figure(figsize=(len(cols)+2, len(rows)+2))
             
             heatmap = numpy.zeros((len(rows), len(cols)), dtype=numpy.float32)
             
@@ -589,9 +592,10 @@ class OutlierDetection(object):
     
     def make_hit_list(self):
         group_on = ['Plate', 'siRNA ID', 'Gene Symbol']
-        # group_on = 'Gene Symbol'
-        
-        group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'target')].groupby(group_on)
+
+        # get global values of all plates        
+        group = self.mapping[(self.mapping['Object count'] > 0) ].groupby(group_on)
+        overall_max = group['Outlyingness'].max().max()
         
         neg_group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'neg')].groupby(group_on)
         neg_mean = neg_group.mean()['Outlyingness'].mean()
@@ -599,42 +603,42 @@ class OutlierDetection(object):
         pos_group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'pos')].groupby(group_on)
         pos_mean = pos_group.mean()['Outlyingness'].mean()        
         
-        means = group.mean()['Outlyingness']
-        means = means.copy()
-        means.sort()
+        #iterate over plates and make hit list figure
         
-
-        stds = []
-        genes = []
-        for g, m in means.iteritems():
-            #print g, group.get_group(g).count()
-            std = group.get_group(g).std()['Outlyingness']
-            assert m == group .get_group(g).mean()['Outlyingness'] 
-            stds.append(std)
+        for plate_name in self.mapping_files.keys():
+            group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Plate'] == plate_name)].groupby(['Well', 'siRNA ID', 'Gene Symbol'])
             
-#             g_ = str(group.get_group(g)['siRNA ID'].iloc[0])
-#             genes.append(g + ' ' + g_)
+            means = group.mean()['Outlyingness']
+            means = means.copy()
             
-            genes.append("%s %s %s" % g)
             
-        fig = pylab.figure(figsize=(len(genes)/4 + 5, 8))
-        ax = pylab.subplot(111)
-        ax.errorbar(range(len(means)), means, yerr=stds, fmt='o')
-        ax.set_xticks(range(len(means)), minor=False)
-        ax.set_xticklabels(genes, rotation=90)
-        ax.axhline(means.mean(), label='Target mean')
-        ax.axhline(means.mean() + means.std() * 2, color='k', label='Target cutoff at 2 sigma')
-        ax.axhline(neg_mean, color='g', label='Negative control mean')
-        #ax.axhline(pos_mean, color='r', label='Positive control mean')
-        
-        pylab.legend(loc=2)
-        pylab.ylabel('Outlyingness (OC-SVM)')
-        pylab.xlabel('Target genes')
-        pylab.title('Outliers grouped by gene')
-        
-        pylab.tight_layout()
-        
-        pylab.savefig(self.output('hit_list.pdf'))
+            stds = []
+            genes = []
+            for g, m in means.iteritems():
+                std = group.get_group(g).std()['Outlyingness']
+                assert m == group.get_group(g).mean()['Outlyingness'] 
+                stds.append(std)
+                genes.append("%s %s %s" % g)
+                
+            fig = pylab.figure(figsize=(len(genes)/6 + 4, 8))
+            ax = pylab.subplot(111)
+            ax.errorbar(range(len(means)), means, yerr=stds, fmt='o', markeredgecolor='none')
+            ax.set_xticks(range(len(means)), minor=False)
+            ax.set_xticklabels(genes, rotation=90)
+            ax.axhline(means.mean(), label='Target mean')
+            ax.axhline(means.mean() + means.std() * 2, color='k', label='Target cutoff at 2 sigma')
+            ax.axhline(neg_mean, color='g', label='Negative control mean')
+            #ax.axhline(pos_mean, color='r', label='Positive control mean')
+            
+            pylab.legend(loc=2)
+            pylab.ylabel('Outlyingness (OC-SVM)')
+            pylab.xlabel('Target genes')
+            pylab.title('%s' % plate_name)
+            pylab.ylim(0, overall_max+0.1)
+            pylab.xlim(-1, len(means)+1)
+            pylab.tight_layout()
+            
+            pylab.savefig(self.output('%s_hit_list.pdf' % plate_name))
         pylab.show()
         
     def make_pca_scatter(self):    
@@ -814,7 +818,7 @@ class SaraOutlier(object):
         print "  %s_%s" % (pos.well, pos.pos), "%d/%d" % (idx.sum(), len(idx)),  'are live mitotic'
         
         # Export images for live mitotic cells
-        if True:
+        if False:
             well = pos.well
             site = pos.pos
 
@@ -853,10 +857,10 @@ class SaraOutlier(object):
         
         self.od.make_hit_list()
         self.od.make_heat_map()
-        self.od.make_outlier_galleries()
+        #self.od.make_outlier_galleries()
         print 'Results:', self.od.output_dir
         os.startfile(os.path.join(os.getcwd(), self.od.output_dir))
-        
+      
 class MatthiasOutlier(object):
     def __init__(self, name, mapping_files, ch5_files, rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
         if True:
@@ -916,17 +920,17 @@ if __name__ == "__main__":
                                        },
                       'ch5_files' : {
                             'SP_9': 'F:/sara_adhesion_screen/sp9_all_positions_with_data_combined.ch5',
-                            'SP_8': 'F:\sara_adhesion_screen/sp9_all_positions_with_data_combined.ch5'
+                            'SP_8': 'F:/sara_adhesion_screen/sp8_all_positions_with_data_combined.ch5'
                                         },
 #                       'locations' : (
 #                             ("A",  8), ("B", 8), ("C", 8), ("D", 8),
 #                             ("H", 6), ("H", 7), ("G", 6), ("G", 7),
 #                             ("H",12), ("H",13), ("G",12), ("G",13),
 #                         ),
-                      'rows' : list("ABCDEFGHIJKLMNOP")[:],
-                      'cols' : tuple(range(1,24)),
-                      'gamma' : 0.0005,
-                      'nu' : 0.05,
+                      'rows' : list("ABCDEFGHIJKLMNOP")[:3],
+                      'cols' : tuple(range(1,4)),
+                      'gamma' : 0.005,
+                      'nu' : 0.10,
                       'pca_dims' : 239,
                       'kernel' :'rbf'
                      },
