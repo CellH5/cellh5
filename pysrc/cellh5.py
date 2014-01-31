@@ -27,9 +27,7 @@ import matplotlib.pyplot as mpl
 
 from matplotlib.colors import hex2color
 
-
-VERSION_NUM = (1, 0)
-VERSION = '.'.join(map(str, VERSION_NUM))
+from version import version
 
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 GALLERY_SIZE = 60
@@ -278,7 +276,8 @@ class CH5Position(object):
             yield image
 
     def get_gallery_image_matrix(self, index, shape, object_='primary__primary'):
-        image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
+        image = numpy.zeros((GALLERY_SIZE * shape[0],
+                             GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
         i,j = 0, 0
         img_gen = self.get_gallery_image_generator(index, object_)
 
