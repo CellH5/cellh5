@@ -422,28 +422,26 @@ class CH5Position(object):
 
         tracks = list()
         for event_id in event_ids:
-            idx = numpy.where(evtable['obj_id'] == event_id)
-            idx1 = evtable['idx1'][idx]
-            idx2 = evtable['idx2'][idx]
+            i = numpy.where(evtable['obj_id'] == event_id)[0]
+            idx1 = evtable['idx1'][i]
+            idx2 = evtable['idx2'][i]
 
             # find the index of the common elements in the array
             mc, occurence = collections.Counter(idx1).most_common(1)[0]
-            i1, i2 = numpy.where(idx1 == mc)[0]
 
             if occurence == 1:
-                track = numpy.hstack((idx1[idx], idx2[-1]))
-                tracks.append(tracks)
+                track = numpy.hstack((idx1, idx2[-1]))
+                tracks.append(track)
             elif occurence == 2:
-                import pdb; pdb.set_trace()
+                i1, i2 = numpy.where(idx1 == mc)[0]
                 track = numpy.hstack((idx1[:i2], idx2[i2-1]))
                 tracks.append(track)
                 if output_second_branch:
                     track = numpy.hstack((idx1[:(i1+1)], idx2[i2:]))
                     tracks.append(track)
             else:
-                raise RuntimeError(("Split events with more than 2 childs are not suppored. "
-                                    "How did it get there anyway?"))
-
+                raise RuntimeError(("Split events with more than 2 childs are "
+                                    "not suppored. How did it get there anyway?"))
 
         return numpy.array(tracks)
 
