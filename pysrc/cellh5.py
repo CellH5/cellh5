@@ -440,6 +440,10 @@ class CH5Position(object):
                 if output_second_branch:
                     track = numpy.hstack((idx1[:(i1+1)], idx2[i2:]))
                     tracks.append(track)
+            else:
+                raise RuntimeError(("Split events with more than 2 childs are not suppored. "
+                                    "How did it get there anyway?"))
+
 
         return numpy.array(tracks)
 
