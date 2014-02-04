@@ -32,6 +32,14 @@ from version import version
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 GALLERY_SIZE = 60
 
+class CH5Const(object):
+
+    # defaults for unclassified/ unclustered ojbects
+    # don't use -1 due to pythons indexing convention
+    UNLABELED_PRED = -99
+    UNLABELED_PROB = numpy.nan
+
+
 import time
 def profile(func):
     """Decorator function for profiling."""
@@ -323,12 +331,27 @@ class CH5Position(object):
                         img[y, x + i* GALLERY_SIZE, c] = col_tmp[c]
         return img
 
-
     def get_class_label(self, index, object_='primary__primary'):
-        if not isinstance(index, (list, tuple)):
-            index = [index]
-        # import pdb; pdb.set_trace()
-        return self.get_class_prediction(object_)['label_idx'][[x for x in index]] + 1
+        """Map prediction indices according to the class definition and
+        return an array with the shape of index."""
+
+        if isinstance(index, int):
+            index = numpy.array([index])
+        elif not isinstance(index, numpy.ndarray):
+            index = numpy.array(index)
+
+        index2label = self.definitions.class_definition(object_)["label"]
+        predidx = self.get_class_prediction(object_)['label_idx']
+        labels = numpy.ones(index.size, dtype=int)*CH5Const.UNLABELED_PRED
+
+        for i, j in enumerate(index.flatten()):
+            try:
+                labels[i] = index2label[predidx[j]]
+            except IndexError as e:
+                # unlabled objects
+                pass
+
+        return labels.reshape(index.shape)
 
     def get_center(self, index, object_='primary__primary'):
         if not isinstance(index, (list, tuple)):
@@ -387,40 +410,39 @@ class CH5Position(object):
 
     # @profile
     def get_events(self, output_second_branch=False, random=None):
-        dset_event = self.get_object_table('event')
-        if len(dset_event) == 0:
-            return []
-        events = []
-        n_events = dset_event['obj_id'].max()
-        for event_id in range(n_events):
-            if random is not None:
-                event_id_ = numpy.random.randint(n_events)
-            else:
-                event_id_ = event_id
-            idx = numpy.where(dset_event['obj_id'] == event_id_)
-            idx1 = dset_event[idx]['idx1']
-            idx2 = dset_event[idx]['idx2']
-            second_branch_found = False
-            event_list = []
-            for p1, _ in zip(idx1, idx2):
-                if p1 in event_list:
-                    # branch ends
-                    second_branch_found = True
-                    break
-                else:
-                    event_list.append(p1)
-            if second_branch_found and output_second_branch:
-                a = list(idx1).index(p1)
-                b = len(idx1) - list(idx1)[-1:0:-1].index(p1) - 1
-                event_list2 = list(idx1[0:a]) + list(idx1[b:])
-                events.append(event_list)
-                events.append(event_list2)
-            else:
-                events.append(event_list)
+        assert isinstance(output_second_branch, bool)
+        assert isinstance(random, (type(None), int))
 
-            if random is not None and event_id >= random:
-                break
-        return events
+        evtable = self.get_object_table('event')
+        event_ids = numpy.unique(evtable['obj_id'])
+
+        if random is not None:
+            numpy.random.shuffle(event_ids)
+            event_ids = event_ids[:random]
+
+        tracks = list()
+        for event_id in event_ids:
+            idx = numpy.where(evtable['obj_id'] == event_id)
+            idx1 = evtable['idx1'][idx]
+            idx2 = evtable['idx2'][idx]
+
+            # find the index of the common elements in the array
+            mc, occurence = collections.Counter(idx1).most_common(1)[0]
+            i1, i2 = numpy.where(idx1 == mc)[0]
+
+            if occurence == 1:
+                track = numpy.hstack((idx1[idx], idx2[-1]))
+                tracks.append(tracks)
+            elif occurence == 2:
+                import pdb; pdb.set_trace()
+                track = numpy.hstack((idx1[:i2], idx2[i2-1]))
+                tracks.append(track)
+                if output_second_branch:
+                    track = numpy.hstack((idx1[:(i1+1)], idx2[i2:]))
+                    tracks.append(track)
+
+        return numpy.array(tracks)
+
 
     def get_event_items(self, output_second_branch=False):
         dset_event = self.get_object_table('event')
@@ -612,6 +634,7 @@ class CH5File(object):
         except KeyError:
             warnings.warn(("Warning: cellh5 - well, position (%s, %s)"
                            "could not be loaded ") %(well, position))
+
     def get_position(self, well, pos):
         return self._position_group[(well, str(pos))]
 
@@ -681,12 +704,16 @@ class CH5MappedFile(CH5File):
             self.mapping = self.mapping[self.mapping['Column'].isin(cols)]
 
         if locations is not None:
-            self.mapping = self.mapping[reduce(pandas.Series.__or__, [self.mapping['Row'].isin(c) & (self.mapping['Column'] == r) for c, r in locations])]
+            self.mapping = self.mapping[reduce(pandas.Series.__or__,
+                                               [self.mapping['Row'].isin(c) & \
+                                                    (self.mapping['Column'] == r)
+                                                for c, r in locations])]
 
         self.mapping.reset_index(inplace=True)
 
     def _get_mapping_field_of_pos(self, well, pos, field):
-        return self.mapping[(self.mapping['Well'] == str(well)) & (self.mapping['Site'] == int(pos))][field].iloc[0]
+        return self.mapping[(self.mapping['Well'] == str(well)) & \
+             (self.mapping['Site'] == int(pos))][field].iloc[0]
 
     def get_group_of_pos(self, well, pos):
         return self._get_mapping_field_of_pos(well, pos, 'Group')
