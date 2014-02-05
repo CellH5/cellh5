@@ -492,7 +492,7 @@ class CH5Position(object):
                 events.append((event_id, event_list))
         return events
 
-    def _track_single(self, start_idx, type_):
+    def _track_single(self, start_idx, type_, max_length=None):
         track_on_feature = False
         if type_ == 'first':
             sel = 0
@@ -521,17 +521,19 @@ class CH5Position(object):
                 sel = numpy.argmax(track_feature[next_p_idx])
             idx = dset_tracking_idx2[next_p_idx[sel]]
             idx_list.append(idx)
+            if max_length is not None and len(idx_list) > max_length -1:
+                break
         return idx_list
 
 
-    def track_first(self, start_idx):
-        return self._track_single(start_idx, 'first')
+    def track_first(self, start_idx, max_length=None):
+        return self._track_single(start_idx, 'first', max_length=max_length)
 
-    def track_last(self, start_idx):
-        return self._track_single(start_idx, 'last')
+    def track_last(self, start_idx, max_length=None):
+        return self._track_single(start_idx, 'last', max_length=max_length)
 
-    def track_biggest(self, start_idx):
-        return self._track_single(start_idx, 'biggest')
+    def track_biggest(self, start_idx, max_length=None):
+        return self._track_single(start_idx, 'biggest', max_length=max_length)
 
     def track_all(self, start_idx):
         dset_tracking = self.get_tracking()
