@@ -340,7 +340,7 @@ class CH5Position(object):
 
         index2label = self.definitions.class_definition(object_)["label"]
         predidx = self.get_class_prediction(object_)['label_idx']
-        labels = numpy.ones(index.size, dtype=int)*CH5Const.UNLABELED_PRED
+        labels = numpy.ones(index.size, dtype=int)*CH5Const.UNPREDICTED_LABEL
 
         for i, j in enumerate(index.flatten()):
             try:
