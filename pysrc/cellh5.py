@@ -34,11 +34,9 @@ GALLERY_SIZE = 60
 
 class CH5Const(object):
 
-    # defaults for unclassified/ unclustered ojbects
-    # don't use -1 due to pythons indexing convention
-    UNLABELED_PRED = -99
-    UNLABELED_PROB = numpy.nan
-
+    # defaults for unpredicted objects, -1 one might be not a
+    UNPREDICTED_LABEL = -99
+    UNPREDICTED_PROB = numpy.nan
 
 import time
 def profile(func):
