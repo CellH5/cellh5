@@ -26,27 +26,12 @@ matplotlib.use('Qt4Agg', warn=False)
 import matplotlib.pyplot as mpl
 
 from matplotlib.colors import hex2color
+from contextlib import contextmanager
 
 from version import version
 
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 GALLERY_SIZE = 60
-
-class CH5Const(object):
-
-    # defaults for unpredicted objects, -1 one might be not a
-    UNPREDICTED_LABEL = -99
-    UNPREDICTED_PROB = numpy.nan
-
-import time
-def profile(func):
-    """Decorator function for profiling."""
-    def wrap(*args, **kwargs):
-        t0 = time.time()
-        result = func(*args, **kwargs)
-        print "function: %s, %.2fs" %(func.__name__, (time.time()-t0))
-        return result
-    return wrap
 
 
 def hex2rgb(color, mpl=False):
@@ -59,6 +44,50 @@ def hex2rgb(color, mpl=False):
 
     rgb = [int(i*fac) for i in hex2color(color)]
     return tuple(rgb)
+
+def to_index_array(value):
+    """Convert list or tuple into an numpy.array. If value is integral, its
+    packed into a list first.
+    """
+
+    if isinstance(value, numpy.ndarray):
+        return value
+    elif isinstance(value, (list, tuple)):
+        return numpy.array(value)
+    else:
+        return numpy.array([value])
+
+
+@contextmanager
+def ch5open(filename, mode='r', cached=True):
+    """Open a cellh5 file using the with statement. The file handle is closed
+    automatically.
+
+    >>>with ch5open('datafile.ch5', 'r', cached=False) as ch5:
+    >>>   ch5.get_position("0", "0038")
+    """
+
+    ch5 = CH5File(filename, mode, cached)
+    yield ch5
+    ch5.close()
+
+class CH5Const(object):
+
+    # defaults for unpredicted objects, -1 one might be not a
+    UNPREDICTED_LABEL = -99
+    UNPREDICTED_PROB = numpy.nan
+
+
+class CH5GroupCoordinate(object):
+
+    def __init__(self, region, position, well, plate, sample="0"):
+        super(CH5GroupCoordinate, self).__init__()
+
+        self.region = region
+        self.position = position
+        self.well = well
+        self.plate = plate
+        self.sample = sample
 
 
 class memoize(object):
@@ -91,13 +120,14 @@ class memoize(object):
         key = (self.func, args, frozenset(kw.items()))
 
         obj = args[0]
-        if not hasattr(object, "_cache"):
+        if not hasattr(obj, "_cache"):
             obj._cache = dict()
 
         try:
             res = obj._cache[key]
         except KeyError:
-            res = obj._cache[key] = self.func(*args, **kw)
+            res = self.func(*args, **kw)
+            obj._cache[key] = res
         except TypeError:
             # if key is not hashable (e.g ndarrays)
             res = self.func(*args, **kw)
@@ -128,12 +158,10 @@ class CH5Position(object):
             tracking_lookup_idx1.setdefault(o, []).append(i)
         return tracking_lookup_idx1
 
-    # @profile
     def get_class_prediction(self, object_='primary__primary'):
         path = 'feature/%s/object_classification/prediction' %object_
         return self[path]
 
-    # @profile
     def get_prediction_probabilities(self, indices=None,
                                      object_="primary__primary"):
         path = 'feature/%s/object_classification/probability' %object_
@@ -159,8 +187,7 @@ class CH5Position(object):
 
     def get_crack_contour(self, index, object_='primary__primary',
                           bb_corrected=True):
-        if not isinstance(index, (list, tuple)):
-            index = (index,)
+        index = to_index_array(index)
         crack_list = []
         for ind in index:
             crack_str = self['feature'][object_]['crack_contour'][ind]
@@ -195,30 +222,30 @@ class CH5Position(object):
                     ['channel'] \
                     [c, t, z, :, :]
 
-    def get_gallery_image(self, index, object_='primary__primary'):
-        if not isinstance(index, (list, tuple)):
-            index = (index,)
-        image_list = []
-        channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
+    def get_gallery_image(self, index, object_='primary__primary', size=GALLERY_SIZE):
+        index = to_index_array(index)
+        images = list()
+
+        channel_idx = self.definitions.image_definition['region'] \
+            ['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
 
-
-        for ind in index:
-            time_idx = self['object'][object_][ind]['time_idx']
-            cen1 = self['feature'][object_]['center'][ind]
-            image = numpy.zeros((GALLERY_SIZE,GALLERY_SIZE), dtype=numpy.uint8)
+        for i in index:
+            time_idx = self['object'][object_][i]['time_idx']
+            cen1 = self['feature'][object_]['center'][i]
+            image = numpy.zeros((size, size), dtype=numpy.uint8)
 
             tmp_img = self.get_image(time_idx, channel_idx, 0)[
-                              max(0, cen1[1]-GALLERY_SIZE/2):min(image_width,  cen1[1]+GALLERY_SIZE/2),
-                              max(0, cen1[0]-GALLERY_SIZE/2):min(image_height, cen1[0]+GALLERY_SIZE/2)]
+                              max(0, cen1[1]-size/2):min(image_width,  cen1[1]+size/2),
+                              max(0, cen1[0]-size/2):min(image_height, cen1[0]+size/2)]
 
             image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
-            image_list.append(image)
+            images.append(image)
 
         if len(index) > 1:
-            return numpy.concatenate(image_list, axis=1)
-        return image_list[0]
+            return numpy.concatenate(images, axis=1)
+        return images[0]
 
     def get_gallery_image_rgb(self, index, object_=('primary__primary',)):
         if len(object_) == 1:
@@ -311,7 +338,6 @@ class CH5Position(object):
         for obj_id in object_:
             crack = self.get_crack_contour(index, obj_id)
 
-
             if color is None:
                 class_color = self.get_class_color(index, obj_id)
                 if class_color is None:
@@ -332,11 +358,7 @@ class CH5Position(object):
     def get_class_label(self, index, object_='primary__primary'):
         """Map prediction indices according to the class definition and
         return an array with the shape of index."""
-
-        if isinstance(index, int):
-            index = numpy.array([index])
-        elif not isinstance(index, numpy.ndarray):
-            index = numpy.array(index)
+        index = to_index_array(index)
 
         index2label = self.definitions.class_definition(object_)["label"]
         predidx = self.get_class_prediction(object_)['label_idx']
@@ -352,15 +374,16 @@ class CH5Position(object):
         return labels.reshape(index.shape)
 
     def get_center(self, index, object_='primary__primary'):
-        if not isinstance(index, (list, tuple)):
-            index = [index]
+        index = to_index_array(index)
         center_list = self.get_feature_table(object_, 'center')[index]
         return center_list
 
     def get_class_color(self, index, object_='primary__primary'):
         if not self.has_classification(object_):
             return
-        res = map(str, self.class_color_def(tuple(self.get_class_label(index, object_)), object_))
+
+        res = map(str, self.class_color_def(
+                tuple(self.get_class_label(index, object_)), object_))
         if len(res) == 1:
             return res[0]
         return res
@@ -395,7 +418,8 @@ class CH5Position(object):
         return [class_mapping['name'][col-1] for col in class_labels]
 
     def object_feature_def(self, object_='primary__primary'):
-        return map(lambda x: str(x[0]), self.definitions.feature_definition['%s/object_features' % object_].value)
+        return map(lambda x: str(x[0]),
+                   self.definitions.feature_definition['%s/object_features' % object_].value)
 
     def get_object_table(self, object_):
         if len(self['object'][object_]) > 0:
@@ -725,10 +749,13 @@ class CH5MappedFile(CH5File):
 
 
 class CH5TestBase(unittest.TestCase):
+
     def setUp(self):
         data_filename = '../data/0038.ch5'
         if not os.path.exists(data_filename):
-            raise IOError("No CellH5 test data found in 'cellh5/data'. Please refer to the instructions in 'cellh5/data/README'")
+            raise IOError(("No CellH5 test data found in 'cellh5/data'."
+                           " Please refer to the instructions in "
+                           "'cellh5/data/README'"))
         self.fh = CH5File(data_filename)
         self.well_str = '0'
         self.pos_str = self.fh.positions[self.well_str][0]
@@ -739,6 +766,7 @@ class CH5TestBase(unittest.TestCase):
 
 
 class TestCH5Basic(CH5TestBase):
+
     def testGallery(self):
         a1 = self.pos.get_gallery_image(1)
         b1 = self.pos.get_gallery_image(2)
@@ -800,11 +828,11 @@ class TestCH5Basic(CH5TestBase):
         self.assertTrue(self.pos.get_object_features().shape[1] == 239)
 
 class TestCH5Examples(CH5TestBase):
+
     def testGalleryMatrix(self):
         image = self.pos.get_gallery_image_matrix(range(20), (5,6))
         import vigra
         vigra.impex.writeImage(image.swapaxes(1,0), 'img_matrix.png')
-
 
     def testReadAnImage(self):
         """Read an raw image an write a sub image to disk"""
@@ -823,14 +851,14 @@ class TestCH5Examples(CH5TestBase):
 
     # unittest.skip('ploting so many lines is very slow in matplotlib')
     def testPrintTrackingTrace(self):
-        """Show the cell movement over time by showing the trace of each cell colorcoded
-           overlayed on of the first image"""
+        """Show the cell movement over time by showing the trace of each cell
+        colorcoded overlayed on of the first image
+        """
         h2b = self.pos.get_image(0, 0)
 
         tracking = self.pos.get_object_table('tracking')
         nucleus = self.pos.get_object_table('primary__primary')
         center = self.pos.get_feature_table('primary__primary', 'center')
-
 
         # prepare image plot
         fig = mpl.figure(frameon=False)
@@ -839,14 +867,16 @@ class TestCH5Examples(CH5TestBase):
         fig.add_axes(ax)
         ax.imshow(h2b, cmap='gray')
 
-        # on top of the image a white circle is plotted for each center of nucleus.
+        # on top of the image a white circle is plotted for each
+        # center of nucleus.
         I = numpy.nonzero(nucleus[tracking['obj_idx1']]['time_idx'] == 0)[0]
         for x, y in center[I]:
             ax.plot(x,y,'w.', markersize=7.0, scaley=False, scalex=False)
 
         ax.axis([0, h2b.shape[1], h2b.shape[0], 0])
 
-        # a line is plotted between nucleus center of each pair of connected nuclei. The color is the mitotic phase
+        # a line is plotted between nucleus center of each pair of
+        #connected nuclei. The color is the mitotic phase
         for idx1, idx2 in zip(tracking['obj_idx1'],
                               tracking['obj_idx2']):
             color = self.pos.get_class_color(idx1)
@@ -868,7 +898,8 @@ class TestCH5Examples(CH5TestBase):
         n_classes = len(names)
         time_max = nucleus['time_idx'].max()
 
-        # compute mitotic index by counting the number cell per class label over all times
+        # compute mitotic index by counting the number cell per
+        #class label over all times
         mitotic_index =  numpy.array(map(lambda x: [len(numpy.nonzero(x==class_idx)[0]) for class_idx in range(n_classes)],
             [predictions[nucleus['time_idx'] == time_idx]['label_idx'] for time_idx in range(time_max)]))
 
