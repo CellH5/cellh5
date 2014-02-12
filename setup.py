@@ -10,13 +10,15 @@ This script installs only the library
 
 __author__ = 'rudolf.hoefler@gmail.com'
 
+import sys
+sys.path.append('pysrc')
+
 
 from distutils.core import setup
-import version
-
+import cellh5
 
 setup(name='cellh5',
-      version = version.version,
+      version = cellh5,
       description = 'module for easy acces of cellh5 files',
       author = 'Rudolf Hoefler',
       author_email = 'rudolf.hoefler@gmail.com',
