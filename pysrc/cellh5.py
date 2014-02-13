@@ -177,6 +177,12 @@ class CH5Position(object):
             return []
                    
                    
+    def get_time_lapse(self):
+        time_stamps = self['image/time_lapse']['timestamp_rel']
+        time_lapses = numpy.diff(time_stamps)
+        return time_lapses.mean()
+
+                   
     def get_image(self, t, c, z=0):
         return self['image'] \
                     ['channel'] \
@@ -333,6 +339,9 @@ class CH5Position(object):
         if len(res) == 1:
             return res[0]
         return res
+    
+    def get_all_time_idx(self, object_='primary__primary'):
+        return self['object'][object_][:]['time_idx']
     
     def get_time_idx(self, index, object_='primary__primary'):
         return self['object'][object_][index]['time_idx']
@@ -687,6 +696,10 @@ class CH5TestBase(unittest.TestCase):
         self.fh.close()
         
 class TestCH5Basic(CH5TestBase): 
+    def testTimeLapse(self):
+        time_lapse = self.pos.get_time_lapse()
+        assert int(time_lapse) == 276
+    
     def testGallery(self):
         a1 = self.pos.get_gallery_image(1)
         b1 = self.pos.get_gallery_image(2)
