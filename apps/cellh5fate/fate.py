@@ -57,7 +57,8 @@ rcParams['pdf.fonttype'] = 42
 rcParams['xtick.major.pad']= 8
 rcParams['ytick.major.pad']= 8
 
-SECURIN_BACKGROUND = 16
+SECURIN_BACKGROUND = 16 
+
 
 class CellFateAnalysis(object):
     def __init__(self, plate_id, ch5_file, mapping_file, 
@@ -524,7 +525,7 @@ class CellFateAnalysis(object):
             feature_table = self.mcellh5.get_position(w,str(p)).get_object_features(region_name)
             feature_idx = self.mcellh5.get_object_feature_idx_by_name(region_name, feature_name)
 
-            id_selector = 'ids'
+            id_selector = 'track_ids'
             fate_ = 'short'
             if with_fate:
                 id_selector = 'track_ids'
@@ -1411,9 +1412,9 @@ EXP_LOOKUP = {
             
 def fate_mutli_bi(plate_id):
     pm = CellFateAnalysisMultiHMM(plate_id, 
-#                                 rows=("D", ), 
-#                                 cols=(3,), 
-                                  **EXP_LOOKUP[plate_id])
+                                rows=("B", "C" ), 
+                                cols=(5,9,12), 
+                                **EXP_LOOKUP[plate_id])
     
     pm.fate_tracking(out_name='Raw class labels')
     pm.setup_hmm()
@@ -1430,45 +1431,45 @@ def fate_mutli_bi(plate_id):
     pm.plot('__fate_all', 2)
     securin_region = EXP_LOOKUP[plate_id]['securin_region']
      
-#     pm.event_curves('Multi State HMM',
-#                     '_securin_degradation_short',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     False,
-#                     pm.cmap,
-#                     (-20,120),
-#                     (0,1.5),
-#                            )
-#       
-#     pm.event_curves('Multi State HMM',
-#                     '_securin_degradation_long',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     True,
-#                     pm.cmap,
-#                     (-20, 1200),
-#                     (0,1.5),
-#                            )
-#      
-#     pm.event_mean_curves('Multi State HMM',
-#                             '_securin_degradation_short_mean',
-#                             'tertiary__expanded',
-#                             'n2_avg',
-#                             False,
-#                             pm.cmap,
-#                             (-20,120),
-#                             (0,1.5),
-#                                    )
-#      
-#     pm.event_mean_curves('Multi State HMM', 
-#                     '_securin_degradation_long_mean',
-#                     'tertiary__expanded',
-#                     'n2_avg',
-#                     True,
-#                     pm.cmap,
-#                     (-20,1200),
-#                     (0,1.5),
-#                            )
+    pm.event_curves('Multi State HMM',
+                    '_securin_degradation_short',
+                    'tertiary__expanded',
+                    'n2_avg',
+                    False,
+                    pm.cmap,
+                    (-20,240),
+                    (0,1.5),
+                           )
+       
+    pm.event_curves('Multi State HMM',
+                    '_securin_degradation_long',
+                    'tertiary__expanded',
+                    'n2_avg',
+                    True,
+                    pm.cmap,
+                    (-20, 1200),
+                    (0,1.5),
+                           )
+      
+    pm.event_mean_curves('Multi State HMM',
+                            '_securin_degradation_short_mean',
+                            'tertiary__expanded',
+                            'n2_avg',
+                            False,
+                            pm.cmap,
+                            (-20,240),
+                            (0,1.5),
+                                   )
+      
+    pm.event_mean_curves('Multi State HMM', 
+                    '_securin_degradation_long_mean',
+                    'tertiary__expanded',
+                    'n2_avg',
+                    True,
+                    pm.cmap,
+                    (-20,1200),
+                    (0,1.5),
+                           )
     
     pm.event_mean_fate_curves('Multi State HMM', 
                     '_securin_degradation_per_fate_mean_long',
@@ -1518,11 +1519,11 @@ def fate_mutli_bi(plate_id):
 
 if __name__ == "__main__":
     #fate_mutli_bi('002200')
-    #fate_mutli_bi('002338')
+    fate_mutli_bi('002338')
     #fate_mutli_bi('002377')
     #fate_mutli_bi('002325')
     #fate_mutli_bi('002288')
-    fate_mutli_bi('002301')
+    #fate_mutli_bi('002301')
     #fate_mitotic_time()
     print 'FINISH'
 
