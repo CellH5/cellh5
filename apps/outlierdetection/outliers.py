@@ -143,10 +143,12 @@ class OutlierDetection(object):
         return obj
     
     def train(self, train_on=('neg',)):
-        self.feature_set = 'PCA'
+        self.feature_set = 'Object features'
         print 'Training OneClass Classifier for', train_on, 'on', self.feature_set
         training_matrix = self.get_data(train_on, self.feature_set)
-        #training_matrix = self.normalize_training_data(training_matrix)
+        
+        if self.feature_set == 'Object features':
+            training_matrix = self.normalize_training_data(training_matrix)
         
         self.train_classifier(training_matrix)
         
@@ -180,7 +182,8 @@ class OutlierDetection(object):
                 predictions[idx] = numpy.zeros((0, 0))
                 distances[idx] = numpy.zeros((0, 0))
             else:
-                # tm = self._remove_nan_rows(tm)
+                if self.feature_set == 'Object features':
+                    tm = self._remove_nan_rows(tm)
                 pred, dist = self.predict_with_classifier(tm, log_file_handle)
                 predictions[idx] = pred
                 distances[idx] = dist
@@ -299,20 +302,37 @@ class OutlierDetection(object):
     
     def train_classifier(self, training_matrix):
         self.classifier = self.classifier_class(kernel=self.kernel, nu=self.nu, gamma=self.gamma)
-        idx = range(training_matrix.shape[0])
-        numpy.random.shuffle(idx)
-        self.classifier.fit(training_matrix[idx[:min(1000, training_matrix.shape[0])],:])
+        
         if self.kernel == 'linear':
-            b = numpy.abs(numpy.dot(self.pca.Wt.T, self.classifier.coef_[0]) * self.pca.sigma)
+            max_training_samples = 1000
+            idx = range(training_matrix.shape[0])
+            numpy.random.shuffle(idx)
+            self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
             
-            blub = dict(zip(self._non_nan_feature_idx, b))
-            s_blub = sorted(blub, key=blub.get, reverse=True)
             
             f =  cellh5.CH5File(self.cellh5_files.values()[0], 'r')
             features = f.object_feature_def()
             f.close()
-            for k, b in enumerate(s_blub):
-                print k, b, features[b] 
+            if self.feature_set == "PCA":
+                coef = numpy.zeros((training_matrix.shape[1],))
+                coef[:len(self.classifier.coef_[0])] = self.classifier.coef_[0]
+                
+                b = numpy.dot(numpy.abs(self.pca.Wt.T), coef) * self.pca.sigma
+                
+                blub = dict(zip(self._non_nan_feature_idx, b))
+                s_blub = sorted(blub, key=blub.get, reverse=True)
+                
+                
+                for k, b in enumerate(s_blub):
+                    print k, b, features[b]
+            else:
+                blub = dict(enumerate(numpy.abs(self.classifier.coef_[0]))) 
+                s_blub = sorted(blub, key=blub.get, reverse=True)
+                for k, b in enumerate(s_blub):
+                    print k, b, features[b]
+                
+        else:
+            self.classifier.fit(training_matrix)
 
                 
         
@@ -679,8 +699,9 @@ class OutlierDetection(object):
         #pylab.show()
     
     
-    def make_hit_list(self):
+    def make_top_hit_list(self):
         print 'Make hit list plot'
+        min_object_coutn_group = 15
         group_on = ['Plate', 'siRNA ID', 'Gene Symbol']
 
         # get global values of all plates        
@@ -701,20 +722,24 @@ class OutlierDetection(object):
             means = group.apply(lambda x: (x['Outlyingness'] * x['Object count']).sum() / x['Object count'].sum())
             means.sort()
             
-            stds = []
             genes = []
+            stds = []
+            values = []
             for g, m in means.iteritems():
-                std = group.get_group(g).std()['Outlyingness']
-                stds.append(std)
-                genes.append("%s %s %s" % g)
+                count = group.get_group(g)['Object count'].sum()
+                if count > min_object_coutn_group:
+                    stds.append(0)
+                    values.append(m)
+                    genes.append("%s %s %s (%d)" % (g + (count,)))
                 
-            fig = pylab.figure(figsize=(len(genes)/6 + 4, 8))
+            fig = pylab.figure(figsize=(len(genes)/6 + 3, 10))
             ax = pylab.subplot(111)
-            ax.errorbar(range(len(means)), means, yerr=stds, fmt='o', markeredgecolor='none')
-            ax.set_xticks(range(len(means)), minor=False)
+            ax.errorbar(range(len(values)), values, yerr=stds, fmt='o', markeredgecolor='none')
+            ax.set_xticks(range(len(values)), minor=False)
             ax.set_xticklabels(genes, rotation=90)
-            ax.axhline(means.mean(), label='Target mean')
-            ax.axhline(means.mean() + means.std() * 2, color='k', label='Target cutoff at 2 sigma')
+            ax.axhline(numpy.mean(values), label='Target mean')
+            ax.axhline(numpy.mean(values) + numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at +2 sigma')
+            ax.axhline(numpy.mean(values) - numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at -2 sigma')
             ax.axhline(neg_mean, color='g', label='Negative control mean')
             #ax.axhline(pos_mean, color='r', label='Positive control mean')
             
@@ -723,7 +748,64 @@ class OutlierDetection(object):
             pylab.xlabel('Target genes')
             pylab.title('%s' % plate_name)
             pylab.ylim(0, overall_max+0.1)
-            pylab.xlim(-1, len(means)+1)
+            pylab.xlim(-1, len(values)+1)
+            pylab.tight_layout()
+            
+            pylab.savefig(self.output('%s_hit_list.pdf' % plate_name))
+        #pylab.show()
+    
+    
+    
+    def make_hit_list(self):
+        print 'Make hit list plot'
+        min_object_coutn_group = 15
+        group_on = ['Plate', 'siRNA ID', 'Gene Symbol']
+
+        # get global values of all plates        
+        group = self.mapping[(self.mapping['Object count'] > 0) ].groupby(group_on)
+        overall_max = group['Outlyingness'].max().max()
+        
+        neg_group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'neg')].groupby(group_on)
+        neg_mean = neg_group.mean()['Outlyingness'].mean()
+        
+        pos_group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Group'] == 'pos')].groupby(group_on)
+        pos_mean = pos_group.mean()['Outlyingness'].mean()        
+        
+        #iterate over plates and make hit list figure
+        
+        for plate_name in self.mapping_files.keys():
+            group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Plate'] == plate_name)].groupby(['Well', 'siRNA ID', 'Gene Symbol'])
+            
+            means = group.apply(lambda x: (x['Outlyingness'] * x['Object count']).sum() / x['Object count'].sum())
+            means.sort()
+            
+            genes = []
+            stds = []
+            values = []
+            for g, m in means.iteritems():
+                count = group.get_group(g)['Object count'].sum()
+                if count > min_object_coutn_group:
+                    stds.append(0)
+                    values.append(m)
+                    genes.append("%s %s %s (%d)" % (g + (count,)))
+                
+            fig = pylab.figure(figsize=(len(genes)/6 + 3, 10))
+            ax = pylab.subplot(111)
+            ax.errorbar(range(len(values)), values, yerr=stds, fmt='o', markeredgecolor='none')
+            ax.set_xticks(range(len(values)), minor=False)
+            ax.set_xticklabels(genes, rotation=90)
+            ax.axhline(numpy.mean(values), label='Target mean')
+            ax.axhline(numpy.mean(values) + numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at +2 sigma')
+            ax.axhline(numpy.mean(values) - numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at -2 sigma')
+            ax.axhline(neg_mean, color='g', label='Negative control mean')
+            #ax.axhline(pos_mean, color='r', label='Positive control mean')
+            
+            pylab.legend(loc=2)
+            pylab.ylabel('Outlyingness (OC-SVM)')
+            pylab.xlabel('Target genes')
+            pylab.title('%s' % plate_name)
+            pylab.ylim(0, overall_max+0.1)
+            pylab.xlim(-1, len(values)+1)
             pylab.tight_layout()
             
             pylab.savefig(self.output('%s_hit_list.pdf' % plate_name))
@@ -941,14 +1023,15 @@ class SaraOutlier(object):
         self.od.train_pca()
         self.od.predict_pca()
         self.od.train()
-        #self.od.predict()
-        #self.od.compute_outlyingness()
+        self.od.predict()
+        self.od.compute_outlyingness()
         
         #self.od.cluster_outliers()                    
         #self.od.make_pca_scatter()
         
-        self.od.make_hit_list_single_feature('h4_2COV')
-        #self.od.make_heat_map()
+        self.od.make_hit_list()
+        #self.od.make_hit_list_single_feature('roisize')
+        self.od.make_heat_map()
         #self.od.make_outlier_galleries()
         print 'Results:', self.od.output_dir
         os.startfile(os.path.join(os.getcwd(), self.od.output_dir))
@@ -1008,7 +1091,7 @@ if __name__ == "__main__":
                      {
                       'mapping_files' : {
                           'SP_9': 'F:/sara_adhesion_screen/sp9.txt',
-#                           'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
+#                         'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
 #                           'SP_7': 'F:/sara_adhesion_screen/sp7.txt',
 #                           'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
 #                           'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
@@ -1038,7 +1121,7 @@ if __name__ == "__main__":
                       'gamma' : 0.005,
                       'nu' : 0.10,
                       'pca_dims' : 239,
-                      'kernel' :'linear'
+                      'kernel' :'rbf'
                      },
                  'matthias_od':
                      {
