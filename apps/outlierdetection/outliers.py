@@ -137,7 +137,6 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 s_blub = sorted(blub, key=blub.get, reverse=True)
                 for k, b in enumerate(s_blub):
                     print k, b, features[b]
-                
         else:
             self.classifier.fit(training_matrix) 
             

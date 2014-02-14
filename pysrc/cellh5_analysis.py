@@ -341,51 +341,54 @@ class CellH5Analysis(object):
         return data                        
         
     def event_curves(self, event_selector, 
-                           title,
                            region_name,
                            feature_name,
-                           with_fate,
                            cmap,
                            xlim,
                            ylim,
+                           feature_backgorund
                            ):
-        pp = PdfPages(self.output("%s.pdf") % title)
-        
-        
         time_unit = 'min'
-        
-        for w, p in sorted(self.tracks):
-            cnt = 0
-            f = pylab.figure(figsize=(8, 8))
-            ax = pylab.gca()
-            
-            
-            feature_table = self.mcellh5.get_position(w,str(p)).get_object_features(region_name)
-            feature_idx = self.mcellh5.get_object_feature_idx_by_name(region_name, feature_name)
+        try:
+            os.makedirs(os.path.join(self.output_dir, 'curves'))
+        except:
+            pass
+        fig = pylab.figure()
+        for _, (plate, w, p) in self.mapping[['Plate', 'Well', 'Site']].iterrows(): 
+            try:
+                cellh5file = cellh5.CH5File(self.cellh5_files[plate])
+                cellh5pos = cellh5file.get_position(w, str(p))
+            except:
+                print "File", (plate, w, p), "is corrupt. Process again with CellCognition"
+                cellh5file.close()
+                continue
 
-            id_selector = 'track_ids'
-            fate_ = 'short'
-            if with_fate:
-                id_selector = 'track_ids'
-                fate_ = 'long'
+            idx = ((self.mapping['Plate'] == plate) &
+                   (self.mapping['Well'] == w) &
+                   (self.mapping['Site'] == p))
+            treatment = self.get_treatment(plate, w, p)
+        
+            pylab.clf()
+            ax = pylab.subplot(111)          
             
-            all_feature_values = [feature_table[t, feature_idx] for t in self.tracks[(w,p)][id_selector]]
+            feature_table = cellh5pos.get_position(w,str(p)).get_object_features(region_name)
+            feature_idx = cellh5pos.get_object_feature_idx_by_name(region_name, feature_name)
+            tracks = self.mapping.loc[idx][event_selector].iloc[0]
+            
+            all_feature_values = [feature_table[t, feature_idx] for t in tracks]
                 
-            feature_min = SECURIN_BACKGROUND #numpy.min(map(numpy.min, all_feature_values))
-                
-            #print "FEATURE_MIN", feature_min
             for line, feature_values in zip(self.tracks[(w,p)][event_selector], all_feature_values):
                 x_values = numpy.array(map(int,list(line)))
                 if numpy.max(feature_values) < 15:
                     print 'excluding event due to low signal'
                     continue
-                values = numpy.array(feature_values - feature_min) 
+                values = numpy.array(feature_values - feature_backgorund) 
                 values = values / numpy.mean(values[(self.onset_frame-1):(self.onset_frame+2)])
                 self._plot_curve(x_values[:len(feature_values)], values, cmap, ax)
   
 
             pylab.vlines(0, ylim[0], ylim[1], 'k', '--', label='NEBD')
-            title = '%s - %s (%s)'% tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,])
+            title = '%s - %s (%s)'% tuple(list(treatment) + [w,])
             ax.set_title(title)
             ax.set_xlabel('Time (%s)' % time_unit)
             ax.set_ylabel('Fluorescence (AU)')
@@ -396,11 +399,11 @@ class CellH5Analysis(object):
             ax.get_xaxis().tick_bottom()
             ax.get_yaxis().tick_left()
             
-            pylab.savefig(pp, format='pdf')
-            for fmt in OUTPUT_FORMATS:
-                pylab.savefig(self.output('securin_2_all_%s_%s.%s' % (fate_, title, fmt)))
-            pylab.clf()    
-        pp.close()
+            for fmt in self.output_formats:
+                pylab.savefig(self.output('curves_all_%s_%d_.%s' % (title, xlim[1], fmt)))    
+            
+            cellh5file.close()
+
               
     def plot_track_order_map(self, track_selection, color_maps, track_short_crop_in_min=240):
         try:
@@ -541,6 +544,7 @@ def test_event_tracking():
     pm.track_full_events()
     pm.setup_hmm(17, 5, 'hmm_constraints/graph_5_to_17_ms_special.xml')
     pm.predict_hmm()
+    
     import matplotlib
     cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
                                                    ['#FFFFFF', 
@@ -572,6 +576,15 @@ def test_event_tracking():
                                                     '#FF0000',
                                                     '#00FF00']), 'cmap17')  
     pm.plot_track_order_map(['Event track labels', 'Event HMM track labels'], [cmap, CMAP17])
+    pm.event_curves('Event HMM track labels',
+                    '_securin_degradation_short',
+                    'tertiary__expanded',
+                    'n2_avg',
+                    pm.cmap,
+                    (-20,240),
+                    (0,1.5),
+                    16
+                           )
     
 def test_features_pca(): 
     pm = CellH5Analysis('test_features_pca', 
@@ -586,9 +599,9 @@ def test_features_pca():
     pm.read_feature()
     pm.train_pca()
     pm.predict_pca()
-    print 'asd'
+    
     
 
 if __name__ == '__main__':
-    test_features_pca()
+    test_event_tracking()
     
