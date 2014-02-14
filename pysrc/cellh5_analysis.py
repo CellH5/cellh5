@@ -18,6 +18,28 @@ from sklearn import hmm
 from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
 hmm.normalize = lambda A, axis=None: normalize(A, axis, eps=10e-99)
 
+def hex_to_rgb(hex_string):
+    """
+    Converts the hex representation of a RGB value (8bit per channel) to
+    its integer components.
+
+    Example: hex_to_rgb('#559988') = (85, 153, 136)
+             hex_to_rgb('559988') = (85, 153, 136)
+
+    @param hexString: the RGB value
+    @type hexString: string
+    @return: RGB integer components (tuple)
+    """
+    if hex_string[:2] == '0x':
+        hex_value = eval(hex_string)
+    elif hex_string[0] == '#':
+        hex_value = eval('0x'+hex_string[1:])
+    else:
+        hex_value = eval('0x'+hex_string)
+    b = hex_value & 0xff
+    g = hex_value >> 8 & 0xff
+    r = hex_value >> 16 & 0xff
+    return (r/255.0, g/255.0, b/255.0)
 
                          
 
@@ -28,17 +50,18 @@ class CellH5Analysis(object):
         self.mapping_files = mapping_files
         self.cellh5_files = cellh5_files
         self.output_dir = output_dir
+        self.time_lapse = {}
         
         # read mappings for all plates
         mappings = []
         for plate_name, mapping_file in mapping_files.items():
             assert plate_name in cellh5_files.keys()
             cellh5_file = cellh5_files[plate_name]
-        
             plate_cellh5  = cellh5.CH5MappedFile(cellh5_file)
-        
             plate_cellh5.read_mapping(mapping_file, sites=sites, rows=rows, cols=cols, locations=locations, plate_name=plate_name)
             plate_mappings = plate_cellh5.mapping
+            self.time_lapse[plate_name] = plate_cellh5.current_pos.get_time_lapse() / 60.0
+            plate_cellh5.close()
             
             mappings.append(plate_mappings)
         self.mapping = pandas.concat(mappings, ignore_index=True)
@@ -49,7 +72,7 @@ class CellH5Analysis(object):
     def set_output_dir(self, output_dir):
         if self.output_dir is None:
             self.output_dir = self.name +"/" + datetime.datetime.now().strftime("%y-%m-%d-%H-%M")
-            self.output_dir += "-p%d-k%s-n%f-g%f" % (self.pca_dims, self.kernel, self.nu, self.gamma)
+            #self.output_dir += "-p%d-k%s-n%f-g%f" % (self.pca_dims, self.kernel, self.nu, self.gamma)
             try:
                 os.makedirs(self.output_dir)
             except:
@@ -69,76 +92,127 @@ class CellH5Analysis(object):
         input_str = input_str.replace("(","_")
         return input_str
                 
-    def fate_tracking(self, out_name):
-        print 'Tracking cells',
-        for w, p in self.tracks:
-            print w,
-            cell5pos = self.mcellh5.get_position(w, p)
+    def read_events(self, onset_frame=4, events_before_frame=99999):   
+        self.mapping['Event labels'] = -1   
+        self.mapping['Event ids'] = -1
+        event_label_list = []
+        event_id_list = []   
+        for _, (plate, w, p) in self.mapping[['Plate', 'Well','Site']].iterrows(): 
+            try:
+                cellh5file = cellh5.CH5File(self.cellh5_files[plate])
+                cellh5pos = cellh5file.get_position(w, str(p))
+            except:
+                print "Positon", (w, p), "is corrupt. Process again with CellCognition"
+                cellh5file.close()
+                continue
+            event_ids = cellh5pos.get_events()
             
-            class_labels_list = []
-            id_list = []
-            for k, e_idx in enumerate(self.tracks[(w,p)]['ids']):   
+            event_ids = [e for e in event_ids if cellh5pos.get_time_idx(e[onset_frame]) < events_before_frame]
+            
+            event_id_list.append(event_ids)
+            event_label_list.append([cellh5pos.get_class_label(e) for e in event_ids])
+            print "Read events from ch5:", plate, w, p, "with", list(self.get_treatment(plate, w, p))
+            cellh5file.close()
+        self.mapping['Event labels'] = pandas.Series(event_label_list)
+        self.mapping['Event ids'] = pandas.Series(event_id_list)
+        
+    def get_treatment(self, plate, w, p):
+        return list(self.mapping[
+                                (self.mapping['Plate'] == plate) &
+                                (self.mapping['Well'] == w) &
+                                (self.mapping['Site'] == p)
+                                ][['siRNA ID', 'Gene Symbol']].iloc[0])
+    def track_full_events(self):
+        self.mapping['Event track labels'] = -1   
+        self.mapping['Event track ids'] = -1 
+        all_track_ids = []
+        all_track_labels = []
+        
+        for _, (plate, w, p, event_ids) in self.mapping[['Plate', 'Well', 'Site', 'Event ids']].iterrows(): 
+            try:
+                cellh5file = cellh5.CH5File(self.cellh5_files[plate])
+                cellh5pos = cellh5file.get_position(w, str(p))
+            except:
+                print "Positon", (w, p), "is corrupt. Process again with CellCognition"
+                cellh5file.close()
+                continue
+            
+            track_labels_list = []
+            track_id_list = []
+            
+            for _, e_idx in enumerate(event_ids):   
                 start_idx = e_idx[-1]
-                track = e_idx + cell5pos.track_first(start_idx)
-                class_labels = cell5pos.get_class_label(track)
-                class_labels_list.append(class_labels)
-                id_list.append(track)
+                track_ids = e_idx + cellh5pos.track_first(start_idx)
+                
+                track_labels_list.append(cellh5pos.get_class_label(track_ids))
+                track_id_list.append(track_ids)
+            all_track_ids.append(track_id_list)
+            all_track_labels.append(track_labels_list)
+            print "Tracking events from ch5:", plate, w, p, "with", list(self.get_treatment(plate, w, p))
+            cellh5file.close()
+        self.mapping['Event track labels'] = pandas.Series(all_track_labels)
+        self.mapping['Event track ids'] = pandas.Series(all_track_ids)
 
-            self.tracks[(w,p)][out_name] = class_labels_list
-            self.tracks[(w,p)]['track_ids'] = id_list
         print ' ...done'
         
-#     def extract_topro(self):
-#         topro = []
-#         for w, p in self.tracks:
-#             feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
-#             for t in self.tracks[(w,p)]['track_ids']:
-#                 topro.extend(feature_table[t, 6])  
-#         pylab.figure()
-#         pylab.hist(topro, 256)
-#         pylab.figure()
-#         pylab.hist(numpy.log2(numpy.array(topro)), 256, log=True)
-#         pylab.show()
-#         
-#     def predict_topro(self, thres):
-#         for w, p in self.tracks:
-#             topro = []
-#             topro_2 = []
-#             feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
-#             feature_table = self.mcellh5.get_position(w,str(p)).get_object_features('secondary__expanded')
-#             for t_ids, t in zip(self.tracks[(w,p)]['track_ids'], self.tracks[(w,p)]['class_label_str']):
-#                 t_topro_pos = feature_table[t_ids, 6] > thres
-#                 t_ = numpy.array(list(t))
-#                 t_[t_topro_pos] = 3
-#                 topro.append(t_)
-#                 
-#                 t__ = numpy.zeros((len(t),), dtype=numpy.uint8)
-#                 t__[t_topro_pos] = 3
-#                 
-#                 topro_2.append(t__)
-#             self.tracks[(w,p)]['topro_class_labels'] = topro
-#             self.tracks[(w,p)]['topro_pos'] = topro_2
+    def setup_hmm(self, hmm_n_classes, hmm_n_obs, hmm_constraint_file):
+        self.hmm_n_classes = hmm_n_classes
+        self.hmm_n_obs = hmm_n_obs
+        self.hmm_constraint_file = hmm_constraint_file
+        
+        constraints = HMMConstraint(self.hmm_constraint_file)
+        
+        transmat = numpy.array([
+                                [1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
+                                [0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                
+                                [0.0, 0.0, 0.0, 0.0, 90 , 1  , 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60 ],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 90 , 1  , 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60 ],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.1],
+                                
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 90 , 1  , 0.0, 0.0, 60 ],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.1],
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.1],
+                                
+                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                                ])
+        transmat = normalize(transmat, axis=1, eps=0 )
+        
+        assert transmat.shape[0] == self.hmm_n_classes
+        assert transmat.shape[1] == self.hmm_n_classes
+        
+        est = HMMAgnosticEstimator(self.hmm_n_classes, 
+                                   transmat, 
+                                   numpy.ones((self.hmm_n_classes, self.hmm_n_obs)), 
+                                   numpy.ones((self.hmm_n_classes, )))
+        
+        est.constrain(constraints)
+        self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
+        self.hmm._set_emissionprob(est.emis)
                
-    def predict_hmm(self, class_selector, class_out_name):
+    def predict_hmm(self, class_selector='Event track labels'):
         print 'Predict hmm',
-        for w, p in self.tracks:
-            print w, 
-            cell5pos = self.mcellh5.get_position(w, p)
-            
+        self.mapping['Event HMM track labels'] = -1 
+        all_hmm_labels_list = []
+        for _, (plate, w, p, track_labs) in self.mapping[['Plate', 'Well', 'Site', class_selector]].iterrows(): 
+            print plate, w, p 
             hmm_labels_list = []
-            for k, t in enumerate(self.tracks[(w,p)][class_selector]):   
-                class_labels = t
-                if not isinstance(t, (list,)):
-                    class_labels = list(t)
-                    class_labels = numpy.array(map(int, t))
-                
-                hmm_class_labels = self.hmm.predict(numpy.array(class_labels-1)) + 1
+            for t in track_labs:   
+                hmm_class_labels = self.hmm.predict(numpy.array(t-1)) + 1
                 hmm_labels_list.append(hmm_class_labels)
-
-                
-            #self.tracks[(w,p)]['class_labels'] = class_labels_list
-            self.tracks[(w,p)][class_out_name] = hmm_labels_list
-        print ' ... done'
+            all_hmm_labels_list.append(hmm_labels_list)
+        self.mapping['Event HMM track labels'] = pandas.Series(all_hmm_labels_list)
+        print 'done'
+            
                             
         
     def event_curves(self, event_selector, 
@@ -203,127 +277,65 @@ class CellH5Analysis(object):
             pylab.clf()    
         pp.close()
     
-    def setup_hmm(self, k_classes, constraint_xml):
-        constraints = HMMConstraint(constraint_xml)
-        
-        transmat = numpy.array([
-                                [10 ,  0.1,  0.0,  0.0,  0.1],
-                                [0.1,  10 ,  0.1,  0.0,  0.1],
-                                [0.1,  0.0,  10 ,  0.1,  0.1],
-                                [0.1,  0.0,  0.0,  10 ,  0.1],
-                                [0.0,  0.0,  0.0,  0.0,  10 ],
-                                ])
-        transmat = normalize(transmat, axis=1, eps=0.001)
-        
-        est = HMMAgnosticEstimator(k_classes, transmat, numpy.ones((k_classes, k_classes)), numpy.ones((k_classes, )) )
-        est.constrain(constraints)
-        self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
-        self.hmm._set_emissionprob(est.emis) 
+
              
-    def plot_tracks(self, track_selection, cmaps, names, title='plot_tracks'):
+    def plot_track_order_map(self, track_selection, color_maps, track_short_crop_in_min=240):
+        fig = pylab.figure()
         n = len(track_selection)
-        pp = PdfPages(self.output('%s.pdf') % title)
-        
-        old_w = 'ZZZ'
-        j = 0
-        for w, p in sorted(self.tracks):
-            if w[0] != old_w[0]:
-                if j != 0:
-                    j=0
-                    pylab.savefig(pp, format='pdf')
-                m = map(lambda x: x[0][0], self.tracks.keys()).count(w[0])
-                fig = pylab.figure(figsize=(n*8,m*4)) 
-                old_w = w
-            
-            cond = self.mcellh5.get_treatment_of_pos(w,p)
+        for _, (plate, w, p) in self.mapping[['Plate', 'Well', 'Site']].iterrows(): 
+            try:
+                cellh5file = cellh5.CH5File(self.cellh5_files[plate])
+            except:
+                print "File", (plate, w, p), "is corrupt. Process again with CellCognition"
+                cellh5file.close()
+                continue
+
+            idx = ((self.mapping['Plate'] == plate) &
+                   (self.mapping['Well'] == w) &
+                   (self.mapping['Site'] == p))
+            treatment = self.get_treatment(plate, w, p)
             for k, class_selector in enumerate(track_selection):
-                cmap = cmaps[k]
-                name = names[k]
-                ax = pylab.subplot(m, n , k + j*n + 1)
-                
-                tracks = self.tracks[w,p][class_selector]
+                cmap = color_maps[k]
+                tracks = self.mapping.loc[idx][class_selector].iloc[0]
                 track_lens = map(len, tracks)
-                
                 if len(track_lens) > 0:
-                    
                     max_track_length = max(track_lens)
-                
-                    max_track_length = max(map(lambda x: len(x), tracks))
                     n_tracks = len(tracks)
                     img = numpy.zeros((n_tracks, max_track_length), dtype=numpy.uint8)
                     
-                    track_crop_frame = int(TRACK_IMG_CROP/self.time_lapse)+1
+                    track_crop_frame = int(track_short_crop_in_min/self.time_lapse[plate] + 0.5)
                     
                     def my_cmp(x,y):
                         counter = lambda x, items: reduce(lambda a,b:a+b, [list(x).count(xx) for xx in items])
                         tmp =  cmp(counter(x, [2,3,4]), counter(y, [2,3,4]))
                         return tmp if tmp!=0 else cmp(len(x),len(y)) 
                     
-                    for i, t in enumerate([tmp[0] for tmp in sorted(zip(tracks, self.tracks[w,p][track_selection[-1]]), cmp=my_cmp, key=lambda x:x[1])]):
-                        if not isinstance(t, (list,)):
-                            b = list(t)
-                        img[i,:len(t)] = b
+                    for i, t in enumerate([tmp[0] for tmp in sorted(zip(tracks, self.mapping[idx][track_selection[-1]].iloc[0]), cmp=my_cmp, key=lambda x:x[1])]):
+                        img[i,:len(t)] = t
                       
-                    
-                      
+                    pylab.clf()
+                    ax = pylab.subplot(111)
                     ax.matshow(img[:,:track_crop_frame], cmap=cmap, vmin=0, vmax=cmap.N-1)
-                    title = '%s - %s (%s) %s' % tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w, name]) 
+                    title = '%s - %s (%s) %s' % tuple(list(treatment) + [w, 'short']) 
                     ax.set_title(title)
                     pylab.axis('off')
                     extent = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
-                    fig.savefig(self.output('tracks_short_%s_%d.png' % (title, TRACK_IMG_CROP)), bbox_inches=extent)  
+                    #fig.savefig(self.output('tracks_short_%s_%d.png' % (title, TRACK_IMG_CROP)), bbox_inches=extent)  
 
+                    pylab.clf()
+                    ax = pylab.subplot(111)
                     ax.matshow(img, cmap=cmap, vmin=0, vmax=cmap.N-1) 
                     ax.set_title(title)
                     pylab.axis('off')
                     extent = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
-                    fig.savefig(self.output('tracks_full_%s_%d.png' % (title, int(max_track_length*self.time_lapse))), bbox_inches=extent)
+                    #fig.savefig(self.output('tracks_full_%s_%d.png' % (title, int(max_track_length*self.time_lapse))), bbox_inches=extent)
+                    
+                    pylab.show()
                 else:
-                    print w, p, 'Nothing to plot'
-            j+=1
+                    print plate, w, p, 'Track has len zero. Nothing to plot'
+ 
                     
-        pylab.savefig(pp, format='pdf')    
-        pp.close()   
-                    
-    def setup_hmm(self):
-        constraints = HMMConstraint(self.hmm_constraint_file)
-        
-        transmat = numpy.array([
-                                [1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9],
-                                [0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
-                                [0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
-                                [0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
-                                
-                                [0.0, 0.0, 0.0, 0.0, 90 , 1  , 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60 ],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
-                                
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 90 , 1  , 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60 ],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.1],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.0, 0.0, 0.0, 0.1],
-                                
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 90 , 1  , 0.0, 0.0, 60 ],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.9, 0.0, 0.1],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.9, 0.1],
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 1.0, 0.1],
-                                
-                                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-                                ])
-        transmat = normalize(transmat, axis=1, eps=0 )
-        
-        assert transmat.shape[0] == self.hmm_n_classes
-        assert transmat.shape[1] == self.hmm_n_classes
-        
-        est = HMMAgnosticEstimator(self.hmm_n_classes, 
-                                   transmat, 
-                                   numpy.ones((self.hmm_n_classes, self.hmm_n_obs)), 
-                                   numpy.ones((self.hmm_n_classes, )))
-        
-        est.constrain(constraints)
-        self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
-        self.hmm._set_emissionprob(est.emis)               
+                   
                 
     
     
@@ -365,7 +377,7 @@ class CellH5Analysis(object):
                     else:
                         pass
                 
-            treatment = self.mcellh5.get_treatment_of_pos(w, p)[1]
+            treatment = self.mcellh5.get_treatment(w, p)[1]
             xticklabels.append("%s_%02d" % (w,p))
         
         from itertools import izip_longest
@@ -394,3 +406,46 @@ class CellH5Analysis(object):
         pp.close()
     
     
+if __name__ == '__main__':
+    pm = CellH5Analysis('test_fate', 
+                        {'002338': "M:/experiments/Experiments_002300/002338/002338/_meta/Cecog/Mapping/002338.txt"}, 
+                        {'002338': "M:/experiments/Experiments_002300/002338/002338/_meta/Analysis/hdf5/_all_positions.ch5"}, 
+                        sites=(1,),
+                        rows=("B", "C" ), 
+                        cols=(5,9),
+                        )
+    pm.read_events(5, 90)
+    pm.track_full_events()
+    pm.setup_hmm(17, 5, 'hmm_constraints/graph_5_to_17_ms_special.xml')
+    pm.predict_hmm()
+    import matplotlib
+    cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
+                                                   ['#FFFFFF', 
+                                                    '#00ff00', 
+                                                    '#ff8000',
+                                                    '#d28dce',
+                                                    '#0055ff',
+                                                    '#aa5500', 
+                                                    '#ff0000',
+                                                    '#ffff00']), 'classification_cmap')
+    CMAP17 = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
+                                                   ['#FFFFFF', 
+                                                    '#AAAAAA', 
+                                                    '#0000FF',
+                                                    '#0000FF',
+                                                    '#0000FF',
+                                                    '#AAAAAA', 
+                                                    '#0000FF',
+                                                    '#0000FF',
+                                                    '#0000FF',
+                                                    '#AAAAAA', 
+                                                    '#0000FF',
+                                                    '#0000FF',
+                                                    '#0000FF',
+                                                    '#AAAAAA', 
+                                                    '#0000FF',
+                                                    '#0000FF',
+                                                    '#0000FF',
+                                                    '#FF0000',
+                                                    '#00FF00']), 'cmap17')  
+    pm.plot_track_order_map(['Event track labels', 'Event HMM track labels'], [cmap, CMAP17])
