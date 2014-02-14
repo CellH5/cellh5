@@ -7,6 +7,7 @@ import sklearn.cluster
 import sklearn.mixture
 
 import cellh5
+import cellh5_analysis
 import cPickle as pickle
 from numpy import recfromcsv
 import pandas
@@ -58,90 +59,19 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
     pylab.tight_layout()
 
 
-class OutlierDetection(object):
+class OutlierDetection(cellh5_analysis.CellH5Analysis):
     classifier_class = OneClassSVM
     def __init__(self, name, mapping_files, cellh5_files, training_sites=(1,2,3,4,), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
         assert gamma != None
         assert pca_dims != None
         assert kernel != None
         assert nu != None
-        
-        self.name = name
-        
-        self.mapping_files = mapping_files
-        self.cellh5_files = cellh5_files
-        
-        mappings = []
-        for plate_name, mapping_file in mapping_files.items():
-            assert plate_name in cellh5_files.keys()
-            cellh5_file = cellh5_files[plate_name]
-        
-            plate_cellh5  = cellh5.CH5MappedFile(cellh5_file)
-        
-            plate_cellh5.read_mapping(mapping_file, sites=training_sites, rows=rows, cols=cols, locations=locations, plate_name=plate_name)
-            plate_mappings = plate_cellh5.mapping
-            
-            mappings.append(plate_mappings)
-            
-        self.mapping = pandas.concat(mappings, ignore_index=True)
-        del mappings
-
+        cellh5_analysis.CellH5Analysis.__init__(self, name, mapping_files, cellh5_files, sites=(1,2,3,4,), rows=None, cols=None, locations=None)
         self.gamma = gamma
         self.nu = nu
-        self.classifier = None
-        
         self.pca_dims = pca_dims
         self.kernel = kernel
-        plate_id = name
-        self.plate_id = name
-    
-        output_dir = None
-        self.set_output_dir(output_dir, plate_id)
-        self._rf_time_predicate_cmp = None
-        self._rf_time_predicate_value = None
-        
-    def set_output_dir(self, output_dir, plate_id):
-        
-        self.output_dir = output_dir
-        if output_dir is None:
-            self.output_dir = plate_id +"/" + datetime.datetime.now().strftime("%y-%m-%d-%H-%M")
-            self.output_dir += "-p%d-k%s-n%f-g%f" % (self.pca_dims, self.kernel, self.nu, self.gamma)
-            try:
-                os.makedirs(self.output_dir)
-            except:
-        		pass
-             
-        print "Output Directory: ", self.output_dir
-        
 
-    def output(self, file):
-        file = self.str_sanatize(file)
-        return os.path.join(self.output_dir, file) 
-        
-    @staticmethod    
-    def str_sanatize(input_str):
-        input_str = input_str.replace("/","_")
-        input_str = input_str.replace("#","_")
-        input_str = input_str.replace(")","_")
-        input_str = input_str.replace("(","_")
-        return input_str
-        
-        
-        
-    def save(self, file_name=None):
-        import datetime
-        if file_name is None:
-            file_name = self.name + "_" + datetime.datetime.now().strftime("%y-%m-%d-%H-%M") + "_g%5.4f_n%5.4f" % (self.gamma, self.nu) + ".pkl"
-        with open(file_name, 'wb') as f:
-            pickle.dump(self, f)
-        return file_name
-    
-    @staticmethod
-    def load(file_name):
-        with open(file_name, 'rb') as f:
-            obj = pickle.load(f)
-        return obj
-    
     def train(self, train_on=('neg',)):
         self.feature_set = 'Object features'
         print 'Training OneClass Classifier for', train_on, 'on', self.feature_set
@@ -152,20 +82,6 @@ class OutlierDetection(object):
         
         self.train_classifier(training_matrix)
         
-        
-        
-#         testing_matrix, testing_treatment = self.get_data(self.test_on)
-#         testing_matrix, testing_treatment = self.normalize_test_data(testing_matrix, testing_treatment)
-#         prediction = self.predict(testing_matrix[:,:])
-#         self.plot(testing_matrix, prediction)
-#         self.group_treatment_outlies(prediction, testing_treatment)
-#         
-#         self.result = {}
-#         self.result[self.test_on] = {}
-#         self.result[self.test_on]['matrix'] = testing_matrix
-#         self.result[self.test_on]['treatment'] = testing_treatment
-#         self.result[self.test_on]['prediction'] = prediction
-    
     def predict(self, test_on=('target', 'pos', 'neg')):
         print 'Predicting OneClass Classifier for', self.feature_set
         testing_matrix_list = self.mapping[self.mapping['Group'].isin(test_on)][['Well', 'Site', self.feature_set, "Gene Symbol", "siRNA ID"]].iterrows()
@@ -191,115 +107,6 @@ class OutlierDetection(object):
         self.mapping['Predictions'] = pandas.Series(predictions)
         self.mapping['Hyperplane distance'] = pandas.Series(distances)
             
-    def _remove_nan_rows(self, data):
-        data = data[:, self._non_nan_feature_idx]
-        if numpy.any(numpy.isnan(data)):
-            print 'Warning: Nan values in prediction found. Trying to delete examples:'
-            nan_rows = numpy.unique(numpy.where(numpy.isnan(data))[0])
-            self._non_nan_sample_idx = [x for x in xrange(data.shape[0]) if x not in nan_rows]
-            print 'deleting %d of %d' % (data.shape[0] - len(self._non_nan_sample_idx), data.shape[0])
-            
-            # get rid of nan samples (still)
-            data = data[self._non_nan_sample_idx, :]
-        data = (data - self._normalization_means) / self._normalization_stds
-        return data
-    
-    
-    def set_read_feature_time_predicate(self, cmp, value):
-        self._rf_time_predicate_cmp = cmp
-        self._rf_time_predicate_value = value
-        
-    def set_read_feature_feature_predicate(self, cmp, value):
-        self._rf_time_predicate_cmp = cmp
-        self._rf_time_predicate_value = value
-            
-    def read_feature(self, idx_selector_functor=None):
-        # init new columns
-        self.mapping['Object features'] = 0
-        self.mapping['Object count'] = 0
-        self.mapping['CellH5 object index'] = 0
-        
-        # read features from each plate
-        selector_output_file = open(self.output('_read_feature_selction.txt'), 'wb')
-        
-        
-        for plate_name, cellh5_file in self.cellh5_files.items(): 
-            ch5_file = cellh5.CH5File(cellh5_file)
-            features = []
-            object_counts = []
-            c5_object_index = []
-            
-            for i, row in self.mapping[self.mapping['Plate']==plate_name].iterrows():
-                well = row['Well']
-                site = str(row['Site'])
-                treatment = "%s %s" % (row['Gene Symbol'], row['siRNA ID'])
-                
-                ch5_pos = ch5_file.get_position(well, site)
-                
-                feature_matrix = ch5_pos.get_object_features()
-                time_idx = ch5_pos['object']["primary__primary"]['time_idx']
-
-                print 'Reading', plate_name, well, site, len(feature_matrix), 'using time', self._rf_time_predicate_cmp.__name__, self._rf_time_predicate_value
-                
-                if len(time_idx) > 0:
-                    if self._rf_time_predicate_cmp is not None:
-                        time_idx_2 = self._rf_time_predicate_cmp(time_idx, self._rf_time_predicate_value)
-                    else:
-                        time_idx_2 = numpy.ones(len(time_idx), dtype=numpy.bool)
-                        
-                    idx = time_idx_2
-                    if idx_selector_functor is not None:
-                        idx = idx_selector_functor(ch5_pos, plate_name, treatment, self.output_dir)
-                    
-                    feature_matrix = feature_matrix[idx, :]
-                    object_count = len(feature_matrix)
-                    selector_output_file.write("%s\t%s\t%s\t%d\t%d\n" % (plate_name, well, treatment, idx.sum(), len(idx)))
-                    
-                else:
-                    feature_matrix = []
-                    object_count = 0
-                
-                object_counts.append(object_count)
-                
-                if object_count > 0:
-                    features.append(feature_matrix)
-                else:
-                    features.append(numpy.zeros((0, )))
-                c5_object_index.append(numpy.where(idx)[0])
-                
-                
-            
-            plate_idx = self.mapping['Plate'] == plate_name
-            self.mapping.loc[plate_idx, 'Object features'] = features
-            self.mapping.loc[plate_idx, 'Object count'] = object_counts
-            self.mapping.loc[plate_idx, 'CellH5 object index'] = c5_object_index
-        selector_output_file.close()
-        
-    def compute_outlyingness(self):
-        def _outlier_count(x):
-            res = numpy.float32((x == -1).sum()) / len(x)
-            return res
-            
-        res = pandas.Series(self.mapping[self.mapping['Group'].isin(('target', 'pos', 'neg'))]['Predictions'].map(_outlier_count))
-        self.mapping['Outlyingness'] = res
-    
-    def train_pca(self, train_on=('neg', 'pos', 'target')):
-        training_matrix = self.get_data(train_on)
-        training_matrix = self.normalize_training_data(training_matrix)
-        print 'Compute PCA', 'found nans in features?', numpy.any(numpy.isnan(training_matrix))
-        self.pca = PCA(training_matrix)
-        
-    def predict_pca(self):
-        print 'Project onto PC'
-        def _project_on_pca(ma):
-            if len(ma) == 0:
-                return numpy.NAN
-            else:
-                ma = self._remove_nan_rows(ma)
-                return self.pca.project(ma)[:, :self.pca_dims]
-        res = pandas.Series(self.mapping['Object features'].map(_project_on_pca))
-        self.mapping['PCA'] = res
-    
     def train_classifier(self, training_matrix):
         self.classifier = self.classifier_class(kernel=self.kernel, nu=self.nu, gamma=self.gamma)
         
@@ -332,10 +139,15 @@ class OutlierDetection(object):
                     print k, b, features[b]
                 
         else:
-            self.classifier.fit(training_matrix)
-
-                
-        
+            self.classifier.fit(training_matrix) 
+            
+    def compute_outlyingness(self):
+        def _outlier_count(x):
+            res = numpy.float32((x == -1).sum()) / len(x)
+            return res
+            
+        res = pandas.Series(self.mapping[self.mapping['Group'].isin(('target', 'pos', 'neg'))]['Predictions'].map(_outlier_count))
+        self.mapping['Outlyingness'] = res
         
     def predict_with_classifier(self, test_matrix, log_file_handle=None):
         prediction = self.classifier.predict(test_matrix)
@@ -348,67 +160,6 @@ class OutlierDetection(object):
             log_file_handle.write(log+"\n")
         return prediction, distance
         
-    def _get_mapping_field_of_pos(self, well, pos, field):
-        return self.mapping[(self.mapping['Well'] == str(well)) & (self.mapping['Site'] == int(pos))][field].iloc[0]
-        
-    def get_group_of_pos(self, well, pos):
-        return self._get_mapping_field_of_pos(well, pos, 'Group')
-    
-    def get_treatment_of_pos(self, well, pos, treatment_column=None):
-        if treatment_column is None:
-            treatment_column = ['siRNA ID', 'Gene Symbol']
-        return self._get_mapping_field_of_pos(well, pos, treatment_column)
-    
-    def get_training_data(self, target='neg'):
-        return self.get_data(target)
-    
-    def get_test_data(self, group):
-        data, treatment = self.get_data(group)
-        return data, treatment 
-        
-    def get_data(self, target, type='Object features'):
-        tmp = self.mapping[self.mapping['Group'].isin(target) & (self.mapping['Object count'] > 0)].reset_index()
-        res = numpy.concatenate(list(tmp[type]))
-        print '**** get_data for', len(tmp['siRNA ID']), '***'
-        print tmp['siRNA ID'].unique(), res.shape
-        print '*************************'
-        return res
-    
-    def normalize_training_data(self, data):
-        self._normalization_means = data.mean(axis=0)
-        self._normalization_stds = data.std(axis=0)
-        
-        data = (data - self._normalization_means) / self._normalization_stds
-        
-        nan_cols = numpy.unique(numpy.where(numpy.isnan(data))[1])
-        self._non_nan_feature_idx = [x for x in range(data.shape[1]) if x not in nan_cols]
-        data = data[:, self._non_nan_feature_idx]
-         
-        self._normalization_means = self._normalization_means[self._non_nan_feature_idx]
-        self._normalization_stds = self._normalization_stds[self._non_nan_feature_idx]
-        print ' normalize: found nans?', numpy.any(numpy.isnan(data))
-        
-        return data
-    
-    def normalize_testing_data(self, data):
-        return (data - self._normalization_means) / self._normalization_stds
-    
-#     def normalize_test_data(self, data, treatment_list):
-#         # get rid of nan features from training
-#         data = data[:, self._non_nan_feature_idx]
-#         
-#         if numpy.any(numpy.isnan(data)):
-#             print 'Warning: Nan values in prediction found. Trying to delete examples:'
-#             nan_rows = numpy.unique(numpy.where(numpy.isnan(data))[0])
-#             self._non_nan_sample_idx = [x for x in xrange(data.shape[0]) if x not in nan_rows]
-#             print 'deleting %d of %d' % (len(self._non_nan_sample_idx), data.shape[0])
-#             
-#             # get rid of nan samples (still)
-#             data = data[self._non_nan_sample_idx, :]
-#             treatment_list = treatment_list[self._non_nan_sample_idx]
-#         
-#         data = (data - self._normalization_means) / self._normalization_stds
-#         return data, treatment_list
 
     def cluster_get_k(self, training_data):
         max_k = 7
@@ -543,9 +294,6 @@ class OutlierDetection(object):
         pylab.ylim((y_min, y_max))
         pylab.axis('off')
         pylab.show(block=True)
-        
-    def purge_feature(self):
-        del self.mapping['Object features']
         
     def make_heat_map(self):
         print 'Make heat map plot'
@@ -1116,8 +864,8 @@ if __name__ == "__main__":
 #                             ("H", 6), ("H", 7), ("G", 6), ("G", 7),
 #                             ("H",12), ("H",13), ("G",12), ("G",13),
 #                         ),
-                      'rows' : list("ABCDEFGHIJKLMNOP")[:],
-                      'cols' : tuple(range(1,24)),
+                      'rows' : list("ABCDEFGHIJKLMNOP")[:5],
+                      'cols' : tuple(range(1,8)),
                       'gamma' : 0.005,
                       'nu' : 0.10,
                       'pca_dims' : 239,

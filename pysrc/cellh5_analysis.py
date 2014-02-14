@@ -15,6 +15,8 @@ from matplotlib.mlab import PCA
 from matplotlib.backends.backend_pdf import PdfPages
 from cecog.util.color import rgb_to_hex
 from sklearn import hmm
+from itertools import izip_longest
+import csv
 from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
 hmm.normalize = lambda A, axis=None: normalize(A, axis, eps=10e-99)
 
@@ -44,6 +46,7 @@ def hex_to_rgb(hex_string):
                          
 
 class CellH5Analysis(object):
+    output_formats = ('pdf',)
     def __init__(self, name, mapping_files, cellh5_files, output_dir=None, 
                        sites=None, rows=None, cols=None, locations=None):
         self.name = name
@@ -51,6 +54,7 @@ class CellH5Analysis(object):
         self.cellh5_files = cellh5_files
         self.output_dir = output_dir
         self.time_lapse = {}
+        self.pca_dims = 239
         
         # read mappings for all plates
         mappings = []
@@ -60,7 +64,9 @@ class CellH5Analysis(object):
             plate_cellh5  = cellh5.CH5MappedFile(cellh5_file)
             plate_cellh5.read_mapping(mapping_file, sites=sites, rows=rows, cols=cols, locations=locations, plate_name=plate_name)
             plate_mappings = plate_cellh5.mapping
-            self.time_lapse[plate_name] = plate_cellh5.current_pos.get_time_lapse() / 60.0
+            time_lapse = plate_cellh5.current_pos.get_time_lapse()
+            if time_lapse is not None:
+                self.time_lapse[plate_name] = time_lapse / 60.0
             plate_cellh5.close()
             
             mappings.append(plate_mappings)
@@ -86,6 +92,7 @@ class CellH5Analysis(object):
         
     @staticmethod    
     def str_sanatize(input_str):
+        input_str = input_str.replace(" ","_")
         input_str = input_str.replace("/","_")
         input_str = input_str.replace("#","_")
         input_str = input_str.replace(")","_")
@@ -212,8 +219,126 @@ class CellH5Analysis(object):
             all_hmm_labels_list.append(hmm_labels_list)
         self.mapping['Event HMM track labels'] = pandas.Series(all_hmm_labels_list)
         print 'done'
+        
+    def _remove_nan_rows(self, data):
+        data = data[:, self._non_nan_feature_idx]
+        if numpy.any(numpy.isnan(data)):
+            print 'Warning: Nan values in prediction found. Trying to delete examples:'
+            nan_rows = numpy.unique(numpy.where(numpy.isnan(data))[0])
+            self._non_nan_sample_idx = [x for x in xrange(data.shape[0]) if x not in nan_rows]
+            print 'deleting %d of %d' % (data.shape[0] - len(self._non_nan_sample_idx), data.shape[0])
             
-                            
+            # get rid of nan samples (still)
+            data = data[self._non_nan_sample_idx, :]
+        data = (data - self._normalization_means) / self._normalization_stds
+        return data
+    
+    def train_pca(self, train_on=('neg', 'pos', 'target')):
+        training_matrix = self.get_data(train_on)
+        training_matrix = self.normalize_training_data(training_matrix)
+        print 'Compute PCA', 'found nans in features?', numpy.any(numpy.isnan(training_matrix))
+        self.pca = PCA(training_matrix)
+        
+    def predict_pca(self):
+        print 'Project onto PC'
+        def _project_on_pca(ma):
+            if len(ma) == 0:
+                return numpy.NAN
+            else:
+                ma = self._remove_nan_rows(ma)
+                return self.pca.project(ma)[:, :self.pca_dims]
+        res = pandas.Series(self.mapping['Object features'].map(_project_on_pca))
+        self.mapping['PCA'] = res
+    
+    def set_read_feature_time_predicate(self, cmp, value):
+        self._rf_time_predicate_cmp = cmp
+        self._rf_time_predicate_value = value
+            
+    def read_feature(self, idx_selector_functor=None):
+        # init new columns
+        self.mapping['Object features'] = 0
+        self.mapping['Object count'] = 0
+        self.mapping['CellH5 object index'] = 0
+        
+        # read features from each plate
+        selector_output_file = open(self.output('_read_feature_selction.txt'), 'wb')
+        
+        
+        for plate_name, cellh5_file in self.cellh5_files.items(): 
+            ch5_file = cellh5.CH5File(cellh5_file)
+            features = []
+            object_counts = []
+            c5_object_index = []
+            
+            for i, row in self.mapping[self.mapping['Plate']==plate_name].iterrows():
+                well = row['Well']
+                site = str(row['Site'])
+                treatment = "%s %s" % (row['Gene Symbol'], row['siRNA ID'])
+                
+                ch5_pos = ch5_file.get_position(well, site)
+                
+                feature_matrix = ch5_pos.get_object_features()
+                time_idx = ch5_pos['object']["primary__primary"]['time_idx']
+
+                print 'Reading', plate_name, well, site, len(feature_matrix), 'using time', self._rf_time_predicate_cmp.__name__, self._rf_time_predicate_value
+                
+                if len(time_idx) > 0:
+                    if self._rf_time_predicate_cmp is not None:
+                        time_idx_2 = self._rf_time_predicate_cmp(time_idx, self._rf_time_predicate_value)
+                    else:
+                        time_idx_2 = numpy.ones(len(time_idx), dtype=numpy.bool)
+                        
+                    idx = time_idx_2
+                    if idx_selector_functor is not None:
+                        idx = idx_selector_functor(ch5_pos, plate_name, treatment, self.output_dir)
+                    
+                    feature_matrix = feature_matrix[idx, :]
+                    object_count = len(feature_matrix)
+                    selector_output_file.write("%s\t%s\t%s\t%d\t%d\n" % (plate_name, well, treatment, idx.sum(), len(idx)))
+                    
+                else:
+                    feature_matrix = []
+                    object_count = 0
+                
+                object_counts.append(object_count)
+                
+                if object_count > 0:
+                    features.append(feature_matrix)
+                else:
+                    features.append(numpy.zeros((0, )))
+                c5_object_index.append(numpy.where(idx)[0])
+                
+                
+            
+            plate_idx = self.mapping['Plate'] == plate_name
+            self.mapping.loc[plate_idx, 'Object features'] = features
+            self.mapping.loc[plate_idx, 'Object count'] = object_counts
+            self.mapping.loc[plate_idx, 'CellH5 object index'] = c5_object_index
+        selector_output_file.close()
+            
+    def get_data(self, target, type='Object features'):
+        tmp = self.mapping[self.mapping['Group'].isin(target) & (self.mapping['Object count'] > 0)].reset_index()
+        res = numpy.concatenate(list(tmp[type]))
+        print '**** get_data for', len(tmp['siRNA ID']), '***'
+        print tmp['siRNA ID'].unique(), res.shape
+        print '*************************'
+        return res
+    
+    def normalize_training_data(self, data):
+        self._normalization_means = data.mean(axis=0)
+        self._normalization_stds = data.std(axis=0)
+        
+        data = (data - self._normalization_means) / self._normalization_stds
+        
+        nan_cols = numpy.unique(numpy.where(numpy.isnan(data))[1])
+        self._non_nan_feature_idx = [x for x in range(data.shape[1]) if x not in nan_cols]
+        data = data[:, self._non_nan_feature_idx]
+         
+        self._normalization_means = self._normalization_means[self._non_nan_feature_idx]
+        self._normalization_stds = self._normalization_stds[self._non_nan_feature_idx]
+        print ' normalize: found nans?', numpy.any(numpy.isnan(data))
+        
+        return data                        
         
     def event_curves(self, event_selector, 
                            title,
@@ -276,12 +401,13 @@ class CellH5Analysis(object):
                 pylab.savefig(self.output('securin_2_all_%s_%s.%s' % (fate_, title, fmt)))
             pylab.clf()    
         pp.close()
-    
-
-             
+              
     def plot_track_order_map(self, track_selection, color_maps, track_short_crop_in_min=240):
+        try:
+            os.makedirs(os.path.join(self.output_dir, 'tracks'))
+        except:
+            pass
         fig = pylab.figure()
-        n = len(track_selection)
         for _, (plate, w, p) in self.mapping[['Plate', 'Well', 'Site']].iterrows(): 
             try:
                 cellh5file = cellh5.CH5File(self.cellh5_files[plate])
@@ -313,34 +439,32 @@ class CellH5Analysis(object):
                     for i, t in enumerate([tmp[0] for tmp in sorted(zip(tracks, self.mapping[idx][track_selection[-1]].iloc[0]), cmp=my_cmp, key=lambda x:x[1])]):
                         img[i,:len(t)] = t
                       
+                    # plot short
                     pylab.clf()
                     ax = pylab.subplot(111)
                     ax.matshow(img[:,:track_crop_frame], cmap=cmap, vmin=0, vmax=cmap.N-1)
-                    title = '%s - %s (%s) %s' % tuple(list(treatment) + [w, 'short']) 
+                    title = '%s %s (%s) %s' % tuple(list(treatment) + [w, class_selector]) 
                     ax.set_title(title)
                     pylab.axis('off')
                     extent = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
-                    #fig.savefig(self.output('tracks_short_%s_%d.png' % (title, TRACK_IMG_CROP)), bbox_inches=extent)  
+                    for fmt in self.output_formats:
+                        fig.savefig(self.output('tracks\\short_%s_%d.%s' % (title, track_short_crop_in_min, fmt)), bbox_inches=extent)  
 
+                    # plot long
                     pylab.clf()
                     ax = pylab.subplot(111)
                     ax.matshow(img, cmap=cmap, vmin=0, vmax=cmap.N-1) 
                     ax.set_title(title)
                     pylab.axis('off')
                     extent = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
-                    #fig.savefig(self.output('tracks_full_%s_%d.png' % (title, int(max_track_length*self.time_lapse))), bbox_inches=extent)
+                    for fmt in self.output_formats:
+                        fig.savefig(self.output('tracks\\full_%s_%d.%s' % (title, int(max_track_length*self.time_lapse[plate]+0.5), fmt)), bbox_inches=extent)
                     
-                    pylab.show()
+
                 else:
                     print plate, w, p, 'Track has len zero. Nothing to plot'
- 
                     
-                   
-                
-    
-    
-    def plot_mitotic_timing(self, track_selector):
-        
+    def plot_mitotic_timing(self, track_selector):        
         pp = PdfPages(self.output('_mitotic_timing.pdf'))
         f = pylab.figure(figsize=(20,8))
         mito_timing = OrderedDict()
@@ -380,9 +504,6 @@ class CellH5Analysis(object):
             treatment = self.mcellh5.get_treatment(w, p)[1]
             xticklabels.append("%s_%02d" % (w,p))
         
-        from itertools import izip_longest
-        import csv
-
         with open(self.output('__mito_timing.txt'), 'wb') as f:
             writer = csv.writer(f, delimiter='\t')
             writer.writerow(xticklabels)
@@ -405,8 +526,10 @@ class CellH5Analysis(object):
         
         pp.close()
     
+    def purge_feature(self):
+        del self.mapping['Object features']
     
-if __name__ == '__main__':
+def test_event_tracking():
     pm = CellH5Analysis('test_fate', 
                         {'002338': "M:/experiments/Experiments_002300/002338/002338/_meta/Cecog/Mapping/002338.txt"}, 
                         {'002338': "M:/experiments/Experiments_002300/002338/002338/_meta/Analysis/hdf5/_all_positions.ch5"}, 
@@ -449,3 +572,23 @@ if __name__ == '__main__':
                                                     '#FF0000',
                                                     '#00FF00']), 'cmap17')  
     pm.plot_track_order_map(['Event track labels', 'Event HMM track labels'], [cmap, CMAP17])
+    
+def test_features_pca(): 
+    pm = CellH5Analysis('test_features_pca', 
+                        {'SP_9': "F:/sara_adhesion_screen/sp9.txt"}, 
+                        {'SP_9': "F:/sara_adhesion_screen/sp9__all_positions_with_data_combined.ch5"}, 
+                        sites=(1,),
+                        rows=("B","C" ), 
+                        cols=(5,9),
+                        )
+    
+    pm.set_read_feature_time_predicate(numpy.equal, 0)
+    pm.read_feature()
+    pm.train_pca()
+    pm.predict_pca()
+    print 'asd'
+    
+
+if __name__ == '__main__':
+    test_features_pca()
+    

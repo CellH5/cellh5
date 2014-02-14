@@ -178,10 +178,13 @@ class CH5Position(object):
                    
                    
     def get_time_lapse(self):
-        time_stamps = self['image/time_lapse']['timestamp_rel']
-        time_lapses = numpy.diff(time_stamps)
-        return time_lapses.mean()
-
+        if 'time_lapse' in self['image']:
+            time_stamps = self['image/time_lapse']['timestamp_rel']
+            time_lapses = numpy.diff(time_stamps)
+            time_lapse = time_lapses.mean()
+        else:
+            time_lapse = None
+        return time_lapse
                    
     def get_image(self, t, c, z=0):
         return self['image'] \
