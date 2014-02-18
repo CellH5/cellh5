@@ -95,7 +95,7 @@ class CH5GroupCoordinate(object):
 class memoize(object):
     """Cache the return value of a method
 
-    This class is meant to be used as a decorator of methods. The return value
+   This class is meant to be used as a decorator of methods. The return value
     from a given method invocation will be cached on the instance whose method
     was invoked. All arguments passed to a method decorated with memoize must
     be hashable.
@@ -431,13 +431,18 @@ class CH5Position(object):
     def get_feature_table(self, object_, feature):
         return self['feature'][object_][feature].value
 
-    # @profile
+    def has_events(self):
+        return bool(self['object/event'].size)
+
     def get_events(self, output_second_branch=False, random=None):
         assert isinstance(output_second_branch, bool)
         assert isinstance(random, (type(None), int))
 
-        evtable = self.get_object_table('event')
-        event_ids = numpy.unique(evtable['obj_id'])
+        try:
+            evtable = self.get_object_table('event')
+            event_ids = numpy.unique(evtable['obj_id'])
+        except Exception as e:
+            import pdb; pdb.set_trace()
 
         if random is not None:
             numpy.random.shuffle(event_ids)
@@ -588,7 +593,7 @@ class CH5CachedPosition(CH5Position):
 
     @memoize
     def get_tracking(self, *args, **kwargs):
-        return super(CH5CachedPosition, self).get_tracking(*args, **kwargs)
+       return super(CH5CachedPosition, self).get_tracking(*args, **kwargs)
 
     @memoize
     def _get_tracking_lookup(self, *args, **kwargs):
