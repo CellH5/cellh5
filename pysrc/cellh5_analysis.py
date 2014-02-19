@@ -159,8 +159,6 @@ class CellH5Analysis(object):
             cellh5file.close()
         self.mapping['Event track labels'] = pandas.Series(all_track_labels)
         self.mapping['Event track ids'] = pandas.Series(all_track_ids)
-
-        print ' ...done'
         
     def setup_hmm(self, hmm_n_classes, hmm_n_obs, hmm_constraint_file):
         self.hmm_n_classes = hmm_n_classes
@@ -218,7 +216,6 @@ class CellH5Analysis(object):
                 hmm_labels_list.append(hmm_class_labels)
             all_hmm_labels_list.append(hmm_labels_list)
         self.mapping['Event HMM track labels'] = pandas.Series(all_hmm_labels_list)
-        print 'done'
         
     def _remove_nan_rows(self, data):
         data = data[:, self._non_nan_feature_idx]
@@ -371,13 +368,13 @@ class CellH5Analysis(object):
             pylab.clf()
             ax = pylab.subplot(111)          
             
-            feature_table = cellh5pos.get_position(w,str(p)).get_object_features(region_name)
-            feature_idx = cellh5pos.get_object_feature_idx_by_name(region_name, feature_name)
+            feature_table = cellh5pos.get_object_features(region_name)
+            feature_idx = cellh5file.get_object_feature_idx_by_name(region_name, feature_name)
             tracks = self.mapping.loc[idx][event_selector].iloc[0]
             
             all_feature_values = [feature_table[t, feature_idx] for t in tracks]
                 
-            for line, feature_values in zip(self.tracks[(w,p)][event_selector], all_feature_values):
+            for line, feature_values in zip(tracks, all_feature_values):
                 x_values = numpy.array(map(int,list(line)))
                 if numpy.max(feature_values) < 15:
                     print 'excluding event due to low signal'
@@ -576,15 +573,14 @@ def test_event_tracking():
                                                     '#FF0000',
                                                     '#00FF00']), 'cmap17')  
     pm.plot_track_order_map(['Event track labels', 'Event HMM track labels'], [cmap, CMAP17])
+    pm.onset_frame = 5
     pm.event_curves('Event HMM track labels',
-                    '_securin_degradation_short',
                     'tertiary__expanded',
                     'n2_avg',
-                    pm.cmap,
+                    cmap,
                     (-20,240),
                     (0,1.5),
-                    16
-                           )
+                    16)
     
 def test_features_pca(): 
     pm = CellH5Analysis('test_features_pca', 
