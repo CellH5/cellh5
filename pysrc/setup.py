@@ -13,7 +13,6 @@
 # standard library imports:
 #
 from setuptools import setup
-import shutil
 import os
 import sys
 import matplotlib
@@ -88,11 +87,7 @@ if sys.platform == 'win32':
                      'optimize': 2,
                      'compressed': False,
                      'skip_archive': True,
-                     'bundle_files': 3,
-
-                     #'ascii': True,
-                     #'xref': True,
-                    }
+                     'bundle_files': 3}
 
 setup(
     data_files=DATA_FILES,
