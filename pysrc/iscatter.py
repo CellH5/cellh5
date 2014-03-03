@@ -313,6 +313,7 @@ class IScatterWidget(QtGui.QWidget):
         self.axes.add_collection(self.collection)
         
         self.update_axis_lims()
+        self.figure.tight_layout()
         self.canvas.draw()
         
     def update_axis_lims(self):
@@ -340,10 +341,14 @@ class SimpleMplImageViewer(QtGui.QWidget):
         layout.addWidget(self.canvas)
         self.setLayout(layout)
         self.rects = []
+        self.normalize = False
   
     def show_image(self, img):
         print type(img), img.shape
-        self.axes.imshow(img, cm.Greys_r)
+        imgplot = self.axes.imshow(img, cm.Greys_r)
+        if not self.normalize:
+            imgplot.set_clim(0, 255)
+        
         self.canvas.draw()
         
     def highlight_cell(self, entries):

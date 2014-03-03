@@ -296,7 +296,6 @@ class CH5Position(object):
                 if (c,d) > image.shape:
                     break
                 image[a:c, b:d] = img
-                
         return image
                               
     def get_gallery_image_contour(self, index, object_=('primary__primary',), color=None, scale=None):
