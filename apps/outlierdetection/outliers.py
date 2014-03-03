@@ -1,3 +1,4 @@
+import matplotlib
 import numpy
 import pylab
 import vigra
@@ -17,6 +18,8 @@ from scipy.stats import nanmean
 import datetime
 import os
 from itertools import chain
+
+import iscatter
 
 def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
     width=0.33
@@ -66,7 +69,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         assert pca_dims != None
         assert kernel != None
         assert nu != None
-        cellh5_analysis.CellH5Analysis.__init__(self, name, mapping_files, cellh5_files, sites=(1,2,3,4,), rows=None, cols=None, locations=None)
+        cellh5_analysis.CellH5Analysis.__init__(self, name, mapping_files, cellh5_files, sites=(1,2,3,4,), rows=rows, cols=cols, locations=locations)
         self.gamma = gamma
         self.nu = nu
         self.pca_dims = pca_dims
@@ -558,6 +561,60 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             pylab.savefig(self.output('%s_hit_list.pdf' % plate_name))
         #pylab.show()
         
+        
+    def interactive_plot(self):
+        sample_names = []
+        data_features = []
+        data_pca = []
+        cellh5_list = []
+        wells = []
+        sites = []
+        for row_index, row in self.mapping[self.mapping['Object count'] > 0].iterrows():
+            features = self.mapping['Object features'].iloc[row_index]
+#             pca = row['PCA']
+            pca = self.mapping['PCA'].iloc[row_index]
+            cellh5idx = numpy.array(row['CellH5 object index'])
+            plate = row['Plate']
+            well = row['Well']
+            site = row['Site']
+            sirna = row['siRNA ID']
+            gene = row['Gene Symbol']
+            
+            data_features.append(features)
+            data_pca.append(pca)
+            for _ in range(features.shape[0]):
+                sample_names.append((plate, well, site, sirna, gene))
+            cellh5_list.append(cellh5idx)
+            
+        data_pca = numpy.concatenate(data_pca)
+        data_features = numpy.concatenate(data_features)
+        data_cellh5 = numpy.concatenate(cellh5_list)
+  
+        cf = cellh5.CH5File(self.cellh5_files.values()[0],'r')
+        feature_names = cf.object_feature_def()
+        cf.close() 
+
+        pca_names = ['PCA %d' % d for d in range(data_pca.shape[1])]
+        
+        app = iscatter.start_qt_event_loop()
+        
+        def img_gen(treat, ch5_ids):
+            index_tpl = [(t[1], str(t[2]), (c,)) for t, c in zip(treat, ch5_ids)]
+            cf = cellh5.CH5File(self.cellh5_files[plate],'r')
+            img = cf.get_gallery_image_matrix(index_tpl, (5, 25))
+            cf.close()
+            return img
+            
+        
+        iscatter_widget = iscatter.IScatterWidget()
+        iscatter_widget.set_data(data_pca, pca_names, sample_names, 0, 1, data_cellh5, img_gen)
+    
+        
+        mw = iscatter.IScatter(iscatter_widget)
+        mw.show()
+        app.exec_()
+        
+        
     def make_pca_scatter(self):    
         KK = min(5, self.pca_dims)
             
@@ -774,7 +831,9 @@ class SaraOutlier(object):
         self.od.compute_outlyingness()
         
         #self.od.cluster_outliers()                    
-        #self.od.make_pca_scatter()
+        self.od.interactive_plot()
+        
+       
         
         self.od.make_hit_list()
         #self.od.make_hit_list_single_feature('roisize')
@@ -863,8 +922,8 @@ if __name__ == "__main__":
 #                             ("H", 6), ("H", 7), ("G", 6), ("G", 7),
 #                             ("H",12), ("H",13), ("G",12), ("G",13),
 #                         ),
-                      'rows' : list("ABCDEFGHIJKLMNOP")[:5],
-                      'cols' : tuple(range(1,8)),
+                      'rows' : list("ABCDEFGHIJKLMNOP")[:],
+                      'cols' : tuple(range(1,24)),
                       'gamma' : 0.005,
                       'nu' : 0.10,
                       'pca_dims' : 239,

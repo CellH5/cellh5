@@ -21,9 +21,10 @@ import base64
 import zlib
 import os
 import unittest
+from itertools import chain
 
-import matplotlib
-matplotlib.use('Qt4Agg')
+# import matplotlib
+# matplotlib.use('Qt4Agg')
 import matplotlib.pyplot as mpl
 
 from collections import defaultdict
@@ -648,6 +649,33 @@ class CH5File(object):
     def get_object_feature_idx_by_name(self, object_, feature_name):
         object_feature_names = self.object_feature_def(object_)
         return list(object_feature_names).index(feature_name)
+    
+    def get_gallery_image_matrix(self, index_tpl, shape, object_='primary__primary'):
+        
+        
+        gen_list = []      
+        for well, pos, index in index_tpl:
+            ch5pos = self.get_position(well, pos)
+            gen_list.append(ch5pos.get_gallery_image_generator(index, object_))
+        
+        img_gen = chain.from_iterable(gen_list)
+        image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
+        i,j = 0, 0    
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                try:
+                    img = img_gen.next()
+                except StopIteration:
+                    break
+                a = i * GALLERY_SIZE
+                b = j * GALLERY_SIZE
+                c = a + GALLERY_SIZE
+                d = b + GALLERY_SIZE
+                
+                if (c,d) > image.shape:
+                    break
+                image[a:c, b:d] = img    
+        return image
     
     def close(self):
         self._file_handle.close()   

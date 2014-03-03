@@ -89,17 +89,21 @@ class CellFateAnalysis(object):
         self.hmm_n_obs = hmm_n_obs
         
         self.time_lapse = time_lapse
+        self.plate_id = plate_id
         
         self.output_dir = output_dir
         if output_dir is None:
             self.output_dir = plate_id +"/" + datetime.datetime.now().strftime("%y-%m-%d-%H-%M")
-            os.makedirs(self.output_dir)
+            try:
+                os.makedirs(self.output_dir)
+            except:
+                pass
         print "Output Directory: ", self.output_dir
         
         assert os.path.exists(ch5_file)
         assert os.path.exists(mapping_file)
-        assert os.path.exists(hmm_constraint_file)
-        assert time_lapse is not None
+#         assert os.path.exists(hmm_constraint_file)
+#         assert time_lapse is not None
         
         self.mcellh5 = cellh5.CH5MappedFile(ch5_file)
         
@@ -119,7 +123,7 @@ class CellFateAnalysis(object):
         
         for _, (w, p) in self.mcellh5.mapping[['Well','Site']].iterrows(): 
             try:
-                cellh5pos = self.mcellh5.get_position(w,str(p))
+                cellh5pos = self.mcellh5.get_position(w,str(int(p)))
             except:
                 print "Positon", (w, p), "is corrupt. Process again with CellCognition"
                 continue
@@ -1199,19 +1203,19 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
         from itertools import izip_longest
         import csv
 
-        with open(self.output('__mito_timing.txt'), 'wb') as f:
+        with open(self.output('__mito_timing_%s.txt' % self.plate_id), 'wb') as f:
             writer = csv.writer(f, delimiter='\t')
             writer.writerow(xticklabels)
             writer.writerows(izip_longest(*mito_timing.values(), fillvalue=""))
                
-        with open(self.output('__mito_classes.txt'), 'wb') as f:
+        with open(self.output('__mito_classes_%s.txt' % self.plate_id), 'wb') as f:
             writer = csv.writer(f, delimiter='\t')
             writer.writerow(xticklabels)
             writer.writerows(izip_longest(*mito_class.values(), fillvalue="")) 
         
         colors = ['g', 'g',] + ['r']*5 + ['b']*5 + ["#ffa500"]*3 + ['r']*5 + ['b']*5 + ["#ffa500"]*3 + ['k']*50
 #         ax = p(mito_timing.values(), xticklabels=xticklabels, colors=colors, spread_type='g', spread=0.1)
-        ax = pylab.boxplot(mito_timing.values())
+        pylab.boxplot(mito_timing.values())
         ax = pylab.gca()
         ax.set_xticklabels(xticklabels, rotation=90)
         ax.set_title('Mitotic Timing')
@@ -1224,10 +1228,10 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
     
     
 class CellFateMitoticTiming(CellFateAnalysis):
-    def __init__(self, ch5_file, mapping_file, events_before_frame=9999, onset_frame=4, sites=None, rows=None, cols=None, locations=None):
-        CellFateAnalysis.__init__(self, ch5_file, mapping_file, events_before_frame=events_before_frame, onset_frame=onset_frame, sites=sites, rows=rows, cols=cols, locations=locations)
+    def __init__(self, plate_id, ch5_file, mapping_file, events_before_frame=9999, onset_frame=4, sites=None, rows=None, cols=None, locations=None, time_lapse=None):
+        CellFateAnalysis.__init__(self, plate_id, ch5_file, mapping_file, events_before_frame=events_before_frame, onset_frame=onset_frame, sites=sites, rows=rows, cols=cols, locations=locations,  time_lapse=time_lapse)
     
-    def setup_hmm(self, k_classes, constraint_xml):
+    def setup_hmm_2308(self, k_classes, constraint_xml):
         constraints = HMMConstraint(constraint_xml)
         
         transmat = numpy.array([
@@ -1245,6 +1249,42 @@ class CellFateMitoticTiming(CellFateAnalysis):
         est.constrain(constraints)
         self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
         self.hmm._set_emissionprob(est.emis) 
+        
+    def setup_hmm_2408(self, k_classes, constraint_xml):
+        constraints = HMMConstraint(constraint_xml)
+        
+        transmat = numpy.array([
+                                [0.1,  0.1,  0.0,  0.0,  0.1, 0.1, 0.1], # inter
+                                [0.0,  2  ,  0.1,  0.0,  0.1, 0.1, 0.1], # prometa
+                                [0.0,  0.0,  2  ,  0.1,  0.1, 0.1, 0.1], # meta
+                                [0.1,  0.0,  0.0,  2  ,  0.1, 0.0, 0.1], # ana
+                                [0.0,  0.0,  0.0,  0.0,  0.0, 0.0,  1 ], # apo 2
+                                [0.0,  0.1,  0.1,  0.0,  0.1, 2  , 0.1], # unaligned
+                                [0.1,  0.0,  0.0,  0.0,  0.0, 0.0,  1 ], # apo 2
+                                ])
+        transmat = normalize(transmat, axis=1, eps=0)
+        
+        est = HMMAgnosticEstimator(k_classes, transmat, numpy.ones((k_classes, k_classes)), numpy.ones((k_classes, )) )
+        est.constrain(constraints)
+        self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
+        self.hmm._set_emissionprob(est.emis)
+        
+    def setup_hmm(self, k_classes, constraint_xml):
+        constraints = HMMConstraint(constraint_xml)
+        
+        transmat = numpy.array([
+                                [0.2,  0.1,  0.0,  0.0,  0.1,], # inter
+                                [0.0,  10 ,  0.1,  0.0,  0.1,], # prometa
+                                [0.0,  0.0,  10 ,  0.1,  0.1,], # meta
+                                [0.2,  0.0,  0.0,  2  ,  0.1,], # ana
+                                [0.0,  0.0,  0.0,  0.0,  1  ,], # apo 2
+                                ])
+        transmat = normalize(transmat, axis=1, eps=0)
+        
+        est = HMMAgnosticEstimator(k_classes, transmat, numpy.ones((k_classes, k_classes)), numpy.ones((k_classes, )) )
+        est.constrain(constraints)
+        self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
+        self.hmm._set_emissionprob(est.emis)
     
     
     def plot_mitotic_timing(self):
@@ -1264,10 +1304,10 @@ class CellFateMitoticTiming(CellFateAnalysis):
                 continue
             for t in self.tracks[(w,p)]['HMM']:
                 track_str = "".join(map(str, t))
-                mito_re = re.search(r'1+(?P<mito>(2|3|7)+)(1|4|5|6)+', track_str)
+                mito_re = re.search(r'1+(?P<mito>(2|3)+)(1|4|5)+', track_str)
                 if mito_re is not None:
                     span = mito_re.span('mito')
-                    mito_timing[(w,p)].append((span[1] - span[0])*4.7)
+                    mito_timing[(w,p)].append((span[1] - span[0])* self.time_lapse)
                 
             treatment = self.mcellh5.get_treatment_of_pos(w, p)[1]
             xticklabels.append("%s_%02d" % (w,p))
@@ -1275,7 +1315,7 @@ class CellFateMitoticTiming(CellFateAnalysis):
         from itertools import izip_longest
         import csv
 
-        with open('mito_timing.txt', 'wb') as f:
+        with open(self.output('mito_timing_%s.txt' % self.plate_id), 'wb') as f:
             writer = csv.writer(f, delimiter='\t')
             writer.writerow(xticklabels)
             writer.writerows(izip_longest(*mito_timing.values(), fillvalue=""))   
@@ -1289,41 +1329,9 @@ class CellFateMitoticTiming(CellFateAnalysis):
         ax.set_ylabel('Mitotic timing (min)')
         pylab.tight_layout()
         pylab.savefig(pp, format='pdf')
-        
         pp.close()   
         
-def fate_mitotic_time():
-    locs = [('G', 4), ('G', 5),
-            #('B', 5), ('C', 5), ('D', 5), ('E', 5), ('F', 5),
-            #('B', 11), ('C', 11), ('D', 11), ('E', 11), ('F', 11),
-            ('B', 3), ('C', 3), ('D', 3),
-            ]
-    
-    pm = CellFateMitoticTiming(
-                          r"M:\experiments\Experiments_002300\002308\_meta\Analysis\hdf5\_all_positions.ch5",
-                          r"M:\experiments\Experiments_002300\002308\_meta\002308.txt",
-                          events_before_frame=150,
-                          #rows=("B", "C", "D", "E", "F", "G",), 
-                          #cols=(3, 4, 5, 11),
-                          #rows= ("G",),
-                          #cols= (4,5)
-                          sites=(1,),
-                          #locations=locs
-                          )
-    pm.fate_tracking('Raw class labels')
-    pm.setup_hmm(7, 'graph_7_left2right.xml')
-    pm.predict_hmm('Raw class labels', 'HMM')   
-    pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
-                                                   ['#FFFFFF', 
-                                                    '#00ff00', 
-                                                    '#ff8000',
-                                                    '#d28dce',
-                                                    '#0055ff',
-                                                    '#aa5500', 
-                                                    '#ff0000',
-                                                    '#ffff00']), 'classification_cmap')
-    pm.plot_tracks(['Raw class labels', 'HMM'], [pm.cmap, pm.cmap], 'test2')
-    pm.plot_mitotic_timing()
+
             
             
 EXP_LOOKUP = {
@@ -1340,6 +1348,17 @@ EXP_LOOKUP = {
              'output_dir' : 'M:/experiments/Experiments_002200/002200/_meta/fate',
              'securin_region' : "tertiary__expanded"
              },
+              
+        '002308':
+            {
+             'ch5_file': r"M:\experiments\Experiments_002300\002308\_meta\Analysis\hdf5\_all_positions.ch5",
+             'mapping_file': r"M:\experiments\Experiments_002300\002308\_meta\002308.txt",
+             'time_lapse': 4.7, 
+             'events_before_frame': 150, # in frames
+             'onset_frame': 4, # in frames
+             },
+              
+              
         '002338':
             {
              'ch5_file': "M:/experiments/Experiments_002300/002338/002338/_meta/Analysis/hdf5/_all_positions.ch5",
@@ -1407,9 +1426,97 @@ EXP_LOOKUP = {
              'hmm_n_obs': 5,
              'output_dir' : 'M:/experiments/Experiments_002300/002301/_meta/fate',
              'securin_region' : "tertiary__expanded"
+             },  
+        '002404':
+            {
+             'ch5_file': "M:/experiments/Experiments_002400/002404/_meta/Analysis/Analysis_half_plate_2_100/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002400/002404/_meta/Mapping/002404.txt",
+             'time_lapse': 4.9, 
+             'events_before_frame': 9999, # in frames
+             'onset_frame': 4, # in frames
+             },  
+        '002405':
+            {
+             'ch5_file': "M:/experiments/Experiments_002400/002405/_meta/Analysis/half_plate_2_100/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002400/002404/_meta/Mapping/002404.txt",
+             'time_lapse': 4.8, 
+             'events_before_frame': 9999, # in frames
+             'onset_frame': 4, # in frames
+             },   
+        '002408':
+            {
+             'ch5_file': "M:/experiments/Experiments_002400/002408/_meta/Analysis/half_plate_2_100/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002400/002404/_meta/Mapping/002404.txt",
+             'time_lapse': 4.8, 
+             'events_before_frame': 9999, # in frames
+             'onset_frame': 4, # in frames
+             },  
+        '002410':
+            {
+             'ch5_file': "M:/experiments/Experiments_002400/002410/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002400/002411/_meta/Mapping/002411.txt",
+             'time_lapse': 5.4, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'events_before_frame': 9999, # in frames
+             'onset_frame': 4, # in frames
              },        
+        
+        '002411':
+            {
+             'ch5_file': "M:/experiments/Experiments_002400/002411/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002400/002411/_meta/Mapping/002411.txt",
+             'time_lapse': 5.4, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'events_before_frame': 9999, # in frames
+             'onset_frame': 4, # in frames
+             },  
+        '002415':
+            {
+             'ch5_file': "M:/experiments/Experiments_002400/002415/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002400/002411/_meta/Mapping/002411.txt",
+             'time_lapse': 5.4, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'events_before_frame': 9999, # in frames
+             'onset_frame': 4, # in frames
+             },
       }
-            
+       
+       
+def fate_mitotic_time(plate_id):
+    locs = [('G', 4), ('G', 5),
+            #('B', 5), ('C', 5), ('D', 5), ('E', 5), ('F', 5),
+            #('B', 11), ('C', 11), ('D', 11), ('E', 11), ('F', 11),
+            ('B', 3), ('C', 3), ('D', 3),
+            ]
+    locs = None
+    
+    pm = CellFateAnalysisMultiHMM(plate_id, locations=locs, **EXP_LOOKUP[plate_id])
+
+    pm.fate_tracking('Raw class labels')
+#     pm.setup_hmm(5, 'hmm_constraints/graph_6_left2right.xml')
+    pm.setup_hmm()
+    pm.predict_hmm('Raw class labels', 'Multi State HMM')   
+    pm.cmap = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
+                                                   ['#FFFFFF', 
+                                                    '#00ff00', 
+                                                    '#ff8000',
+                                                    '#d28dce',
+                                                    '#0055ff',
+                                                    '#ff0000']), 'classification_cmap')
+    pm.plot_tracks(['Raw class labels', 'Multi State HMM', 'Multi State HMM', 'Multi State HMM',], 
+                   [pm.cmap, pm.cmap_cycle_3, CMAP17, CMAP17_MULTI],
+                   ['Raw class labels', 'HMM class labels', 'HMM Multi simple', 'HMM Multi full'],
+                    'trajectories_all')
+    pm.classify_tracks('Multi State HMM')
+    pm.plot_mitotic_timing('Multi State HMM')   
+    
+      
 def fate_mutli_bi(plate_id):
     pm = CellFateAnalysisMultiHMM(plate_id, 
                                 rows=("B", "C" ), 
@@ -1513,17 +1620,19 @@ def fate_mutli_bi(plate_id):
     
     print 'CellFateAnalysisMultiHMM done'
     
-
-     
-
-
 if __name__ == "__main__":
     #fate_mutli_bi('002200')
-    fate_mutli_bi('002338')
+    #fate_mutli_bi('002338')
     #fate_mutli_bi('002377')
     #fate_mutli_bi('002325')
     #fate_mutli_bi('002288')
     #fate_mutli_bi('002301')
     #fate_mitotic_time()
+#     fate_mitotic_time('002404')
+#     fate_mitotic_time('002405')
+#     fate_mitotic_time('002408')
+    fate_mitotic_time('002410')
+    fate_mitotic_time('002415')
+    fate_mitotic_time('002411')
     print 'FINISH'
 

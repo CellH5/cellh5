@@ -4,6 +4,7 @@ from PyQt4 import QtGui, QtCore
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg
+from matplotlib.patches import Rectangle
 
 from matplotlib import rcParams
 import resources
@@ -49,32 +50,72 @@ class DataPoint(object):
             self.color = self.colorout
 
 class IScatter(QtGui.QMainWindow):
-    def __init__(self, scatter, image):  
+    highlight_changed = QtCore.pyqtSignal(list)
+    def __init__(self, scatter):  
         QtGui.QMainWindow.__init__(self)
         self.setWindowTitle('Test')
+        
+        self.scatter = scatter
+            
+        self.image = SimpleMplImageViewer()
+        self.scatter.image_changed.connect(self.image.show_image)
+
+        self.table = QtGui.QTableWidget(self)
         
         self.main_widget = QtGui.QWidget(self)
         self.setCentralWidget(self.main_widget)
         
-        layout = QtGui.QHBoxLayout()
-        layout.addWidget(scatter)
-        layout.addWidget(image)
+        layout = QtGui.QGridLayout()
+        layout.addWidget(self.scatter,0,0,1,1)
+        layout.addWidget(self.image,1,0,1,2)
+        layout.addWidget(self.table,0,1,1,1)
         self.main_widget.setLayout(layout)  
         
         #widget_1.canvas.setParent(widget_1)
-        scatter.canvas.setFocusPolicy(QtCore.Qt.ClickFocus)
-        image.canvas.setFocus()      
+        self.scatter.canvas.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.image.canvas.setFocus()      
         
-        self.apply_css("iscatter.css")
+        self.scatter.selection_changed.connect(self.update_table)
+        self.table.itemSelectionChanged.connect(self.extract_selection)
+        self.highlight_changed.connect(self.image.highlight_cell)
         
+        self.apply_css("C:/Users/sommerc/cellh5/pysrc/iscatter.css")
+        
+    def extract_selection(self):
+        print  self.table.selectionModel().selectedIndexes()
+        self.highlight_changed.emit(map(lambda x: x.row(), self.table.selectionModel().selectedIndexes()))
+        
+    def update_table(self, entries):
+        self.table.clearContents()
+        self.table.setRowCount(len(entries))
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderItem(0, QtGui.QTableWidgetItem('Plate'))
+        self.table.setHorizontalHeaderItem(1, QtGui.QTableWidgetItem('Well'))
+        self.table.setHorizontalHeaderItem(2, QtGui.QTableWidgetItem('Site'))
+        self.table.setHorizontalHeaderItem(3, QtGui.QTableWidgetItem('Treatment 1'))
+        self.table.setHorizontalHeaderItem(4, QtGui.QTableWidgetItem('Treatment 2'))
+        if len(entries) == 0:
+            return
+        
+        for i, e in enumerate(entries):
+            for c in range(5):
+                self.table.setItem(i, c, QtGui.QTableWidgetItem(e[c]))
+                
+        self.table.horizontalHeader().setResizeMode(QtGui.QHeaderView.ResizeToContents)
+        self.table.setSortingEnabled(True)
+ 
     def apply_css(self, css_file):
         qss_file = QtCore.QFile(css_file)
         qss_file.open(QtCore.QFile.ReadOnly);
         css = QtCore.QLatin1String(qss_file.readAll());
         self.setStyleSheet(css);    
+        
+    def get_scatter_axes(self):
+        return self.scatter.axes
     
 class IScatterWidget(QtGui.QWidget):
     image_changed = QtCore.pyqtSignal(numpy.ndarray)
+    selection_changed = QtCore.pyqtSignal(list)
     def __init__(self, parent=None):   
         QtGui.QWidget.__init__(self, parent)
         self.figure = Figure()
@@ -179,15 +220,22 @@ class IScatterWidget(QtGui.QWidget):
         
     def update_image(self, ind):
         self.ind = ind
-        ids =  [self.data[k].ref for k in range(len(ind)) if ind[k]]       
-        img = self.ch5_pos.get_gallery_image_matrix(ids, (10,12))
+        ids =  [self.data[k].ref for k in range(len(ind)) if ind[k]]
+        treat = [self.sample_ids[k] for k in range(len(ind)) if ind[k]]    
+        img = self.image_generator_callback(treat, ids)
         self.image_changed.emit(img)
+        self.selection_changed.emit(treat)
         
-    def set_data(self, data_matrix, data_names, x_dim, y_dim, data_ch5_idx, ch5_pos):
-        self.ch5_pos = ch5_pos
+    def set_data(self, data_matrix, data_names, sample_ids, x_dim, y_dim, data_ch5_idx, image_generator_callback):
+        self.image_generator_callback = image_generator_callback
         self.data_matrix = data_matrix
         self.data_names = data_names
         self.data_ch5_idx = data_ch5_idx
+        self.sample_ids = sample_ids
+        
+        assert self.data_matrix.shape[0] == len(self.sample_ids)
+        assert self.data_matrix.shape[1] == len(self.data_names)
+        
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.c_dim = None
@@ -291,10 +339,22 @@ class SimpleMplImageViewer(QtGui.QWidget):
         layout = QtGui.QHBoxLayout()
         layout.addWidget(self.canvas)
         self.setLayout(layout)
+        self.rects = []
   
     def show_image(self, img):
         print type(img), img.shape
         self.axes.imshow(img, cm.Greys_r)
+        self.canvas.draw()
+        
+    def highlight_cell(self, entries):
+        for r in self.rects:
+            r.remove()
+        del self.rects
+        self.rects = []
+        for e in entries:
+            m, q = e / 25, e % 25
+            rect = self.axes.add_patch(Rectangle((q*60, m*60), 60, 60, facecolor='none', edgecolor="red"))
+            self.rects.append(rect)
         self.canvas.draw()
 
 
@@ -302,15 +362,17 @@ def start_qt_event_loop():
     app = QtGui.QApplication(sys.argv)
     app.setStyle("plastique")     
     return app
+
     
-if __name__ == "__main__":
+def ch5_scatter(ch5_file, well, site, time=0):
     app = start_qt_event_loop()
-    ch5_file = cellh5.CH5File("C:/Users/sommerc/cellh5/data/0038.ch5", "r")
-    ch5_pos = ch5_file.current_pos
+    ch5_file = cellh5.CH5File(ch5_file, "r")
+    ch5_pos = ch5_file.get_position(well, site)
      
     features = ch5_pos.get_object_features()
     times = ch5_pos.get_all_time_idx()
-    times_idx = times < 3
+#     times_idx = numpy.in1d(times, range(0,200,20)) 
+    times_idx = times == time
     features = features[times_idx, :]
     
     center_x = ch5_pos.get_center(times_idx)['x']
@@ -319,16 +381,15 @@ if __name__ == "__main__":
     
     features = numpy.c_[features, times[times_idx], center_x, center_y, predictions]
     
- 
-    data_names = ch5_file.object_feature_def()
+    data_names = ch5_file.object_feature_def() + ['Time', 'Center x', 'Center y', 'Classificaiton']
     
     iscatter = IScatterWidget()
-    iscatter.set_data(features, data_names + ['Time', 'Center x', 'Center y', 'Classificaiton'], 222, 236, numpy.nonzero(times_idx)[0], ch5_pos)
+    iscatter.set_data(features, data_names, [('H2bPlate', '0038', '1', 'Kiff11', 'no grugs') for k in xrange(features.shape[0])], 222, 236, numpy.nonzero(times_idx)[0], lambda y, x: ch5_pos.get_gallery_image_matrix(x, (5, 25)))
+
     
-    image_viewer = SimpleMplImageViewer()
-    iscatter.image_changed.connect(image_viewer.show_image)
-    
-    mw = IScatter(iscatter, image_viewer)
+    mw = IScatter(iscatter)
     mw.show()
     app.exec_()
     
+if __name__ == "__main__":
+    ch5_scatter("C:/Users/sommerc/cellh5/data/0038.ch5", "0", "0038")
