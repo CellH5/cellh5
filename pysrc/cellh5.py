@@ -438,11 +438,8 @@ class CH5Position(object):
         assert isinstance(output_second_branch, bool)
         assert isinstance(random, (type(None), int))
 
-        try:
-            evtable = self.get_object_table('event')
-            event_ids = numpy.unique(evtable['obj_id'])
-        except Exception as e:
-            import pdb; pdb.set_trace()
+        evtable = self.get_object_table('event')
+        event_ids = numpy.unique(evtable['obj_id'])
 
         if random is not None:
             numpy.random.shuffle(event_ids)
