@@ -649,15 +649,17 @@ class CH5File(object):
         object_feature_names = self.object_feature_def(object_)
         return list(object_feature_names).index(feature_name)
     
-    def get_gallery_image_matrix(self, index_tpl, shape, object_='primary__primary'):
-        
-        
+    
+    def gallery_image_matrix_gen(self, index_tpl, object_='primary__primary'):
         gen_list = []      
         for well, pos, index in index_tpl:
             ch5pos = self.get_position(well, pos)
             gen_list.append(ch5pos.get_gallery_image_generator(index, object_))
-        
         img_gen = chain.from_iterable(gen_list)
+        return img_gen
+    
+    @staticmethod
+    def gallery_image_matrix_layouter(img_gen, shape):
         image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
         i,j = 0, 0    
         for i in range(shape[0]):
@@ -673,9 +675,13 @@ class CH5File(object):
                 
                 if (c,d) > image.shape:
                     break
-                image[a:c, b:d] = img    
-        return image
+                image[a:c, b:d] = img  
+        return image 
     
+    def get_gallery_image_matrix(self, index_tpl, shape, object_='primary__primary'):
+        img_gen = self.gallery_image_matrix_gen(index_tpl=index_tpl, object_=object_)
+        return CH5File.gallery_image_matrix_layouter(img_gen, shape)
+
     def close(self):
         self._file_handle.close()   
 

@@ -20,6 +20,8 @@ import os
 from itertools import chain
 
 import iscatter
+from cellh5 import CH5File
+from collections import defaultdict
 
 def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
     width=0.33
@@ -120,9 +122,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
             
             
-            f =  cellh5.CH5File(self.cellh5_files.values()[0], 'r')
+            f =  self.cellh5_handles.values()[0]
             features = f.object_feature_def()
-            f.close()
             if self.feature_set == "PCA":
                 coef = numpy.zeros((training_matrix.shape[1],))
                 coef[:len(self.classifier.coef_[0])] = self.classifier.coef_[0]
@@ -141,7 +142,10 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 for k, b in enumerate(s_blub):
                     print k, b, features[b]
         else:
-            self.classifier.fit(training_matrix) 
+            max_training_samples = 10000
+            idx = range(training_matrix.shape[0])
+            numpy.random.shuffle(idx)
+            self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
             
     def compute_outlyingness(self):
         def _outlier_count(x):
@@ -384,9 +388,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         print 'Make hit single list plot for', feature_name
         group_on = ['Plate', 'siRNA ID', 'Gene Symbol']
         
-        f =  cellh5.CH5File(self.cellh5_files.values()[0], 'r')
+        f =  self.cellh5_handles.values()[0]
         feature_idx = f.get_object_feature_idx_by_name('primary__primary', feature_name)
-        f.close()
         
         feature_agg_mean = lambda x: numpy.sum([numpy.sum(y[:, feature_idx]) for y in x]) / numpy.sum([len(y[:, feature_idx]) for y in x])
         feature_agg_median = lambda x: numpy.median(list(chain.from_iterable([y[:, feature_idx] for y in x])))
@@ -418,7 +421,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             stds = []
             values = []
             for g, m in means.iteritems():
-                count = group.get_group(g)['Object count'].sum()
+                count = self.mapping['Object count'][group.groups[g]].sum()
                 if count > min_object_coutn_group:
                     stds.append(0)
                     values.append(m)
@@ -449,7 +452,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         #pylab.show()
     
     
-    def make_top_hit_list(self):
+    def make_top_hit_list(self, top=100):
         print 'Make hit list plot'
         min_object_coutn_group = 15
         group_on = ['Plate', 'siRNA ID', 'Gene Symbol']
@@ -465,47 +468,55 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         pos_mean = pos_group.mean()['Outlyingness'].mean()        
         
         #iterate over plates and make hit list figure
+        label = []
+        values = []
         
-        for plate_name in self.mapping_files.keys():
-            group = self.mapping[(self.mapping['Object count'] > 0) & (self.mapping['Plate'] == plate_name)].groupby(['Well', 'siRNA ID', 'Gene Symbol'])
-            
-            means = group.apply(lambda x: (x['Outlyingness'] * x['Object count']).sum() / x['Object count'].sum())
-            means.sort()
-            
-            genes = []
-            stds = []
-            values = []
-            for g, m in means.iteritems():
-                count = group.get_group(g)['Object count'].sum()
-                if count > min_object_coutn_group:
-                    stds.append(0)
-                    values.append(m)
-                    genes.append("%s %s %s (%d)" % (g + (count,)))
+
+        group = self.mapping[(self.mapping['Object count'] > 0)].groupby(['Plate', 'Well', 'siRNA ID', 'Gene Symbol'])            
+        means = group.apply(lambda x: (x['Outlyingness'] * x['Object count']).sum() / x['Object count'].sum())
+
+        for g, m in means.iteritems():
+            print g
+            count = self.mapping['Object count'][group.groups[g]].sum()
+            if count > min_object_coutn_group:
+                values.append(m)
+                label.append(g + (count,))
                 
-            fig = pylab.figure(figsize=(len(genes)/6 + 3, 10))
-            ax = pylab.subplot(111)
-            ax.errorbar(range(len(values)), values, yerr=stds, fmt='o', markeredgecolor='none')
-            ax.set_xticks(range(len(values)), minor=False)
-            ax.set_xticklabels(genes, rotation=90)
-            ax.axhline(numpy.mean(values), label='Target mean')
-            ax.axhline(numpy.mean(values) + numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at +2 sigma')
-            ax.axhline(numpy.mean(values) - numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at -2 sigma')
-            ax.axhline(neg_mean, color='g', label='Negative control mean')
-            #ax.axhline(pos_mean, color='r', label='Positive control mean')
+                    
+        svalues, slabel = zip(*sorted(zip(values, label)))
+#         svalues = svalues[-top:]
+#         slabel = slabel[-top:]
+        
+        svalues = svalues[:top]
+        slabel = slabel[:top]
+        
+                
+        fig = pylab.figure(figsize=(top/6 + 3, 10))
+        ax = pylab.subplot(111)
+        ax.errorbar(range(len(svalues)), svalues, fmt='o', markeredgecolor='none')
+        ax.set_xticks(range(len(svalues)), minor=False)
+        ax.set_xticklabels(["%s %s %s %s (%d)" % g for g in slabel], rotation=90)
+        ax.axhline(numpy.mean(values), label='Target mean')
+        ax.axhline(numpy.mean(values) + numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at +2 sigma')
+        ax.axhline(numpy.mean(values) - numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at -2 sigma')
+        ax.axhline(neg_mean, color='g', label='Negative control mean')
+        #ax.axhline(pos_mean, color='r', label='Positive control mean')
+        
+        pylab.legend(loc=2)
+        pylab.ylabel('Outlyingness (OC-SVM)')
+        pylab.xlabel('Target genes')
+        pylab.ylim(0, overall_max+0.1)
+        pylab.xlim(-1, len(svalues)+1)
+        pylab.tight_layout()
+        pylab.savefig(self.output('top_%d_hit_list.pdf' % top))
+        pylab.show()
+        
+        prefix_lut = {}
+        for ii, g in enumerate(reversed(slabel)):
+            prefix_lut[(g[0], g[1])] = "%04d" % (ii+1)
+        self.make_outlier_galleries(prefix_lut)
             
-            pylab.legend(loc=2)
-            pylab.ylabel('Outlyingness (OC-SVM)')
-            pylab.xlabel('Target genes')
-            pylab.title('%s' % plate_name)
-            pylab.ylim(0, overall_max+0.1)
-            pylab.xlim(-1, len(values)+1)
-            pylab.tight_layout()
-            
-            pylab.savefig(self.output('%s_hit_list.pdf' % plate_name))
-        #pylab.show()
-    
-    
-    
+
     def make_hit_list(self):
         print 'Make hit list plot'
         min_object_coutn_group = 15
@@ -533,7 +544,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             stds = []
             values = []
             for g, m in means.iteritems():
-                count = group.get_group(g)['Object count'].sum()
+                count = self.mapping['Object count'][group.groups[g]].sum()
                 if count > min_object_coutn_group:
                     stds.append(0)
                     values.append(m)
@@ -562,7 +573,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         #pylab.show()
         
         
-    def interactive_plot(self):
+    def interactive_plot(self, shape=(7, 25)):
         sample_names = []
         data_features = []
         data_pca = []
@@ -590,22 +601,33 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         data_features = numpy.concatenate(data_features)
         data_cellh5 = numpy.concatenate(cellh5_list)
   
-        cf = cellh5.CH5File(self.cellh5_files.values()[0],'r')
+        cf = self.cellh5_handles.values()[0]
         feature_names = cf.object_feature_def()
-        cf.close() 
+
+
 
         pca_names = ['PCA %d' % d for d in range(data_pca.shape[1])]
         
         app = iscatter.start_qt_event_loop()
         
         def img_gen(treat, ch5_ids):
-            index_tpl = [(t[1], str(t[2]), (c,)) for t, c in zip(treat, ch5_ids)]
-            cf = cellh5.CH5File(self.cellh5_files[plate],'r')
-            img = cf.get_gallery_image_matrix(index_tpl, (5, 25))
-            cf.close()
-            return img
+            gen = []
+            max_count = shape[0] * shape[1]
+            for i, (treat, c) in enumerate(zip(treat, ch5_ids)):
+                plate = treat[0]
+                well = treat[1]
+                site = str(treat[2])
+                cf = self.cellh5_handles[plate]
+                img_gen = cf.gallery_image_matrix_gen(((well, site, (c,)),))
+                gen.append(img_gen)
+                if i > max_count:
+                    break
+                
+            img_gens = chain.from_iterable(gen)
             
-        
+            img = CH5File.gallery_image_matrix_layouter(img_gens, shape)
+            return img
+  
         iscatter_widget = iscatter.IScatterWidget()
         iscatter_widget.set_data(data_pca, pca_names, sample_names, 0, 1, data_cellh5, img_gen)
     
@@ -716,47 +738,64 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             pylab.tight_layout()
             pylab.savefig(self.output("outlier_detection_pca_%d_vs_%d.pdf" %(f_x+1, f_y+1)))   
         
-    def make_outlier_galleries(self):
-        for i in xrange(len(self.mapping['PCA'])):
-            prediction = self.mapping['Predictions'].at[i]
-            if len(prediction) > 0:
-                ge = self.mapping['Gene Symbol'][i]
-                si = self.mapping['siRNA ID'][i]
-                
-                well = self.mapping['Well'][i]
-                site = str(self.mapping['Site'][i])
-                plate_name = str(self.mapping['Plate'][i])
-                print 'Exporting gallery matrices for', plate_name, well, site 
-                
-                ch5_file = cellh5.CH5File(self.cellh5_files[plate_name])
-                
-                ch5_pos = ch5_file.get_position(well, site)
+    def make_outlier_galleries(self, prefix_lut=None):  
+        group = self.mapping[(self.mapping['Object count'] > 0)].groupby(('Plate', 'Well'))
+        plates_inlier = defaultdict(list)
+        plates_outlier = defaultdict(list)
+        plates_info  = defaultdict(list)
+         
+        for grp, grp_values in group:
+            index_tpl_in = []
+            index_tpl_out = []
             
-            
-                ch5_index = self.mapping["CellH5 object index"][i][prediction == -1]
-                dist =  self.mapping["Hyperplane distance"][i][prediction == -1]
-                sorted_ch5_index = zip(*sorted(zip(dist, ch5_index), reverse=True))
-                if len(sorted_ch5_index) > 1:
-                    sorted_ch5_index = sorted_ch5_index[1]
-                else:
-                    sorted_ch5_index = []
-                    
-                outlier_img = ch5_pos.get_gallery_image_matrix(sorted_ch5_index, (30, 20)).swapaxes(1,0)
+            if prefix_lut is None:
+                pass
+            elif not  (grp_values['Plate'].unique()[0],  grp_values['Well'].unique()[0]) in prefix_lut:
+                continue
 
-                
-                ch5_index = self.mapping["CellH5 object index"][i][prediction == 1]
-                dist =  self.mapping["Hyperplane distance"][i][prediction == 1]
-                sorted_ch5_index = zip(*sorted(zip(dist,ch5_index), reverse=True))
-                if len(sorted_ch5_index) > 1:
-                    sorted_ch5_index = sorted_ch5_index[1]
+            for _, (plate_name, well, site, ge, si, prediction, hyper, ch5_ind) in grp_values[['Plate', 'Well', 'Site', 'Gene Symbol', 'siRNA ID', 'Predictions', "Hyperplane distance", "CellH5 object index"]].iterrows():
+                in_ch5_index = ch5_ind[prediction == -1]
+                in_dist =  hyper[prediction == -1]
+                in_sorted_ch5_index = zip(*sorted(zip(in_dist, in_ch5_index), reverse=True))
+                if len(in_sorted_ch5_index) > 1:
+                    in_sorted_ch5_index = in_sorted_ch5_index[1]
                 else:
-                    sorted_ch5_index = []
-                inlier_img = ch5_pos.get_gallery_image_matrix(sorted_ch5_index, (30, 20)).swapaxes(1,0)
+                    in_sorted_ch5_index = []
+                    
+                out_ch5_index = ch5_ind[prediction == 1]
+                out_dist =  hyper[prediction == 1]
+                out_sorted_ch5_index = zip(*sorted(zip(out_dist, out_ch5_index), reverse=True))
+                if len(out_sorted_ch5_index) > 1:
+                    out_sorted_ch5_index = out_sorted_ch5_index[1]
+                else:
+                    out_sorted_ch5_index = []
+                    
+                index_tpl_in.append((well, site, in_sorted_ch5_index))
+                index_tpl_out.append((well, site, out_sorted_ch5_index))
+                    
+            plates_inlier[plate_name].append(index_tpl_in)
+            plates_outlier[plate_name].append(index_tpl_out)
+            plates_info[plate_name].append((plate_name, well, ge, si))
+           
+        for plate_name in plates_inlier.keys():
+            pl_in_index_tpl = plates_inlier[plate_name]
+            pl_on_index_tpl = plates_outlier[plate_name]
+            pl_info = plates_info[plate_name]
+            
+            for index_tpl_in, index_tpl_out, info in zip(pl_in_index_tpl, pl_on_index_tpl, pl_info): 
+                cf = self.cellh5_handles[plate_name]
+                outlier_img = cf.get_gallery_image_matrix(index_tpl_in, (15, 10)).swapaxes(1,0)
+                inlier_img = cf.get_gallery_image_matrix(index_tpl_out, (15, 10)).swapaxes(1,0)
                 
                 img = numpy.concatenate((inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
-                vigra.impex.writeImage(img, self.output('xgal_%s_%s_%s_%s_%s.png' % (plate_name,  well, site, ge, si, )))
-            else:
-                print 'Exporting: No cells for', plate_name, well, site 
+                assert plate_name == info[0]
+                if prefix_lut is None:
+                    img_name = 'xgal_%s_%s_%s_%s.png' % info
+                else:
+                    img_name = '%s_%s_%s_%s_%s.png' % ((prefix_lut[info[0], info[1]],) + info)
+                vigra.impex.writeImage(img, self.output(img_name))
+                print 'Exporting gallery matrix image for', info
+
                 
 class SaraOutlier(object):
     @staticmethod
@@ -831,11 +870,11 @@ class SaraOutlier(object):
         self.od.compute_outlyingness()
         
         #self.od.cluster_outliers()                    
-        self.od.interactive_plot()
+        #self.od.interactive_plot()
         
        
         
-        self.od.make_hit_list()
+        self.od.make_top_hit_list()
         #self.od.make_hit_list_single_feature('roisize')
         self.od.make_heat_map()
         #self.od.make_outlier_galleries()
@@ -896,32 +935,32 @@ if __name__ == "__main__":
     EXPLOOKUP = {'sarax_od':
                      {
                       'mapping_files' : {
-                          'SP_9': 'F:/sara_adhesion_screen/sp9.txt',
-#                         'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
-#                           'SP_7': 'F:/sara_adhesion_screen/sp7.txt',
-#                           'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
-#                           'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
-#                           'SP_4': 'F:/sara_adhesion_screen/sp4.txt',
-#                           'SP_3': 'F:/sara_adhesion_screen/sp3.txt',
-#                           'SP_2': 'F:/sara_adhesion_screen/sp2.txt',
-#                           'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
-                                       },
+                        'SP_9': 'F:/sara_adhesion_screen/sp9.txt',
+                        'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
+                        'SP_7': 'F:/sara_adhesion_screen/sp7.txt',
+                        'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
+                        'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
+                        'SP_4': 'F:/sara_adhesion_screen/sp4.txt',
+                        'SP_3': 'F:/sara_adhesion_screen/sp3.txt',
+                        'SP_2': 'F:/sara_adhesion_screen/sp2.txt',
+                        'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
+                                        },
                       'ch5_files' : {
                             'SP_9': 'F:/sara_adhesion_screen/sp9__all_positions_with_data_combined.ch5',
-#                             'SP_8': 'F:/sara_adhesion_screen/sp8__all_positions_with_data_combined.ch5',
-#                             'SP_7': 'F:/sara_adhesion_screen/sp7__all_positions_with_data_combined.ch5',
-#                             'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
-#                             'SP_5': 'F:/sara_adhesion_screen/sp5__all_positions_with_data_combined.ch5',
-#                             'SP_4': 'F:/sara_adhesion_screen/sp4__all_positions_with_data_combined.ch5',
-#                             'SP_3': 'F:/sara_adhesion_screen/sp3__all_positions_with_data_combined.ch5',
-#                             'SP_2': 'F:/sara_adhesion_screen/sp2__all_positions_with_data_combined.ch5',
-#                             'SP_1': 'F:/sara_adhesion_screen/sp1__all_positions_with_data_combined.ch5',
+                            'SP_8': 'F:/sara_adhesion_screen/sp8__all_positions_with_data_combined.ch5',
+                            'SP_7': 'F:/sara_adhesion_screen/sp7__all_positions_with_data_combined.ch5',
+                            'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
+                            'SP_5': 'F:/sara_adhesion_screen/sp5__all_positions_with_data_combined.ch5',
+                            'SP_4': 'F:/sara_adhesion_screen/sp4__all_positions_with_data_combined.ch5',
+                            'SP_3': 'F:/sara_adhesion_screen/sp3__all_positions_with_data_combined.ch5',
+                            'SP_2': 'F:/sara_adhesion_screen/sp2__all_positions_with_data_combined.ch5',
+                            'SP_1': 'F:/sara_adhesion_screen/sp1__all_positions_with_data_combined.ch5',
                                         },
-#                       'locations' : (
-#                             ("A",  8), ("B", 8), ("C", 8), ("D", 8),
-#                             ("H", 6), ("H", 7), ("G", 6), ("G", 7),
-#                             ("H",12), ("H",13), ("G",12), ("G",13),
-#                         ),
+#                     'locations' : (
+#                           ("A",  1), ("B", 8), ("C", 8), ("D", 8),
+#                           ("H", 6), ("H", 7), ("G", 6), ("G", 7),
+#                           ("H",12), ("H",13), ("G",12), ("G",13),
+#                       ),
                       'rows' : list("ABCDEFGHIJKLMNOP")[:],
                       'cols' : tuple(range(1,24)),
                       'gamma' : 0.005,

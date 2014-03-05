@@ -54,6 +54,7 @@ class CellH5Analysis(object):
         self.cellh5_files = cellh5_files
         self.output_dir = output_dir
         self.time_lapse = {}
+        self.cellh5_handles = {}
         self.pca_dims = 239
         
         # read mappings for all plates
@@ -67,13 +68,21 @@ class CellH5Analysis(object):
             time_lapse = plate_cellh5.current_pos.get_time_lapse()
             if time_lapse is not None:
                 self.time_lapse[plate_name] = time_lapse / 60.0
-            plate_cellh5.close()
+#             plate_cellh5.close()
+            self.cellh5_handles[plate_name] = plate_cellh5
             
             mappings.append(plate_mappings)
         self.mapping = pandas.concat(mappings, ignore_index=True)
         del mappings
 
         self.set_output_dir(output_dir)
+        
+    def close(self):
+        for p, c in self.cellh5_handles.items():
+            try:
+                c.close()
+            except:
+                print 'Could not close ch5 file handle of plate', p
         
     def set_output_dir(self, output_dir):
         if self.output_dir is None:

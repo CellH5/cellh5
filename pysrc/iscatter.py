@@ -6,28 +6,12 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg
 from matplotlib.patches import Rectangle
 
-from matplotlib import rcParams
 import resources
-for t in rcParams.keys():
-    print t
-     
 
-rcParams['font.family'] = 'sans-serif'
-rcParams['font.sans-serif'] = ['Arial']
-rcParams['pdf.fonttype'] = 42
-# rcParams['axes.linewidth'] = rcParams['axes.linewidth']*2
-# rcParams['legend.numpoints'] = 1
-# rcParams['legend.markerscale'] = 0
-# rcParams['xtick.major.width'] = 2
-# rcParams['ytick.major.width'] = 2
-# rcParams['text.color'] = 'white'
-rcParams['xtick.color'] = 'white'
-rcParams['ytick.color'] = 'white'
-rcParams['ytick.labelsize'] = 14
-rcParams['xtick.labelsize'] = 14
-rcParams['axes.labelsize'] = 18
+from matplotlib import rcParams
 
-rcParams['axes.labelcolor'] = 'white'
+
+
 
 from matplotlib.widgets import RectangleSelector
 from matplotlib.colors import colorConverter
@@ -102,7 +86,7 @@ class IScatter(QtGui.QMainWindow):
                 self.table.setItem(i, c, QtGui.QTableWidgetItem(e[c]))
                 
         self.table.horizontalHeader().setResizeMode(QtGui.QHeaderView.ResizeToContents)
-        self.table.setSortingEnabled(True)
+        self.table.setSortingEnabled(False)
  
     def apply_css(self, css_file):
         qss_file = QtCore.QFile(css_file)
@@ -188,8 +172,7 @@ class IScatterWidget(QtGui.QWidget):
                 
         self.canvas.draw()
         self.update_image(ind)
-        
-        
+           
     def mouse_wheel_zoom(self, event, base_scale=1.2):
         if event.key is None or not event.key.startswith('control'):
             return
@@ -364,6 +347,22 @@ class SimpleMplImageViewer(QtGui.QWidget):
 
 
 def start_qt_event_loop():
+    rcParams['font.family'] = 'sans-serif'
+    rcParams['font.sans-serif'] = ['Arial']
+    rcParams['pdf.fonttype'] = 42
+    # rcParams['axes.linewidth'] = rcParams['axes.linewidth']*2
+    # rcParams['legend.numpoints'] = 1
+    # rcParams['legend.markerscale'] = 0
+    # rcParams['xtick.major.width'] = 2
+    # rcParams['ytick.major.width'] = 2
+    # rcParams['text.color'] = 'white'
+    rcParams['xtick.color'] = 'white'
+    rcParams['ytick.color'] = 'white'
+    rcParams['ytick.labelsize'] = 14
+    rcParams['xtick.labelsize'] = 14
+    rcParams['axes.labelsize'] = 18
+    
+    rcParams['axes.labelcolor'] = 'white'
     app = QtGui.QApplication(sys.argv)
     app.setStyle("plastique")     
     return app
