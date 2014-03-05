@@ -9,35 +9,20 @@
                  See trunk/AUTHORS.txt for author contributions.
 """
 
-#-------------------------------------------------------------------------------
-# standard library imports:
-#
 from setuptools import find_packages
+import version
 
-#-------------------------------------------------------------------------------
-# cecog imports:
-#
-from cellh5 import (VERSION_NUM,
-                   VERSION,
-                   )
-
-#-------------------------------------------------------------------------------
-# constants:
-#
 name = 'CellH5Browser'
-numversion = VERSION_NUM
-version = VERSION
+numversion = version.version_num
+version = version.version
 author = 'Christoph Sommer'
-author_email = 'sommerc(at)cellcognition.org'
-license = 'GPL',
+author_email = 'sommerc(at)cellcognition.org',
+license = 'LGPL',
 description = ''
-long_description = \
-"""
-"""
-url = 'http://www.cellcognition.org'
+long_description = ""
+url = 'http://www.cellh5.org'
 download_url = ''
 package_dir = {}
 packages = find_packages()
 classifiers = []
-platforms = ['Win32']
 provides = []

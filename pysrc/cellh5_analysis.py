@@ -5,7 +5,6 @@ import os
 import collections
 import functools
 import time
-import cProfile
 import re
 import datetime
 import pylab
@@ -13,9 +12,7 @@ from collections import OrderedDict
 from itertools import izip_longest
 from matplotlib.mlab import PCA
 from matplotlib.backends.backend_pdf import PdfPages
-from cecog.util.color import rgb_to_hex
 from sklearn import hmm
-from itertools import izip_longest
 import csv
 from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
 hmm.normalize = lambda A, axis=None: normalize(A, axis, eps=10e-99)
