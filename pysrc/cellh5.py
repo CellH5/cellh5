@@ -73,11 +73,15 @@ def ch5open(filename, mode='r', cached=True):
     yield ch5
     ch5.close()
 
+
 class CH5Const(object):
 
     # defaults for unpredicted objects, -1 one might be not a
     UNPREDICTED_LABEL = -99
     UNPREDICTED_PROB = numpy.nan
+
+    REGION = 'region'
+    RELATION = 'relation'
 
 
 class CH5GroupCoordinate(object):
@@ -150,6 +154,16 @@ class CH5Position(object):
         path = "%s/%s" %(self.grp_pos_path, key)
         return self.definitions.get_file_handle()[path]
 
+    def channel_color_by_region(self, region):
+        """Return the the channel information."""
+
+        path = '/definition/image/region'
+        rdef = self.definitions.get_file_handle()[path].value
+
+        i = rdef['channel_idx'][rdef['region_name'] == 'region___%s' %region][0]
+        path = '/definition/image/channel'
+        return self.definitions.get_file_handle()[path]['color'][i]
+
     def get_tracking(self):
         return self['object']['tracking'].value
 
@@ -216,8 +230,8 @@ class CH5Position(object):
                    [object_] \
                    ['object_features'].value
         else:
-            return []                 
-                   
+            return []
+
     def get_time_lapse(self):
         time_stamps = self['image/time_lapse']['timestamp_rel']
         time_lapses = numpy.diff(time_stamps)
@@ -235,6 +249,7 @@ class CH5Position(object):
 
         channel_idx = self.definitions.image_definition['region'] \
             ['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
+
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
 
@@ -393,10 +408,10 @@ class CH5Position(object):
         if len(res) == 1:
             return res[0]
         return res
-    
+
     def get_all_time_idx(self, object_='primary__primary'):
         return self['object'][object_][:]['time_idx']
-    
+
     def get_time_idx(self, index, object_='primary__primary'):
         return self['object'][object_][index]['time_idx']
 
@@ -780,12 +795,12 @@ class CH5TestBase(unittest.TestCase):
 
     def tearDown(self):
         self.fh.close()
-        
-class TestCH5Basic(CH5TestBase): 
+
+class TestCH5Basic(CH5TestBase):
     def testTimeLapse(self):
         time_lapse = self.pos.get_time_lapse()
         assert int(time_lapse) == 276
-    
+
 class TestCH5Basic(CH5TestBase):
 
     def testGallery(self):
