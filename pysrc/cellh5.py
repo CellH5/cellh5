@@ -199,7 +199,9 @@ class CH5Position(object):
             return probs.reshape(ishape+(nclasses, ))
 
     def has_classification(self, object_):
-        return 'object_classification' in self['feature'][object_]
+        fh = self.definitions.get_file_handle()
+        path = 'definition/feature/%s/object_classification' %object_
+        return path in fh
 
     def get_crack_contour(self, index, object_='primary__primary',
                           bb_corrected=True):
