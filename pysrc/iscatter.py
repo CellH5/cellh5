@@ -100,18 +100,24 @@ class IScatter(QtGui.QMainWindow):
 class IScatterWidget(QtGui.QWidget):
     image_changed = QtCore.pyqtSignal(numpy.ndarray)
     selection_changed = QtCore.pyqtSignal(list)
+    
     def __init__(self, parent=None):   
         QtGui.QWidget.__init__(self, parent)
         self.figure = Figure()
         self.figure.patch.set_alpha(0)
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.axes = self.figure.add_subplot(111)
+        self.contour_eval_func = None
 
         self.selector = RectangleSelector(self.axes, self.selector_cb,
                                        drawtype='box', useblit=True,
                                        button=[1,],
                                        minspanx=5, minspany=5,
-                                       spancoords='pixels')
+                                       spancoords='pixels',
+                                       lineprops=dict(color='white', linestyle='-',
+                                                    inewidth = 2, alpha=0.5),
+                                       rectprops = dict(facecolor='white', edgecolor = 'white',
+                                                        alpha=0.5, fill=True))
         
         layout = QtGui.QVBoxLayout()
         layout.addWidget(self.canvas)
@@ -131,7 +137,9 @@ class IScatterWidget(QtGui.QWidget):
         
         axis_selector_layout.addStretch()
         
-        axis_selector_layout.addWidget(QtGui.QLabel("C:"))
+        
+        self.axis_c_label = QtGui.QLabel("C:")
+        axis_selector_layout.addWidget(self.axis_c_label)
         self.axis_c_chk = QtGui.QCheckBox(self)
         self.axis_c_chk.setChecked(False)
         self._last_c_dim = 0
@@ -147,6 +155,9 @@ class IScatterWidget(QtGui.QWidget):
         self.setLayout(layout)
         
         self.canvas.mpl_connect('scroll_event', self.mouse_wheel_zoom)
+        
+    def set_countour_eval_cb(self, contour_eval_func):
+        self.contour_eval_func = contour_eval_func
 
         
     def selector_cb(self, epress, erelease):
@@ -296,6 +307,13 @@ class IScatterWidget(QtGui.QWidget):
         self.axes.add_collection(self.collection)
         
         self.update_axis_lims()
+#         if self.contour_eval_func is not None:
+#             xx, yy, Z = self.contour_eval_func(self.axes.get_xlim(), self.axes.get_ylim(), self.x_dim, self.y_dim)
+#             
+#             self.axes.contourf(xx, yy, Z, levels=numpy.linspace(Z.min(), 0, 17), cmap=cm.Reds_r, alpha=0.2)
+#             self.axes.contour(xx, yy, Z, levels=[0], linewidths=1, colors='k')
+#             self.axes.contourf(xx, yy, Z, levels=numpy.linspace(0, Z.max(), 17), cmap=cm.Greens, alpha=0.3)
+        
         self.figure.tight_layout()
         self.canvas.draw()
         
@@ -310,6 +328,75 @@ class IScatterWidget(QtGui.QWidget):
         self.axes.set_xlabel(self.data_names[self.x_dim])
         self.axes.set_ylabel(self.data_names[self.y_dim])
         
+
+class IScatterWidgetHisto(IScatterWidget):
+    def __init__(self, *args, **kwargs):
+        IScatterWidget.__init__(self, *args, **kwargs)
+        self.cbar = None
+        self.axis_c_chk.setVisible(False)
+        self.axis_c_cmb.setVisible(False)
+        self.axis_c_label.setVisible(False)
+        
+        self.gamma_cor = 0.5
+        
+    def update_axis(self):
+        self.axes.clear()
+        self.data = [DataPoint(xy[0], xy[1], self.data_ch5_idx[i], False) 
+                     for i, xy in enumerate(self.data_matrix[:, [self.x_dim, self.y_dim]])]
+        self.Nxy = len(self.data)
+            
+        self.xs = [d.x for d in self.data]
+        self.ys = [d.y for d in self.data]
+        self.xys = zip(self.xs, self.ys)
+          
+        hist_img = numpy.histogram2d(self.xs, self.ys, bins=64)
+        img = numpy.flipud(hist_img[0].swapaxes(1,0))
+        img[img>0] **= self.gamma_cor
+        max_rel = img.max()
+        aximg = self.axes.imshow(img, interpolation='nearest', extent=(hist_img[1].min(),
+                                                                            hist_img[1].max(),
+                                                                            hist_img[2].min(),
+                                                                            hist_img[2].max()), 
+                                                                            cmap='gist_heat',
+                                                                            clim=(0, max_rel))
+
+        if self.cbar is None:
+            self.cbar = self.figure.colorbar(aximg)
+        else:
+            self.cbar.update_bruteforce(aximg)
+
+        
+        tmp= []
+        for t in self.cbar.ax.get_yticklabels():
+            tmp.append(int(float(t.get_text())**(1/self.gamma_cor)))
+        self.cbar.ax.set_yticklabels(tmp)
+        
+        im = self.axes.get_images()
+        extent =  im[0].get_extent()
+        self.axes.set_aspect(abs((extent[1]-extent[0])/(extent[3]-extent[2]))/1)
+        self.update_axis_lims()
+        
+        self.figure.tight_layout()
+        self.canvas.draw()     
+        
+    def selector_cb(self, epress, erelease):
+        x_min, x_max = min(epress.xdata, erelease.xdata), max(epress.xdata, erelease.xdata)
+        y_min, y_max = min(epress.ydata, erelease.ydata), max(epress.ydata, erelease.ydata)
+        
+        print x_min, x_max
+        print y_min, y_max
+        
+        ind = numpy.array([True if ((x > x_min) and 
+                                    (x < x_max) and
+                                    (y > y_min) and 
+                                    (y < y_max)) 
+                                    else False for x, y in self.xys])
+                
+        self.canvas.draw()  
+        ids =  [self.data[k].ref for k in range(len(ind)) if ind[k]] 
+        print ind.sum(), 'objects selected with refs', ids
+        self.update_image(ind) 
+
 class SimpleMplImageViewer(QtGui.QWidget):
     def __init__(self, parent=None):   
         QtGui.QWidget.__init__(self, parent)
@@ -376,7 +463,7 @@ def ch5_scatter(ch5_file, well, site, time=0):
     features = ch5_pos.get_object_features()
     times = ch5_pos.get_all_time_idx()
 #     times_idx = numpy.in1d(times, range(0,200,20)) 
-    times_idx = times == time
+    times_idx = times > time
     features = features[times_idx, :]
     
     center_x = ch5_pos.get_center(times_idx)['x']
@@ -387,7 +474,7 @@ def ch5_scatter(ch5_file, well, site, time=0):
     
     data_names = ch5_file.object_feature_def() + ['Time', 'Center x', 'Center y', 'Classificaiton']
     
-    iscatter = IScatterWidget()
+    iscatter = IScatterWidgetHisto()
     iscatter.set_data(features, data_names, [('H2bPlate', '0038', '1', 'Kiff11', 'no grugs') for k in xrange(features.shape[0])], 222, 236, numpy.nonzero(times_idx)[0], lambda y, x: ch5_pos.get_gallery_image_matrix(x, (5, 25)))
 
     
