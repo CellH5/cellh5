@@ -4,6 +4,7 @@ import pylab
 import vigra
 
 from sklearn.svm import OneClassSVM
+from sklearn.feature_selection import RFE
 import sklearn.cluster
 import sklearn.mixture
 
@@ -13,7 +14,7 @@ import cPickle as pickle
 from numpy import recfromcsv
 import pandas
 import time
-from matplotlib.mlab import PCA
+from matplotlib.mlab import PCA as PCAold
 from scipy.stats import nanmean
 import datetime
 import os
@@ -22,6 +23,11 @@ from itertools import chain
 import iscatter
 from cellh5 import CH5File
 from collections import defaultdict
+
+from sklearn.decomposition import PCA, KernelPCA
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, accuracy_score
+
+DEBUG = False
 
 def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
     width=0.33
@@ -67,28 +73,42 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
 class OutlierDetection(cellh5_analysis.CellH5Analysis):
     classifier_class = OneClassSVM
     def __init__(self, name, mapping_files, cellh5_files, training_sites=(1,2,3,4,), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
-        assert gamma != None
-        assert pca_dims != None
-        assert kernel != None
-        assert nu != None
         cellh5_analysis.CellH5Analysis.__init__(self, name, mapping_files, cellh5_files, sites=(1,2,3,4,), rows=rows, cols=cols, locations=locations)
         self.gamma = gamma
         self.nu = nu
         self.pca_dims = pca_dims
         self.kernel = kernel
+        self.feature_set = 'PCA'
+        #self.output_dir += "/-o%s-p%d-k%s-n%f-g%f" % (self.feature_set, self.pca_dims, self.kernel, self.nu, self.gamma)
+        try:
+            os.makedirs(self.output_dir)
+        except:
+            pass
+        
+    def set_gamma(self, gamma):
+        self.gamma = gamma
+    def set_kernel(self, kernel):
+        self.kernel = kernel
+    def set_nu(self, nu):
+        self.nu = nu
+    def set_pca_dims(self, pca_dims):
+        self.pca_dims = pca_dims
 
     def train(self, train_on=('neg',)):
-        self.feature_set = 'Object features'
-        print 'Training OneClass Classifier for', train_on, 'on', self.feature_set
+        if DEBUG:
+            print 'Training OneClass Classifier for', train_on, 'on', self.feature_set
         training_matrix = self.get_data(train_on, self.feature_set)
         
         if self.feature_set == 'Object features':
             training_matrix = self.normalize_training_data(training_matrix)
         
         self.train_classifier(training_matrix)
+        if DEBUG:
+            print '%04.2f %%' % (100 * float(self.classifier.support_vectors_.shape[0]) / training_matrix.shape[0]), 'support vectors'
         
     def predict(self, test_on=('target', 'pos', 'neg')):
-        print 'Predicting OneClass Classifier for', self.feature_set
+        if DEBUG:
+            print 'Predicting OneClass Classifier for', self.feature_set
         testing_matrix_list = self.mapping[self.mapping['Group'].isin(test_on)][['Well', 'Site', self.feature_set, "Gene Symbol", "siRNA ID"]].iterrows()
 
         predictions = {}
@@ -97,7 +117,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         log_file_handle = open(self.output('_outlier_detection_log.txt'), 'w')
         
         for idx, (well, site, tm, t1, t2) in  testing_matrix_list:
-            print well, site, t1, t2, "->",
+            if DEBUG:
+                print well, site, t1, t2, "->",
             log_file_handle.write("%s\t%d\t%s\t%s" % (well, site, t1, t2))
             if isinstance(tm, (float,)) or (tm.shape[0] == 0):
                 predictions[idx] = numpy.zeros((0, 0))
@@ -105,7 +126,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             else:
                 if self.feature_set == 'Object features':
                     tm = self._remove_nan_rows(tm)
-                pred, dist = self.predict_with_classifier(tm, log_file_handle)
+                pred, dist = self.predict_with_classifier(tm[:, self.rfe_selection], log_file_handle)
                 predictions[idx] = pred
                 distances[idx] = dist
         log_file_handle.close()
@@ -116,36 +137,27 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         self.classifier = self.classifier_class(kernel=self.kernel, nu=self.nu, gamma=self.gamma)
         
         if self.kernel == 'linear':
-            max_training_samples = 1000
+            max_training_samples = 20000
             idx = range(training_matrix.shape[0])
-            numpy.random.shuffle(idx)
+            #numpy.random.shuffle(idx)
             self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
+            self.rfe_selection = numpy.ones((training_matrix.shape[1],), dtype=numpy.bool)
             
-            
-            f =  self.cellh5_handles.values()[0]
-            features = f.object_feature_def()
-            if self.feature_set == "PCA":
-                coef = numpy.zeros((training_matrix.shape[1],))
-                coef[:len(self.classifier.coef_[0])] = self.classifier.coef_[0]
-                
-                b = numpy.dot(numpy.abs(self.pca.Wt.T), coef) * self.pca.sigma
-                
-                blub = dict(zip(self._non_nan_feature_idx, b))
-                s_blub = sorted(blub, key=blub.get, reverse=True)
-                
-                
-                for k, b in enumerate(s_blub):
-                    print k, b, features[b]
-            else:
-                blub = dict(enumerate(numpy.abs(self.classifier.coef_[0]))) 
-                s_blub = sorted(blub, key=blub.get, reverse=True)
-                for k, b in enumerate(s_blub):
-                    print k, b, features[b]
+            # RFE
+            if False:
+                rfe = RFE(self.classifier, 30, step=1)
+                rfe.fit2(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
+                if DEBUG:
+                    print rfe.ranking_
+                    print rfe.support_
+                self.rfe_selection = rfe.support_
+                self.classifier = rfe.estimator_
         else:
-            max_training_samples = 10000
+            max_training_samples = 100000
             idx = range(training_matrix.shape[0])
-            numpy.random.shuffle(idx)
+            #numpy.random.shuffle(idx)
             self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
+            self.rfe_selection = numpy.ones((training_matrix.shape[1],), dtype=numpy.bool)
             
     def compute_outlyingness(self):
         def _outlier_count(x):
@@ -161,7 +173,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         log = "\t%d / %d outliers\t%3.2f" % ((prediction == -1).sum(),
                                              len(prediction),
                                              (prediction == -1).sum() / float(len(prediction)))
-        print log
+        if DEBUG:
+            print log
         if log_file_handle is not None:
             log_file_handle.write(log+"\n")
         return prediction, distance
@@ -189,10 +202,10 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
     
     def cluster_outliers(self):
         # setup clustering
-        print 'Setup clustering'
+        if DEBUG:
+            print 'Setup clustering'
         training_data = []
         for _ , (data, prediction, g, s) in self.mapping[['PCA', 'Predictions', 'Gene Symbol', 'siRNA ID']].iterrows():
-            print "  ", g, s
             data_i = data[prediction == -1, :]
             training_data.append(data_i)
             
@@ -202,14 +215,16 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
         k = 2
         
-        print 'Run clustering for training data shape', training_data.shape
+        if DEBUG:
+            print 'Run clustering for training data shape', training_data.shape
         km = sklearn.cluster.KMeans(k)
         km.fit(training_data)
         
         cluster_vectors = {}
         cluster_teatment_vectors = {}
-
-        print 'Apply Clustering'
+        
+        if DEBUG:
+            print 'Apply Clustering'
         for idx , (data, prediction, g, s)  in self.mapping[['PCA', 'Predictions', 'Gene Symbol', 'siRNA ID']].iterrows():        
             cluster_predict = km.predict(data) + 1
             cluster_predict[prediction==1, :]= 0
@@ -224,6 +239,83 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         ax = pylab.gca()
         treatmentStackedBar(ax, cluster_teatment_vectors, {0:'w', 1:'r', 2:'g', 3:'b', 4:'y', 5:'m'}, ['Inlier',] + ["Cluster %d" % d for d in range(1,k+1)])
         pylab.savefig(self.output("outlier_clustering.pdf"))
+        
+    
+    def evaluate(self):
+        acc = []
+        cm = numpy.zeros((7,2), 'int')
+        for i, each_row in self.mapping.iterrows():
+            plate_name = each_row['Plate']
+            well = each_row['Well']
+            site = each_row['Site']
+            treatment = tuple(each_row[['Gene Symbol', 'siRNA ID']]) 
+            outlier_prediction = numpy.array(each_row['Predictions'])
+            outlier_prediction_b = outlier_prediction == -1
+            outlier_prediction_2 = ((outlier_prediction*-1)+1)/2
+            
+            cellh5_idx = list(each_row['CellH5 object index'])
+            c5f = self.cellh5_handles[plate_name]
+            c5p = c5f.get_position(well, str(site))
+            class_prediction = c5p.get_class_prediction()['label_idx'][cellh5_idx]
+            class_prediction_b = class_prediction > 3
+            
+            
+            
+            for c, o in zip(class_prediction,outlier_prediction_2):
+                cm[c,o]+=1
+              
+            if i == 0:  
+                pylab.figure()
+                ax = pylab.subplot(111)
+                pylab.pcolor(cm, cmap=pylab.matplotlib.cm.Greens, vmin=0, vmax=cm.max())
+                pylab.colorbar()
+                ax.set_xticks(numpy.arange(cm.shape[1]) + 0.5, minor=False)
+                ax.set_yticks(numpy.arange(cm.shape[0]) + 0.5, minor=False)
+                ax.set_xticklabels(['Inlier', 'Outlier'])
+                ax.set_yticklabels(['Inter', 'Prometa', 'Meta', 'AnaTelo', 'Outlier_grape', 'Outlier_arrest', 'Outlier_polylobed'])
+                ax.invert_yaxis()
+                for c in range(7):
+                    for o in range(2):
+                        t = pylab.text(o + 0.5, c + 0.5,  str(cm[c,o]), horizontalalignment='center', verticalalignment='center', fontsize=14)
+                        if cm[c,o] > 0.3*cm.max():
+                            t.set_color('w')
+                
+                ax.set_title('Accuracy %0.3f\ng %0.5f - n %0.3f - pd %d - k %s -dr %r' % (numpy.mean(acc), self.gamma, self.nu, self.pca_dims, self.kernel, self.pca.__class__.__name__))
+                pylab.tight_layout()
+                pylab.savefig(self.output('outlier_classification_confusion_%s1.png' % well))
+            
+            
+            #print plate_name, well, site, treatment 
+            
+#             cm = confusion_matrix(class_prediction, outlier_prediction)
+#             print cm
+#             print precision_recall_fscore_support(class_prediction.astype('uint8'), outlier_prediction.astype('uint8'), average='micro')
+            acc.append(accuracy_score(class_prediction_b.astype('uint8'), outlier_prediction_b.astype('uint8')))
+            #print "********\n\n"
+        
+        pylab.figure()
+        ax = pylab.subplot(111)
+        pylab.pcolor(cm, cmap=pylab.matplotlib.cm.Greens, vmin=0, vmax=cm.max())
+        pylab.colorbar()
+        ax.set_xticks(numpy.arange(cm.shape[1]) + 0.5, minor=False)
+        ax.set_yticks(numpy.arange(cm.shape[0]) + 0.5, minor=False)
+        ax.set_xticklabels(['Inlier', 'Outlier'])
+        ax.set_yticklabels(['Inter', 'Prometa', 'Meta', 'AnaTelo', 'Outlier_grape', 'Outlier_arrest', 'Outlier_polylobed'])
+        ax.invert_yaxis()
+        for c in range(7):
+            for o in range(2):
+                t = pylab.text(o + 0.5, c + 0.5,  str(cm[c,o]), horizontalalignment='center', verticalalignment='center', fontsize=14)
+                if cm[c,o] > 0.3*cm.max():
+                    t.set_color('w')
+        
+        ax.set_title('Accuracy %0.3f\ng %0.5f - n %0.3f - pd %d - k %s -dr %r' % (numpy.mean(acc), self.gamma, self.nu, self.pca_dims, self.kernel, self.pca.__class__.__name__))
+        pylab.tight_layout()
+        pylab.savefig(self.output('outlier_classification_confusion.png'))
+        if DEBUG:
+            print 'Evaluate mean', numpy.mean(acc)
+        return numpy.mean(acc)
+            
+        
 
     def plot(self):
         f_x = 1
@@ -233,7 +325,6 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         x_max, y_max = -100000, -100000
         ch5_file = cellh5.CH5File(self.cellh5_file)
         
-        print len(self.mapping['PCA'])
         for i in range(len(self.mapping['PCA'])):
             data = self.mapping['PCA'][i]
             prediction = self.mapping['Predictions'][i]
@@ -302,7 +393,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         pylab.show(block=True)
         
     def make_heat_map(self):
-        print 'Make heat map plot'
+        if DEBUG:
+            print 'Make heat map plot'
         for plate_name in self.cellh5_files.keys():
             rows = sorted(numpy.unique(self.mapping['Row']))
             cols = sorted(numpy.unique(self.mapping['Column']))
@@ -338,8 +430,9 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             cmap = pylab.matplotlib.cm.Greens
             cmap.set_under(pylab.matplotlib.cm.Oranges(0))
             # cmap.set_under('w')
-                        
-            print 'Heatmap', heatmap.max(), heatmap.min()    
+                 
+            if DEBUG:       
+                print 'Heatmap', heatmap.max(), heatmap.min()    
             #fig = pylab.figure(figsize=(40,25))
             
             ax = pylab.subplot(111)
@@ -385,7 +478,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             pylab.savefig(self.output('outlier_heatmap_%s.pdf' % plate_name))
         
     def make_hit_list_single_feature(self, feature_name):
-        print 'Make hit single list plot for', feature_name
+        if DEBUG:
+            print 'Make hit single list plot for', feature_name
         group_on = ['Plate', 'siRNA ID', 'Gene Symbol']
         
         f =  self.cellh5_handles.values()[0]
@@ -453,7 +547,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
     
     
     def make_top_hit_list(self, top=100):
-        print 'Make hit list plot'
+        if DEBUG:
+            print 'Make hit list plot'
         min_object_coutn_group = 15
         group_on = ['Plate', 'siRNA ID', 'Gene Symbol']
 
@@ -476,7 +571,6 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         means = group.apply(lambda x: (x['Outlyingness'] * x['Object count']).sum() / x['Object count'].sum())
 
         for g, m in means.iteritems():
-            print g
             count = self.mapping['Object count'][group.groups[g]].sum()
             if count > min_object_coutn_group:
                 values.append(m)
@@ -518,7 +612,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             
 
     def make_hit_list(self):
-        print 'Make hit list plot'
+        if DEBUG:
+            print 'Make hit list plot'
         min_object_coutn_group = 15
         group_on = ['Plate', 'siRNA ID', 'Gene Symbol']
 
@@ -580,29 +675,35 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         cellh5_list = []
         wells = []
         sites = []
+        predictions = []
         for row_index, row in self.mapping[self.mapping['Object count'] > 0].iterrows():
             features = self.mapping['Object features'].iloc[row_index]
 #             pca = row['PCA']
-            pca = self.mapping['PCA'].iloc[row_index]
+            pca = self.mapping['PCA'].iloc[row_index][:,:20]
             cellh5idx = numpy.array(row['CellH5 object index'])
+            prediction = numpy.array(row['Predictions'])
             plate = row['Plate']
             well = row['Well']
             site = row['Site']
             sirna = row['siRNA ID']
             gene = row['Gene Symbol']
             
+            predictions.append(prediction)
             data_features.append(features)
             data_pca.append(pca)
             for _ in range(features.shape[0]):
                 sample_names.append((plate, well, site, sirna, gene))
             cellh5_list.append(cellh5idx)
             
+        predictions = numpy.concatenate(predictions)
+        predictions *= -1
         data_pca = numpy.concatenate(data_pca)
         data_features = numpy.concatenate(data_features)
         data_cellh5 = numpy.concatenate(cellh5_list)
   
         cf = self.cellh5_handles.values()[0]
         feature_names = cf.object_feature_def()
+        feature_names = [feature_names[ff] for ff in self._non_nan_feature_idx]
 
 
 
@@ -627,12 +728,30 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             
             img = CH5File.gallery_image_matrix_layouter(img_gens, shape)
             return img
-  
-        iscatter_widget = iscatter.IScatterWidget()
-        iscatter_widget.set_data(data_pca, pca_names, sample_names, 0, 1, data_cellh5, img_gen)
-    
         
+        features = numpy.c_[data_pca, data_features[:,self._non_nan_feature_idx], predictions]
+    
+        names = pca_names + feature_names + ['Outlier']
+  
+        def contour_eval(xlim, ylim, xdim, ydim):
+            xx, yy = numpy.meshgrid(numpy.linspace(xlim[0], xlim[1], 100), numpy.linspace(ylim[0], ylim[1], 100))
+            # Z = self.classifier.decision_function(numpy.c_[xx.ravel(), yy.ravel()])
+            matrix = numpy.zeros((100 * 100, self.pca_dims))
+            matrix[:, xdim] = xx.ravel()
+            matrix[:, ydim] = yy.ravel()
+            Z = self.classifier.decision_function(matrix)
+            return xx, yy, Z.reshape(xx.shape)
+        
+       
+        iscatter_widget = iscatter.IScatterWidget()
+        iscatter_widget.set_countour_eval_cb(contour_eval)
+        iscatter_widget.set_data(features, names, sample_names, 0, 1, data_cellh5, img_gen)
+    
         mw = iscatter.IScatter(iscatter_widget)
+        
+        
+        
+        
         mw.show()
         app.exec_()
         
@@ -737,6 +856,72 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             pylab.subplots_adjust(wspace=0.05, hspace=0.05)
             pylab.tight_layout()
             pylab.savefig(self.output("outlier_detection_pca_%d_vs_%d.pdf" %(f_x+1, f_y+1)))   
+            
+            
+    def make_outlier_galleries_per_pos_per_class(self, prefix_lut=None):  
+        group = self.mapping[(self.mapping['Object count'] > 0)].groupby(('Plate', 'Well'))
+
+        for grp, grp_values in group:
+            if prefix_lut is None:
+                pass
+            elif not  (grp_values['Plate'].unique()[0],  grp_values['Well'].unique()[0]) in prefix_lut:
+                continue
+
+            for _, (plate_name, well, site, ge, si, prediction, hyper, ch5_ind) in grp_values[['Plate', 'Well', 'Site', 'Gene Symbol', 'siRNA ID', 'Predictions', "Hyperplane distance", "CellH5 object index"]].iterrows():
+                in_ch5_index = ch5_ind[prediction == 1]
+                in_dist =  hyper[prediction == 1]
+                in_sorted_ch5_index = zip(*sorted(zip(in_dist, in_ch5_index), reverse=True))
+                if len(in_sorted_ch5_index) > 1:
+                    in_sorted_ch5_index = in_sorted_ch5_index[1]
+                else:
+                    in_sorted_ch5_index = []
+                    
+                out_ch5_index = ch5_ind[prediction == -1]
+                out_dist =  hyper[prediction == -1]
+                out_sorted_ch5_index = zip(*sorted(zip(out_dist, out_ch5_index), reverse=True))
+                if len(out_sorted_ch5_index) > 1:
+                    out_sorted_ch5_index = out_sorted_ch5_index[1]
+                else:
+                    out_sorted_ch5_index = []
+                
+                  
+                cf = self.cellh5_handles[plate_name]
+                class_def = cf.class_definition('primary__primary')["label"]
+
+                cp = cf.get_position(well, str(site))  
+                
+                class_pred = cp.get_class_prediction()['label_idx']
+                
+                inlier_img = []
+                outlier_img = []
+                for l in range(len(class_def)):
+                    this_class = numpy.nonzero(class_pred == l)[0]
+                    tmp_idx = []
+                    for in_idx in in_sorted_ch5_index:
+                        if in_idx in this_class:
+                            tmp_idx.append(in_idx)
+                    inlier_img.append(cp.get_gallery_image_matrix(tmp_idx, (8, 32)).swapaxes(1,0))
+                    inlier_img.append(numpy.ones((inlier_img[0].shape[0],3))*255)
+                                        
+                    tmp_idx = []
+                    for out_idx in out_sorted_ch5_index:
+                        if out_idx in this_class:
+                            tmp_idx.append(out_idx)
+                    outlier_img.append(cp.get_gallery_image_matrix(tmp_idx, (8, 32)).swapaxes(1,0))
+                    outlier_img.append(numpy.ones((outlier_img[0].shape[0],3))*255)
+                
+                inlier_img = numpy.concatenate(inlier_img, 1)
+                outlier_img = numpy.concatenate(outlier_img, 1)
+                
+                img = numpy.concatenate((inlier_img, numpy.ones((3, inlier_img.shape[1]))*255, outlier_img))
+                   
+                if prefix_lut is None:
+                    img_name = 'xcgal_%s_%s_%s_.png' % (plate_name, str(well) , str(site))
+                else:
+                    img_name = '%s_%s_%s_%s_%s.png' % ((prefix_lut[well, site],) + (plate_name, str(well) , str(site)))
+                vigra.impex.writeImage(img, self.output(img_name))
+                if DEBUG:
+                    print 'Exporting gallery matrix image for', info 
         
     def make_outlier_galleries(self, prefix_lut=None):  
         group = self.mapping[(self.mapping['Object count'] > 0)].groupby(('Plate', 'Well'))
@@ -754,16 +939,16 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 continue
 
             for _, (plate_name, well, site, ge, si, prediction, hyper, ch5_ind) in grp_values[['Plate', 'Well', 'Site', 'Gene Symbol', 'siRNA ID', 'Predictions', "Hyperplane distance", "CellH5 object index"]].iterrows():
-                in_ch5_index = ch5_ind[prediction == -1]
-                in_dist =  hyper[prediction == -1]
+                in_ch5_index = ch5_ind[prediction == 1]
+                in_dist =  hyper[prediction == 1]
                 in_sorted_ch5_index = zip(*sorted(zip(in_dist, in_ch5_index), reverse=True))
                 if len(in_sorted_ch5_index) > 1:
                     in_sorted_ch5_index = in_sorted_ch5_index[1]
                 else:
                     in_sorted_ch5_index = []
                     
-                out_ch5_index = ch5_ind[prediction == 1]
-                out_dist =  hyper[prediction == 1]
+                out_ch5_index = ch5_ind[prediction == -1]
+                out_dist =  hyper[prediction == -1]
                 out_sorted_ch5_index = zip(*sorted(zip(out_dist, out_ch5_index), reverse=True))
                 if len(out_sorted_ch5_index) > 1:
                     out_sorted_ch5_index = out_sorted_ch5_index[1]
@@ -784,8 +969,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             
             for index_tpl_in, index_tpl_out, info in zip(pl_in_index_tpl, pl_on_index_tpl, pl_info): 
                 cf = self.cellh5_handles[plate_name]
-                outlier_img = cf.get_gallery_image_matrix(index_tpl_in, (15, 10)).swapaxes(1,0)
-                inlier_img = cf.get_gallery_image_matrix(index_tpl_out, (15, 10)).swapaxes(1,0)
+                outlier_img = cf.get_gallery_image_matrix(index_tpl_in, (30, 20)).swapaxes(1,0)
+                inlier_img = cf.get_gallery_image_matrix(index_tpl_out, (30, 20)).swapaxes(1,0)
                 
                 img = numpy.concatenate((inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
                 assert plate_name == info[0]
@@ -794,7 +979,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 else:
                     img_name = '%s_%s_%s_%s_%s.png' % ((prefix_lut[info[0], info[1]],) + info)
                 vigra.impex.writeImage(img, self.output(img_name))
-                print 'Exporting gallery matrix image for', info
+                if DEBUG:
+                    print 'Exporting gallery matrix image for', info
 
                 
 class SaraOutlier(object):
@@ -831,8 +1017,8 @@ class SaraOutlier(object):
         except:
             print "@!#$!"*100
             idx = numpy.zeros((len(pp),), dtype=numpy.bool)
-        
-        print "  %s_%s" % (pos.well, pos.pos), "%d/%d" % (idx.sum(), len(idx)),  'are live mitotic'
+        if DEBUG:
+            print "  %s_%s" % (pos.well, pos.pos), "%d/%d" % (idx.sum(), len(idx)),  'are live mitotic'
         
         # Export images for live mitotic cells
         if False:
@@ -869,63 +1055,87 @@ class SaraOutlier(object):
         self.od.predict()
         self.od.compute_outlyingness()
         
-        #self.od.cluster_outliers()                    
-        #self.od.interactive_plot()
         
-       
+        #self.od.cluster_outliers()                    
+        self.od.interactive_plot()
+        
         
         self.od.make_top_hit_list()
         #self.od.make_hit_list_single_feature('roisize')
         self.od.make_heat_map()
         #self.od.make_outlier_galleries()
-        print 'Results:', self.od.output_dir
+        if DEBUG:
+            print 'Results:', self.od.output_dir
         os.startfile(os.path.join(os.getcwd(), self.od.output_dir))
       
 class MatthiasOutlier(object):
     def __init__(self, name, mapping_files, ch5_files, rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
         if True:
-            self.od = self._init(name, mapping_files, ch5_files, rows=rows, cols=cols, locations=locations, gamma=gamma, nu=nu, pca_dims=pca_dims, kernel=kernel)
-        else:
-            for kernel in ['linear', 'rbf']:
-                for nu in [0.05, 0.2]:
-                    for pca_dims in [2, 20, 100, 239]:
-                        for gamma in [0.01, 0.005]:
-                            self.od = self._init(name, mapping_files, ch5_files, rows=rows, cols=cols, locations=locations, gamma=gamma, nu=gamma, pca_dims=pca_dims, kernel=kernel)
+            self.od = self._init(name, mapping_files, ch5_files, rows=rows, cols=cols, locations=locations)
+            self.od.set_gamma(gamma)
+            self.od.set_nu(nu)
+            self.od.set_pca_dims(pca_dims)
+            self.od.set_kernel(kernel)
+            self.od.train_pca()
+            self.od.predict_pca()
+            self.od.train()
+            self.od.predict()
+            self.od.compute_outlyingness()
+            print self.od.evaluate()
+            self.od.make_outlier_galleries_per_pos_per_class()
             
+            
+        else:
+            result = {}
+            self.od = self._init(name, mapping_files, ch5_files, rows=rows, cols=cols, locations=locations)
+            for kernel in ['rbf', 'linear']:
+                for nu in [0.05, 0.1, 0.2]:
+                    for pca_dims in [10, 100, 239]:
+                        for gamma in [0.001, 0.0001, 0.00001, 0.000001]:
+                            self.od.set_nu(nu)
+                            self.od.set_gamma(gamma)
+                            self.od.set_pca_dims(pca_dims)
+                            self.od.set_kernel(kernel)
+                            self.od.train_pca()
+                            self.od.predict_pca()
+                            self.od.train()
+                            self.od.predict()
+                            self.od.compute_outlyingness()
+                            tmp = self.od.evaluate()
+                            result[(kernel, nu, pca_dims, gamma)] = tmp
+                            print (kernel, nu, pca_dims, gamma), '----->', tmp
+                            
+            for k, rank in enumerate(sorted([(result[k],k) for k in result], reverse=True)):
+                print rank
+                if k > 30:
+                    break
         
-        
-        
-        
-    def _init(self, name, mapping_files, ch5_files, rows, cols, locations, gamma, nu, pca_dims, kernel):
-        self.od = OutlierDetection(name,
+    def _init(self, name, mapping_files, ch5_files, rows, cols, locations):
+        od = OutlierDetection(name,
                                   mapping_files,
                                   ch5_files,
                                   rows=rows,
                                   cols=cols,
                                   locations=locations,
-                                  gamma=gamma,
-                                  nu=nu,
-                                  pca_dims=pca_dims,
-                                  kernel=kernel
                                   )
-        self.od.set_read_feature_time_predicate(numpy.greater, 7)
-        self.od.read_feature()
-        self.od.train_pca()
-        self.od.predict_pca()
-        self.od.train()
-        self.od.predict()
-        self.od.compute_outlyingness()
         
+        greater_equal = lambda x, cv: numpy.logical_and(numpy.greater(x, cv[0]), numpy.less(x, cv[1]))
+        od.set_read_feature_time_predicate(greater_equal, (7,12))
+        #od.set_read_feature_time_predicate(numpy.equal, 7)
+        od.read_feature()
+        
+        return od
+
         #self.od.cluster_outliers()                    
         #self.od.make_pca_scatter()
+        #self.od.interactive_plot()
+        #self.od.make_outlier_galleries()
         
-        self.od.make_heat_map()
-        self.od.make_hit_list()
-        self.od.make_outlier_galleries()
-        print 'Results:', self.od.output_dir
-        os.startfile(os.path.join(os.getcwd(), self.od.output_dir))
-
-    
+        #self.od.make_heat_map()
+        #self.od.make_hit_list()
+        #self.od.make_outlier_galleries()
+        #print 'Results:', self.od.output_dir
+        #os.startfile(os.path.join(os.getcwd(), self.od.output_dir))
     
 def run_exp(name, lookup, analysis_class):
     ac = analysis_class(name, **lookup[name])
@@ -936,62 +1146,67 @@ if __name__ == "__main__":
                      {
                       'mapping_files' : {
                         'SP_9': 'F:/sara_adhesion_screen/sp9.txt',
-                        'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
-                        'SP_7': 'F:/sara_adhesion_screen/sp7.txt',
-                        'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
-                        'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
-                        'SP_4': 'F:/sara_adhesion_screen/sp4.txt',
+#                         'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
+#                         'SP_7': 'F:/sara_adhesion_screen/sp7.txt',
+#                         'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
+#                         'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
+#                         'SP_4': 'F:/sara_adhesion_screen/sp4.txt',
                         'SP_3': 'F:/sara_adhesion_screen/sp3.txt',
-                        'SP_2': 'F:/sara_adhesion_screen/sp2.txt',
-                        'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
+#                         'SP_2': 'F:/sara_adhesion_screen/sp2.txt',
+#                         'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
                                         },
                       'ch5_files' : {
                             'SP_9': 'F:/sara_adhesion_screen/sp9__all_positions_with_data_combined.ch5',
-                            'SP_8': 'F:/sara_adhesion_screen/sp8__all_positions_with_data_combined.ch5',
-                            'SP_7': 'F:/sara_adhesion_screen/sp7__all_positions_with_data_combined.ch5',
-                            'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
-                            'SP_5': 'F:/sara_adhesion_screen/sp5__all_positions_with_data_combined.ch5',
-                            'SP_4': 'F:/sara_adhesion_screen/sp4__all_positions_with_data_combined.ch5',
+#                             'SP_8': 'F:/sara_adhesion_screen/sp8__all_positions_with_data_combined.ch5',
+#                             'SP_7': 'F:/sara_adhesion_screen/sp7__all_positions_with_data_combined.ch5',
+#                             'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
+#                             'SP_5': 'F:/sara_adhesion_screen/sp5__all_positions_with_data_combined.ch5',
+#                             'SP_4': 'F:/sara_adhesion_screen/sp4__all_positions_with_data_combined.ch5',
                             'SP_3': 'F:/sara_adhesion_screen/sp3__all_positions_with_data_combined.ch5',
-                            'SP_2': 'F:/sara_adhesion_screen/sp2__all_positions_with_data_combined.ch5',
-                            'SP_1': 'F:/sara_adhesion_screen/sp1__all_positions_with_data_combined.ch5',
+#                             'SP_2': 'F:/sara_adhesion_screen/sp2__all_positions_with_data_combined.ch5',
+#                             'SP_1': 'F:/sara_adhesion_screen/sp1__all_positions_with_data_combined.ch5',
                                         },
-#                     'locations' : (
-#                           ("A",  1), ("B", 8), ("C", 8), ("D", 8),
+                    'locations' : (
+                          ("F",  19), ("B", 8), ("H", 9), ("D", 8),
 #                           ("H", 6), ("H", 7), ("G", 6), ("G", 7),
 #                           ("H",12), ("H",13), ("G",12), ("G",13),
-#                       ),
-                      'rows' : list("ABCDEFGHIJKLMNOP")[:],
-                      'cols' : tuple(range(1,24)),
+                      ),
+#                       'rows' : list("ABCDEFGHIJKLMNOP")[3:],
+#                       'cols' : tuple(range(1,4)),
                       'gamma' : 0.005,
                       'nu' : 0.10,
                       'pca_dims' : 239,
                       'kernel' :'rbf'
                      },
+                 
+                 
                  'matthias_od':
                      {
                       'mapping_files' : {
                             '002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/mapping/MD9_Grape_over_Time.txt',
                                        },
                       'ch5_files' : {
-                            '002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/analysis/hdf5/_all_positions.ch5',
+                            '002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/analysis_outlier_3/hdf5/_all_positions.ch5',
                                         },
-                      'locations' : (
-                              ("A",  8), ("B", 8), ("C", 8), ("D", 8),
-                              ("H", 6), ("H", 7), ("G", 6), ("G", 7),
-                              ("H",12), ("H",13), ("G",12), ("G",13),
-                                    ),
+#                     'locations' : (
+#                             ("A",  8), ("B", 8), ("C", 8), ("D", 8),
+#                             ("H", 6), ("H", 7), ("G", 6), ("G", 7),
+#                             ("H",12), ("H",13), ("G",12), ("G",13),
+#                                   ),
 #                       'rows' : list("ABCDEFGHIJKLMNOP")[:3],
-#                       'cols' : tuple(range(1,3)),
-                      'gamma' : 0.0005,
-                      'nu' : 0.15,
-                      'pca_dims' : 239,
-                      'kernel' :'rbf'
+                        'cols' : tuple(range(19,25)),
+                      'gamma' : 0.0001,
+                      'nu' : 0.10,
+                      'pca_dims' : 68,
+                      'kernel' :'linear'
+#                       'gamma' : 0.005,
+#                       'nu' : 0.12,
+#                       'pca_dims' : 100,
+#                       'kernel' :'rbf'
                      }
                   }
     
-    run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
-    #run_exp('matthias_od', EXPLOOKUP, MatthiasOutlier)
-
+    #run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
+    run_exp('matthias_od', EXPLOOKUP, MatthiasOutlier)
 
     print 'finished'

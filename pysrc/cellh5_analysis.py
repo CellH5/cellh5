@@ -2,6 +2,7 @@ import numpy
 import cellh5
 import pandas
 import os
+import sys
 import collections
 import functools
 import time
@@ -10,12 +11,23 @@ import datetime
 import pylab
 from collections import OrderedDict
 from itertools import izip_longest
-from matplotlib.mlab import PCA
+from matplotlib.mlab import PCA as PCAold
+from sklearn.decomposition import PCA, KernelPCA
 from matplotlib.backends.backend_pdf import PdfPages
 from sklearn import hmm
 import csv
 from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
 hmm.normalize = lambda A, axis=None: normalize(A, axis, eps=10e-99)
+
+import logging
+log = logging.getLogger(__name__)
+ch = logging.StreamHandler(sys.stdout)
+ch.setLevel(logging.DEBUG)
+log.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+log.addHandler(ch)
+
 
 def hex_to_rgb(hex_string):
     """
@@ -84,12 +96,13 @@ class CellH5Analysis(object):
     def set_output_dir(self, output_dir):
         if self.output_dir is None:
             self.output_dir = self.name +"/" + datetime.datetime.now().strftime("%y-%m-%d-%H-%M")
-            #self.output_dir += "-p%d-k%s-n%f-g%f" % (self.pca_dims, self.kernel, self.nu, self.gamma)
+#             if self.gamma is not None:
+#                 self.output_dir += "-o%s-p%d-k%s-n%f-g%f" % (self.feature_set, self.pca_dims, self.kernel, self.nu, self.gamma)
             try:
                 os.makedirs(self.output_dir)
             except:
                 pass
-        print "Output Directory: ", self.output_dir
+        log.info("Output Directory: " + self.output_dir)
         
 
     def output(self, file_):
@@ -124,7 +137,7 @@ class CellH5Analysis(object):
             
             event_id_list.append(event_ids)
             event_label_list.append([cellh5pos.get_class_label(e) for e in event_ids])
-            print "Read events from ch5:", plate, w, p, "with", list(self.get_treatment(plate, w, p))
+            log.info("Read events from ch5: %r %r %r with %r" % (plate, w, p, list(self.get_treatment(plate, w, p))))
             cellh5file.close()
         self.mapping['Event labels'] = pandas.Series(event_label_list)
         self.mapping['Event ids'] = pandas.Series(event_id_list)
@@ -161,7 +174,7 @@ class CellH5Analysis(object):
                 track_id_list.append(track_ids)
             all_track_ids.append(track_id_list)
             all_track_labels.append(track_labels_list)
-            print "Tracking events from ch5:", plate, w, p, "with", list(self.get_treatment(plate, w, p))
+            log.info("Tracking events from ch5: %r %r %r with %r" % (plate, w, p, "with", list(self.get_treatment(plate, w, p))))
             cellh5file.close()
         self.mapping['Event track labels'] = pandas.Series(all_track_labels)
         self.mapping['Event track ids'] = pandas.Series(all_track_ids)
@@ -211,11 +224,11 @@ class CellH5Analysis(object):
         self.hmm._set_emissionprob(est.emis)
                
     def predict_hmm(self, class_selector='Event track labels'):
-        print 'Predict hmm',
+        log.info('Predict hmm')
         self.mapping['Event HMM track labels'] = -1 
         all_hmm_labels_list = []
-        for _, (plate, w, p, track_labs) in self.mapping[['Plate', 'Well', 'Site', class_selector]].iterrows(): 
-            print plate, w, p 
+        for _, (plate, w, p, track_labs) in self.mapping[['Plate', 'Well', 'Site', class_selector]].iterrows():
+            log.info("  %r %r Rr" % (plate, w, p)) 
             hmm_labels_list = []
             for t in track_labs:   
                 hmm_class_labels = self.hmm.predict(numpy.array(t-1)) + 1
@@ -239,17 +252,21 @@ class CellH5Analysis(object):
     def train_pca(self, train_on=('neg', 'pos', 'target')):
         training_matrix = self.get_data(train_on)
         training_matrix = self.normalize_training_data(training_matrix)
-        print 'Compute PCA', 'found nans in features?', numpy.any(numpy.isnan(training_matrix))
-        self.pca = PCA(training_matrix)
+        log.info('Compute PCA: found NaNss in features after normalization? %r' % numpy.any(numpy.isnan(training_matrix)))
+#        self.pca = PCA(self.pca_dims)
+        self.pca = KernelPCA(self.pca_dims, kernel='rbf', gamma=self.gamma, fit_inverse_transform=False,)
+        self.pca.fit(training_matrix)
+        
+        #print "PCA dimension:", ", ".join(["%d for %4.2f" % (numpy.nonzero(self.pca.fracs.cumsum() >= fr)[0][0], fr) for fr in [0.8, 0.9, 0.95, 0.99]])
         
     def predict_pca(self):
-        print 'Project onto PC'
+        log.info('Project onto PC')
         def _project_on_pca(ma):
             if len(ma) == 0:
                 return numpy.NAN
             else:
                 ma = self._remove_nan_rows(ma)
-                return self.pca.project(ma)[:, :self.pca_dims]
+                return self.pca.transform(ma)[:, :self.pca_dims]
         res = pandas.Series(self.mapping['Object features'].map(_project_on_pca))
         self.mapping['PCA'] = res
     
@@ -282,8 +299,7 @@ class CellH5Analysis(object):
                 
                 feature_matrix = ch5_pos.get_object_features()
                 time_idx = ch5_pos['object']["primary__primary"]['time_idx']
-
-                print 'Reading', plate_name, well, site, len(feature_matrix), 'using time', self._rf_time_predicate_cmp.__name__, self._rf_time_predicate_value
+                log.info('Reading %r %r %r %r using time  %r  %r' %(plate_name, well, site, len(feature_matrix), self._rf_time_predicate_cmp.__name__, self._rf_time_predicate_value))
                 
                 if len(time_idx) > 0:
                     if self._rf_time_predicate_cmp is not None:
@@ -322,9 +338,9 @@ class CellH5Analysis(object):
     def get_data(self, target, type='Object features'):
         tmp = self.mapping[self.mapping['Group'].isin(target) & (self.mapping['Object count'] > 0)].reset_index()
         res = numpy.concatenate(list(tmp[type]))
-        print '**** get_data for', len(tmp['siRNA ID']), '***'
-        print tmp['siRNA ID'].unique(), res.shape
-        print '*************************'
+        log.info('get_data for %r positions' % len(tmp['siRNA ID']))
+        log.info('get_data for treatment %r with training matrix shape %r' % (list(tmp['siRNA ID'].unique()), res.shape))
+
         return res
     
     def normalize_training_data(self, data):
@@ -339,7 +355,7 @@ class CellH5Analysis(object):
          
         self._normalization_means = self._normalization_means[self._non_nan_feature_idx]
         self._normalization_stds = self._normalization_stds[self._non_nan_feature_idx]
-        print ' normalize: found nans?', numpy.any(numpy.isnan(data))
+        log.info(' normalize: found nans? %r' % numpy.any(numpy.isnan(data)))
         
         return data                        
         
@@ -468,7 +484,7 @@ class CellH5Analysis(object):
                     
 
                 else:
-                    print plate, w, p, 'Track has len zero. Nothing to plot'
+                    log.warning("%r %r %r 'Track has len zero. Nothing to plot'" % (plate, w, p)) 
                     
     def plot_mitotic_timing(self, track_selector):        
         pp = PdfPages(self.output('_mitotic_timing.pdf'))
