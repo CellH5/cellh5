@@ -204,7 +204,7 @@ class CH5Position(object):
         return path in fh
 
     def get_crack_contour(self, index, object_='primary__primary',
-                          bb_corrected=True):
+                          bb_corrected=True, size=GALLERY_SIZE):
         index = to_index_array(index)
         crack_list = []
         for ind in index:
@@ -215,9 +215,9 @@ class CH5Position(object):
 
             if bb_corrected:
                 bb = self['feature'][object_]['center'][ind]
-                crack[:,0] -= bb['x'] - GALLERY_SIZE/2
-                crack[:,1] -= bb['y'] - GALLERY_SIZE/2
-                crack.clip(0, GALLERY_SIZE)
+                crack[:,0] -= bb['x'] - size/2
+                crack[:,1] -= bb['y'] - size/2
+                crack = crack.clip(0, size)
 
             crack_list.append(crack)
 
@@ -245,7 +245,8 @@ class CH5Position(object):
                     ['channel'] \
                     [c, t, z, :, :]
 
-    def get_gallery_image(self, index, object_='primary__primary', size=GALLERY_SIZE):
+    def get_gallery_image(self, index,
+                          object_='primary__primary', size=GALLERY_SIZE):
         index = to_index_array(index)
         images = list()
 
