@@ -34,7 +34,7 @@ version_num = (1, 0, 0)
 version = '.'.join([str(n) for n in version_num])
 
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
-GALLERY_SIZE = 60
+GALLERY_SIZE = 80
 
 
 def hex2rgb(color, mpl=False):
@@ -341,6 +341,35 @@ class CH5Position(object):
 
         return image
 
+    def get_gallery_image_matrix_with_classification(self, index, shape, object_='primary__primary'):
+        image = numpy.zeros((GALLERY_SIZE * shape[0],
+                             GALLERY_SIZE * shape[1], 3), dtype=numpy.uint8)
+        i,j = 0, 0
+        img_gen = self.get_gallery_image_generator(index, object_)
+        class_colors = self.get_class_color(index)
+        cnt = 0
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                try:
+                    img = img_gen.next()
+                    color = class_colors[cnt]
+                    cnt+=1
+                except StopIteration:
+                    break
+                a = i * GALLERY_SIZE
+                b = j * GALLERY_SIZE
+                c = a + GALLERY_SIZE
+                d = b + GALLERY_SIZE
+
+                if (c,d) > image.shape:
+                    break
+                for c in range(3): image[a:c, b:d, c] = img
+                
+                col_rgb = hex2rgb(color)
+                for c in range(3): image[a:a+10, b:b+10, c] = col_rgb[c]
+
+        return image
+
     def get_gallery_image_contour(self, index, object_=('primary__primary',), color=None, scale=None):
         img = self.get_gallery_image_rgb(index, object_)
         if scale is not None:
@@ -387,6 +416,11 @@ class CH5Position(object):
         index = to_index_array(index)
         center_list = self.get_feature_table(object_, 'center')[index]
         return center_list
+    
+    def get_orientation(self, index, object_='primary__primary'):
+        index = to_index_array(index)
+        angle_list = self.get_feature_table(object_, 'orientation')[index]['angle']
+        return angle_list
 
     def get_class_color(self, index, object_='primary__primary'):
         if not self.has_classification(object_):
@@ -762,6 +796,10 @@ class CH5File(object):
     def get_gallery_image_matrix(self, index_tpl, shape, object_='primary__primary'):
         img_gen = self.gallery_image_matrix_gen(index_tpl=index_tpl, object_=object_)
         return CH5File.gallery_image_matrix_layouter(img_gen, shape)
+    
+    def get_gallery_image_matrix_with_classification(self, index_tpl, shape, object_='primary__primary'):
+        img_gen = self.gallery_image_matrix_gen(index_tpl=index_tpl, object_=object_)
+        return CH5File.gallery_image_matrix_layouter(img_gen, shape)
 
     def close(self):
         self._file_handle.close()
@@ -770,7 +808,7 @@ class CH5File(object):
 class CH5MappedFile(CH5File):
     def read_mapping(self, mapping_file, sites=None, rows=None, cols=None, locations=None, plate_name=''):
         self.mapping_file = mapping_file
-        self.mapping = pandas.read_csv(self.mapping_file, sep='\t')
+        self.mapping = pandas.read_csv(self.mapping_file, sep='\t', dtype={'Well': str})
         self.mapping['Plate'] = plate_name
 
         if sites is not None:
@@ -781,9 +819,8 @@ class CH5MappedFile(CH5File):
             self.mapping = self.mapping[self.mapping['Column'].isin(cols)]
 
         if locations is not None:
-
             self.mapping = self.mapping[reduce(pandas.Series.__or__,
-                                               [self.mapping['Row'].isin(c) & \
+                                               [(self.mapping['Row'] == c) & \
                                                     (self.mapping['Column'] == r)
                                                 for c, r in locations])]
 

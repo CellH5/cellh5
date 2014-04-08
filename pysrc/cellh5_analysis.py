@@ -253,8 +253,8 @@ class CellH5Analysis(object):
         training_matrix = self.get_data(train_on)
         training_matrix = self.normalize_training_data(training_matrix)
         log.info('Compute PCA: found NaNss in features after normalization? %r' % numpy.any(numpy.isnan(training_matrix)))
-#        self.pca = PCA(self.pca_dims)
-        self.pca = KernelPCA(self.pca_dims, kernel='rbf', gamma=self.gamma, fit_inverse_transform=False,)
+        self.pca = PCA(self.pca_dims)
+#        self.pca = KernelPCA(self.pca_dims, kernel='rbf', gamma=self.gamma, fit_inverse_transform=False,)
         self.pca.fit(training_matrix)
         
         #print "PCA dimension:", ", ".join(["%d for %4.2f" % (numpy.nonzero(self.pca.fracs.cumsum() >= fr)[0][0], fr) for fr in [0.8, 0.9, 0.95, 0.99]])
@@ -604,6 +604,63 @@ def test_event_tracking():
                     (0,1.5),
                     16)
     
+import vigra
+from itertools import izip
+from sklearn.neighbors import KernelDensity
+from sklearn.grid_search import GridSearchCV
+
+cellh5.GALLERY_SIZE = 100
+class CellH5EigenCell(CellH5Analysis):
+    def normalize_cell_images(self):
+        rot_images = []
+        for _, (plate, w, p) in self.mapping[['Plate', 'Well','Site']].iterrows(): 
+            try:
+                cellh5file = cellh5.CH5File(self.cellh5_files[plate])
+                cellh5pos = cellh5file.get_position(w, str(p))
+            except:
+                print "Positon", (w, p), "is corrupt. Process again with CellCognition"
+                cellh5file.close()
+                continue
+            
+            obj_idx = xrange(len(cellh5pos.get_object_table('primary__primary')['obj_label_id']))
+            orientation =  cellh5pos.get_orientation(obj_idx)[0]
+            
+            cnt = 0
+            for cell_gal, orient in izip(cellh5pos.get_gallery_image_generator(obj_idx), orientation):
+                rot_img = vigra.sampling.rotateImageRadiant( cell_gal.astype(numpy.float32), orient)[30:-30,30:-30].reshape(1, 3600)
+                rot_images.append(rot_img)
+                cnt+=1
+#                 if cnt > 10:
+#                     break
+                
+        rot_images = numpy.concatenate(rot_images)
+        print rot_images.shape 
+            
+        pca = PCA(n_components=1000, whiten=False)
+        data = pca.fit_transform(rot_images)
+        
+        params = {'bandwidth': numpy.logspace(-1, 3, 10)}
+        grid = GridSearchCV(KernelDensity(), params)
+        grid.fit(data)
+        
+        print "best bandwidth: {0}".format(grid.best_estimator_.bandwidth)
+        
+        # use the best estimator to compute the kernel density estimate
+        kde = grid.best_estimator_
+        
+        # sample 44 new points from the data
+        new_data = kde.sample(100, random_state=41)
+        new_data = pca.inverse_transform(new_data).reshape((-1,60,60))
+        
+        pylab.figure()
+        for i in range(100):
+            ax = pylab.subplot(10,10, i)
+            ax.imshow(new_data[i,:,:], interpolation='nearest', clim=(0, 196), cmap='gray' )
+            pylab.axis('off')
+        pylab.show()
+
+        
+    
 def test_features_pca(): 
     pm = CellH5Analysis('test_features_pca', 
                         {'SP_9': "F:/sara_adhesion_screen/sp9.txt"}, 
@@ -618,8 +675,24 @@ def test_features_pca():
     pm.train_pca()
     pm.predict_pca()
     
+def test_eigen_cell():
+    ec = CellH5EigenCell('test_eigen_cell', 
+                        {'002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/mapping/MD9_Grape_over_Time.txt'}, 
+                        {'002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/analysis_outlier_3/hdf5/_all_positions.ch5'},
+                        locations=(
+                                    ("B",  13),
+#                                    ("B",  19),
+#                                    ("C",  19),
+                                   ), 
+                        )
+    
+    ec.set_read_feature_time_predicate(numpy.equal, 0)
+    ec.normalize_cell_images()
+
+    
     
 
 if __name__ == '__main__':
-    test_event_tracking()
+    test_eigen_cell()
+#     test_event_tracking()
     

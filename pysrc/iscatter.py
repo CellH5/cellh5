@@ -7,6 +7,7 @@ from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg
 from matplotlib.patches import Rectangle
 
 import resources
+from functools import partial
 
 from matplotlib import rcParams
 
@@ -106,7 +107,7 @@ class IScatterWidget(QtGui.QWidget):
         self.figure = Figure()
         self.figure.patch.set_alpha(0)
         self.canvas = FigureCanvasQTAgg(self.figure)
-        self.axes = self.figure.add_subplot(111)
+        self.axes = self.figure.add_subplot(111, adjustable='box')
         self.contour_eval_func = None
 
         self.selector = RectangleSelector(self.axes, self.selector_cb,
@@ -114,28 +115,38 @@ class IScatterWidget(QtGui.QWidget):
                                        button=[1,],
                                        minspanx=5, minspany=5,
                                        spancoords='pixels',
-                                       lineprops=dict(color='white', linestyle='-',
+                                       lineprops=dict(color='orange', linestyle='-',
                                                     inewidth = 2, alpha=0.5),
-                                       rectprops = dict(facecolor='white', edgecolor = 'white',
+                                       rectprops = dict(facecolor='orange', edgecolor = 'orange',
                                                         alpha=0.5, fill=True))
         
-        layout = QtGui.QVBoxLayout()
+        layout = QtGui.QHBoxLayout()
         layout.addWidget(self.canvas)
         
         axis_selector = QtGui.QWidget(self)
-        axis_selector_layout = QtGui.QHBoxLayout()
+        axis_selector_layout = QtGui.QVBoxLayout()
+        
+        self.sample_selection_dct = {}
+        for sample_selection in ['Plate', 'Well', 'Site', 'Treatment 1', 'Treatment 2']:
+            axis_selector_layout.addWidget(QtGui.QLabel(sample_selection))
+            self.sample_selection_dct[sample_selection] = QtGui.QComboBox(self)
+            axis_selector_layout.addWidget(self.sample_selection_dct[sample_selection])
+            self.sample_selection_dct[sample_selection].addItem("All")
+            
+            self.sample_selection_dct[sample_selection].currentIndexChanged[str].connect(partial(self.sample_selection_changed, sample_selection))
+        axis_selector_layout.addStretch()
         
         axis_selector_layout.addWidget(QtGui.QLabel("X:"))
         self.axis_x_cmb = QtGui.QComboBox(self)
         axis_selector_layout.addWidget(self.axis_x_cmb)
         
-        axis_selector_layout.addStretch()
+
         
         axis_selector_layout.addWidget(QtGui.QLabel("Y:"))
         self.axis_y_cmb = QtGui.QComboBox(self)
         axis_selector_layout.addWidget(self.axis_y_cmb)
         
-        axis_selector_layout.addStretch()
+
         
         
         self.axis_c_label = QtGui.QLabel("C:")
@@ -155,6 +166,21 @@ class IScatterWidget(QtGui.QWidget):
         self.setLayout(layout)
         
         self.canvas.mpl_connect('scroll_event', self.mouse_wheel_zoom)
+        
+        
+    def sample_selection_changed(self, type_, idx):
+        self.sample_selection = [True] * len(self.sample_selection)
+        lkp_tmp = dict([v, u] for u, v in enumerate(['Plate', 'Well', 'Site', 'Treatment 1', 'Treatment 2']))
+        for cur_sel_type, cur_sel_box in self.sample_selection_dct.items():
+            cur_sel = str(cur_sel_box.currentText())
+            if cur_sel.startswith('All'):
+                continue
+            for i, s in enumerate(self.sample_ids):
+                if not s[lkp_tmp[cur_sel_type]].startswith(cur_sel):
+                    self.sample_selection[i] = False
+                        
+        self.update_axis()
+        
         
     def set_countour_eval_cb(self, contour_eval_func):
         self.contour_eval_func = contour_eval_func
@@ -226,6 +252,9 @@ class IScatterWidget(QtGui.QWidget):
         self.data_names = data_names
         self.data_ch5_idx = data_ch5_idx
         self.sample_ids = sample_ids
+        self.sample_selection = [True] * len(sample_ids) 
+        
+        self.fill_selection_boxes()
         
         assert self.data_matrix.shape[0] == len(self.sample_ids)
         assert self.data_matrix.shape[1] == len(self.data_names)
@@ -249,6 +278,13 @@ class IScatterWidget(QtGui.QWidget):
         self.axis_y_cmb.currentIndexChanged.connect(self.axis_y_changed)
         self.axis_c_cmb.currentIndexChanged.connect(self.axis_c_changed)
         self.axis_c_chk.stateChanged.connect(self.axis_c_toggled)
+        
+    def fill_selection_boxes(self):
+        s = zip(*self.sample_ids)
+        for i, s_name in enumerate(['Plate', 'Well', 'Site', 'Treatment 1', 'Treatment 2']): 
+            for each in numpy.unique(s[i]):
+                self.sample_selection_dct[s_name].addItem(str(each))
+
          
     def axis_x_changed(self, x_dim):
         self.x_dim = x_dim
@@ -328,6 +364,10 @@ class IScatterWidget(QtGui.QWidget):
         self.axes.set_xlabel(self.data_names[self.x_dim])
         self.axes.set_ylabel(self.data_names[self.y_dim])
         
+        self.axes.set_aspect(abs((f_0_max-f_0_min)/(f_1_max-f_1_min))/1)
+
+        
+        
 
 class IScatterWidgetHisto(IScatterWidget):
     def __init__(self, *args, **kwargs):
@@ -341,15 +381,17 @@ class IScatterWidgetHisto(IScatterWidget):
         
     def update_axis(self):
         self.axes.clear()
-        self.data = [DataPoint(xy[0], xy[1], self.data_ch5_idx[i], False) 
-                     for i, xy in enumerate(self.data_matrix[:, [self.x_dim, self.y_dim]])]
+        self.data = [DataPoint(xy[0], xy[1], self.data_ch5_idx[i], False)
+                     for i, xy in enumerate(self.data_matrix[:, [self.x_dim, self.y_dim]]) ]
         self.Nxy = len(self.data)
             
-        self.xs = [d.x for d in self.data]
-        self.ys = [d.y for d in self.data]
+        self.xs = numpy.array([d.x for d in self.data])
+        self.ys = numpy.array([d.y for d in self.data])
         self.xys = zip(self.xs, self.ys)
           
-        hist_img = numpy.histogram2d(self.xs, self.ys, bins=64)
+        tmp_idx = numpy.nonzero(self.sample_selection)[0]  
+          
+        hist_img = numpy.histogram2d(self.xs[tmp_idx], self.ys[tmp_idx], bins=64)
         img = numpy.flipud(hist_img[0].swapaxes(1,0))
         img[img>0] **= self.gamma_cor
         max_rel = img.max()
@@ -357,23 +399,20 @@ class IScatterWidgetHisto(IScatterWidget):
                                                                             hist_img[1].max(),
                                                                             hist_img[2].min(),
                                                                             hist_img[2].max()), 
-                                                                            cmap='gist_heat',
+                                                                            cmap='Greys',
                                                                             clim=(0, max_rel))
 
-        if self.cbar is None:
-            self.cbar = self.figure.colorbar(aximg)
-        else:
-            self.cbar.update_bruteforce(aximg)
-
-        
-        tmp= []
-        for t in self.cbar.ax.get_yticklabels():
-            tmp.append(int(float(t.get_text())**(1/self.gamma_cor)))
-        self.cbar.ax.set_yticklabels(tmp)
-        
-        im = self.axes.get_images()
-        extent =  im[0].get_extent()
-        self.axes.set_aspect(abs((extent[1]-extent[0])/(extent[3]-extent[2]))/1)
+#         if self.cbar is None:
+#             self.cbar = self.figure.colorbar(aximg)
+#         else:
+#             self.cbar.update_bruteforce(aximg)
+#             
+# 
+#         tmp= []
+#         for t in self.cbar.ax.get_yticklabels():
+#             tmp.append(int(float(t.get_text())**(1/self.gamma_cor)))
+#         self.cbar.set_ticks([0, tmp[-1]])
+#         self.cbar.set_ticklabels(["%3d" % t for t in [0, tmp[-1]]])
         self.update_axis_lims()
         
         self.figure.tight_layout()
@@ -389,11 +428,13 @@ class IScatterWidgetHisto(IScatterWidget):
         ind = numpy.array([True if ((x > x_min) and 
                                     (x < x_max) and
                                     (y > y_min) and 
-                                    (y < y_max)) 
-                                    else False for x, y in self.xys])
+                                    (y < y_max) and
+                                    self.sample_selection[k]
+                                    ) 
+                                    else False for k, (x, y) in enumerate(self.xys)])
                 
         self.canvas.draw()  
-        ids =  [self.data[k].ref for k in range(len(ind)) if ind[k]] 
+        ids =  [self.data[k].ref for k in range(len(self.xys)) if ind[k]] 
         print ind.sum(), 'objects selected with refs', ids
         self.update_image(ind) 
 
