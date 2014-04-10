@@ -868,22 +868,22 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
 #             pca = row['PCA']
             pca = self.mapping['PCA'].iloc[row_index][:,:20]
             cellh5idx = numpy.array(row['CellH5 object index'])
-            #prediction = numpy.array(row['Predictions'])
+            prediction = numpy.array(row['Predictions'])
             plate = row['Plate']
             well = row['Well']
             site = row['Site']
             sirna = row['siRNA ID']
             gene = row['Gene Symbol']
             
-            #predictions.append(prediction)
+            predictions.append(prediction)
             data_features.append(features)
             data_pca.append(pca)
             for _ in range(features.shape[0]):
                 sample_names.append((plate, well, site, sirna, gene))
             cellh5_list.append(cellh5idx)
             
-        #predictions = numpy.concatenate(predictions)
-        #predictions *= -1
+        predictions = numpy.concatenate(predictions)
+        predictions *= -1
         data_pca = numpy.concatenate(data_pca)
         data_features = numpy.concatenate(data_features)
         data_cellh5 = numpy.concatenate(cellh5_list)
@@ -916,9 +916,9 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             img = CH5File.gallery_image_matrix_layouter(img_gens, shape)
             return img
         
-        features = numpy.c_[data_pca, data_features[:,self._non_nan_feature_idx]]
+        features = numpy.c_[data_pca, data_features[:,self._non_nan_feature_idx], predictions]
     
-        names = pca_names + feature_names 
+        names = pca_names + feature_names  + ['Outliers']
   
         def contour_eval(xlim, ylim, xdim, ydim):
             xx, yy = numpy.meshgrid(numpy.linspace(xlim[0], xlim[1], 100), numpy.linspace(ylim[0], ylim[1], 100))
@@ -931,11 +931,11 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
        
         iscatter_widget = iscatter.IScatterWidgetHisto()
-        iscatter_widget.set_countour_eval_cb(contour_eval)
+        #iscatter_widget.set_countour_eval_cb(contour_eval)
         iscatter_widget.set_data(features, names, sample_names, 0, 1, data_cellh5, img_gen)
         
-        iscatter_widget2 = iscatter.IScatterWidgetHisto()
-        iscatter_widget2.set_countour_eval_cb(contour_eval)
+        iscatter_widget2 = iscatter.IScatterWidget()
+        #iscatter_widget2.set_countour_eval_cb(contour_eval)
         iscatter_widget2.set_data(features, names, sample_names, 0, 1, data_cellh5, img_gen)
     
         mw = iscatter.IScatter(iscatter_widget, iscatter_widget2)
@@ -1314,7 +1314,7 @@ class MatthiasOutlier(object):
         
         greater_less = lambda x, cv: numpy.logical_and(numpy.greater(x, cv[0]), numpy.less(x, cv[1]))
         #od.set_read_feature_time_predicate(numpy.equal, 7)
-        od.set_read_feature_time_predicate(greater_less, (7, 12))
+        od.set_read_feature_time_predicate(greater_less, (7, 9))
         od.read_feature()
         
         return od
@@ -1508,17 +1508,17 @@ if __name__ == "__main__":
                             '002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/analysis_outlier_3/hdf5/_all_positions.ch5',
                                         },
                     'locations' : (
-                                  ("A",  8), ("B", 8), ("C", 8), ("D", 8),
-                               ("H", 6), ("H", 7), ("G", 6), ("G", 7),
-                               ("H",12), ("H",13), ("G",12), ("G",13),
+#                                   ("A",  8), ("B", 8), ("C", 8), ("D", 8),
+#                                ("H", 6), ("H", 7), ("G", 6), ("G", 7),
+#                                ("H",12), ("H",13), ("G",12), ("G",13),
 
-#                                 ("A",  8), ("B", 8), ("C", 8), ("D", 8), ("E", 8),
-#                                 ("D",  13), ("F",  13), ("H",  13), # Taxol No Rev
-#                                 ("D",  7), ("F",  7), ("H",  7), # Noco No Rev 
-#                                 ("D",  12), ("F",  12), ("H",  12), # Taxol 300 Rev
-#                                 ("D",  6), ("F",  6), ("H",  6), # Noco 300 Rev
-#                                 ("D",  9), ("F",  9), ("H",  9), # Taxol 900 Rev
-#                                 ("D",  3), ("F",  3), ("H",  3), # Noco 900 Rev
+                                ("A",  8), ("B", 8), ("C", 8), ("D", 8), ("E", 8),
+                                ("D",  13), ("F",  13), ("H",  13), # Taxol No Rev
+                                ("D",  7), ("F",  7), ("H",  7), # Noco No Rev 
+                                ("D",  12), ("F",  12), ("H",  12), # Taxol 300 Rev
+                                ("D",  6), ("F",  6), ("H",  6), # Noco 300 Rev
+                                ("D",  9), ("F",  9), ("H",  9), # Taxol 900 Rev
+                                ("D",  3), ("F",  3), ("H",  3), # Noco 900 Rev
 #                                 
 #                                 ("J",  13), ("L",  13), ("N",  13), # Taxol No Rev
 #                                 ("J",  7), ("L",  7), ("N",  7), # Noco No Rev 
@@ -1540,7 +1540,7 @@ if __name__ == "__main__":
 #                         'cols' : tuple(range(19,25)),
                       'gamma' : 0.0001,
                       'nu' : 0.1,
-                      'pca_dims' : 20,
+                      'pca_dims' : 10,
                       'kernel' :'linear'
                      }
                   }

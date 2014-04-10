@@ -211,15 +211,18 @@ class IScatterWidget(QtGui.QWidget):
         ind = numpy.array([True if ((x > x_min) and 
                                     (x < x_max) and
                                     (y > y_min) and 
-                                    (y < y_max)) 
-                                    else False for x, y in self.xys])
+                                    (y < y_max) and
+                                    self.sample_selection[k]
+                                    ) 
+                                    else False for k, (x, y) in enumerate(self.xys)])
         
         edgecolors = self.collection.get_edgecolors()
         facecolors = self.collection.get_facecolors()
         
         ids =  [self.data[k].ref for k in range(len(ind)) if ind[k]] 
         print ind.sum(), 'objects selected with refs', ids
-        for i in range(len(self.xys)):
+        tmp_idx = numpy.nonzero(self.sample_selection)[0]
+        for i in range(len(self.xys[tmp_idx])):
             if ind[i]:
                 edgecolors[i] = DataPoint.colorin
             else:
@@ -332,41 +335,45 @@ class IScatterWidget(QtGui.QWidget):
         self.data = [DataPoint(xy[0], xy[1], self.data_ch5_idx[i], False) 
                      for i, xy in enumerate(self.data_matrix[:, [self.x_dim, self.y_dim]])]
         self.Nxy = len(self.data)
+        
+        tmp_idx = numpy.nonzero(self.sample_selection)[0]
+        self.xys = numpy.array([(d.x, d.y) for d in self.data])  
 
         if self.c_dim is None:
-            facecolors = [d.color for d in self.data]
-            edgecolors = [d.color for d in self.data]
+            facecolors = numpy.array([d.color for d in self.data])[tmp_idx]
+            edgecolors = numpy.array([d.color for d in self.data])[tmp_idx]
         else:
             f_0_min = self.data_matrix[:, self.c_dim].min()
             f_0_max = self.data_matrix[:, self.c_dim].max()
             cNorm  = colors.Normalize(vmin=f_0_min, vmax=f_0_max)
             scalarMap = cm.ScalarMappable(norm=cNorm, cmap=cm.jet)
-            facecolors = [scalarMap.to_rgba(c) for c in self.data_matrix[:, self.c_dim]]
-            edgecolors = [scalarMap.to_rgba(c) for c in self.data_matrix[:, self.c_dim]]
+            facecolors = [scalarMap.to_rgba(c) for c in self.data_matrix[tmp_idx, self.c_dim]]
+            edgecolors = [scalarMap.to_rgba(c) for c in self.data_matrix[tmp_idx, self.c_dim]]
             
-        self.xys = [(d.x, d.y) for d in self.data]
         
-        for i in range(len(self.xys)):
+        
+        for i in range(len(self.xys[tmp_idx])):
             if self.ind[i]:
                 edgecolors[i] = DataPoint.colorin
             
+        
         
         self.collection = CircleCollection(
             sizes=(22,),
             facecolors=facecolors,
             edgecolors=edgecolors,
-            offsets = self.xys,
+            offsets = self.xys[tmp_idx],
             transOffset = self.axes.transData)
 
         self.axes.add_collection(self.collection)
         
         self.update_axis_lims()
-#         if self.contour_eval_func is not None:
-#             xx, yy, Z = self.contour_eval_func(self.axes.get_xlim(), self.axes.get_ylim(), self.x_dim, self.y_dim)
-#             
-#             self.axes.contourf(xx, yy, Z, levels=numpy.linspace(Z.min(), 0, 17), cmap=cm.Reds_r, alpha=0.2)
-#             self.axes.contour(xx, yy, Z, levels=[0], linewidths=1, colors='k')
-#             self.axes.contourf(xx, yy, Z, levels=numpy.linspace(0, Z.max(), 17), cmap=cm.Greens, alpha=0.3)
+        if self.contour_eval_func is not None:
+            xx, yy, Z = self.contour_eval_func(self.axes.get_xlim(), self.axes.get_ylim(), self.x_dim, self.y_dim)
+             
+            self.axes.contourf(xx, yy, Z, levels=numpy.linspace(Z.min(), 0, 17), cmap=cm.Reds_r, alpha=0.2)
+            self.axes.contour(xx, yy, Z, levels=[0], linewidths=1, colors='k')
+            self.axes.contourf(xx, yy, Z, levels=numpy.linspace(0, Z.max(), 17), cmap=cm.Greens, alpha=0.3)
         
         self.figure.tight_layout()
         self.canvas.draw()
