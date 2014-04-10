@@ -863,17 +863,28 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         wells = []
         sites = []
         predictions = []
+        classifications = []
+        
+        c5f = self.cellh5_handles.values()[0]
+        
         for row_index, row in self.mapping[self.mapping['Object count'] > 0].iterrows():
             features = self.mapping['Object features'].iloc[row_index]
-#             pca = row['PCA']
-            pca = self.mapping['PCA'].iloc[row_index][:,:20]
-            cellh5idx = numpy.array(row['CellH5 object index'])
-            prediction = numpy.array(row['Predictions'])
+
             plate = row['Plate']
             well = row['Well']
             site = row['Site']
             sirna = row['siRNA ID']
             gene = row['Gene Symbol']
+            
+            pca = self.mapping['PCA'].iloc[row_index][:,:20]
+            cellh5idx = numpy.array(row['CellH5 object index'])
+            prediction = numpy.array(row['Predictions'])
+        
+            c5p = c5f.get_position(well, str(site))
+            class_prediction = c5p.get_class_prediction()['label_idx'][cellh5idx]
+            classifications.append(class_prediction)
+            
+            
             
             predictions.append(prediction)
             data_features.append(features)
@@ -882,11 +893,14 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 sample_names.append((plate, well, site, sirna, gene))
             cellh5_list.append(cellh5idx)
             
+            
+            
         predictions = numpy.concatenate(predictions)
         predictions *= -1
         data_pca = numpy.concatenate(data_pca)
         data_features = numpy.concatenate(data_features)
         data_cellh5 = numpy.concatenate(cellh5_list)
+        classifications = numpy.concatenate(classifications)
   
         cf = self.cellh5_handles.values()[0]
         feature_names = cf.object_feature_def()
@@ -916,9 +930,9 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             img = CH5File.gallery_image_matrix_layouter(img_gens, shape)
             return img
         
-        features = numpy.c_[data_pca, data_features[:,self._non_nan_feature_idx], predictions]
+        features = numpy.c_[data_pca, data_features[:,self._non_nan_feature_idx], predictions, classifications]
     
-        names = pca_names + feature_names  + ['Outliers']
+        names = pca_names + feature_names  + ['Outliers', 'Sup. Classification']
   
         def contour_eval(xlim, ylim, xdim, ydim):
             xx, yy = numpy.meshgrid(numpy.linspace(xlim[0], xlim[1], 100), numpy.linspace(ylim[0], ylim[1], 100))
@@ -1517,13 +1531,13 @@ if __name__ == "__main__":
                                 ("D",  7), ("F",  7), ("H",  7), # Noco No Rev 
                                 ("D",  12), ("F",  12), ("H",  12), # Taxol 300 Rev
                                 ("D",  6), ("F",  6), ("H",  6), # Noco 300 Rev
-                                ("D",  9), ("F",  9), ("H",  9), # Taxol 900 Rev
-                                ("D",  3), ("F",  3), ("H",  3), # Noco 900 Rev
+                                #("D",  9), ("F",  9), ("H",  9), # Taxol 900 Rev
+                                #("D",  3), ("F",  3), ("H",  3), # Noco 900 Rev
 #                                 
-#                                 ("J",  13), ("L",  13), ("N",  13), # Taxol No Rev
-#                                 ("J",  7), ("L",  7), ("N",  7), # Noco No Rev 
-#                                 ("J",  12), ("L",  12), ("N",  12), # Taxol 300 Rev
-#                                 ("J",  6), ("L",  6), ("N",  6), # Noco 300 Rev
+                                ("J",  13), ("L",  13), ("N",  13), # Taxol No Rev
+                                ("J",  7), ("L",  7), ("N",  7), # Noco No Rev 
+                                ("J",  12), ("L",  12), ("N",  12), # Taxol 300 Rev
+                                ("J",  6), ("L",  6), ("N",  6), # Noco 300 Rev
 #                                 ("J",  9), ("L",  9), ("N",  9), # Taxol 900 Rev
 #                                 ("J",  3), ("L",  3), ("N",  3), # Noco 900 Rev
                                
