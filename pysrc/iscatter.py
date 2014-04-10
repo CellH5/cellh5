@@ -36,7 +36,7 @@ class DataPoint(object):
 
 class IScatter(QtGui.QMainWindow):
     highlight_changed = QtCore.pyqtSignal(list)
-    def __init__(self, scatter):  
+    def __init__(self, scatter, scatter2):  
         QtGui.QMainWindow.__init__(self)
         self.setWindowTitle('Test')
         
@@ -44,6 +44,7 @@ class IScatter(QtGui.QMainWindow):
             
         self.image = SimpleMplImageViewer()
         self.scatter.image_changed.connect(self.image.show_image)
+        scatter2.image_changed.connect(self.image.show_image)
 
         self.table = QtGui.QTableWidget(self)
         
@@ -51,9 +52,11 @@ class IScatter(QtGui.QMainWindow):
         self.setCentralWidget(self.main_widget)
         
         layout = QtGui.QGridLayout()
-        layout.addWidget(self.scatter,0,0,1,1)
-        layout.addWidget(self.image,1,0,1,2)
-        layout.addWidget(self.table,0,1,1,1)
+        layout.addWidget(self.scatter,0,0)
+        layout.addWidget(scatter2,0,1)
+        layout.addWidget(self.table,0,2)
+        layout.addWidget(self.image,1,0,1,3)
+        
         self.main_widget.setLayout(layout)  
         
         #widget_1.canvas.setParent(widget_1)
@@ -61,6 +64,7 @@ class IScatter(QtGui.QMainWindow):
         self.image.canvas.setFocus()      
         
         self.scatter.selection_changed.connect(self.update_table)
+        scatter2.selection_changed.connect(self.update_table)
         self.table.itemSelectionChanged.connect(self.extract_selection)
         self.highlight_changed.connect(self.image.highlight_cell)
         
@@ -159,7 +163,15 @@ class IScatterWidget(QtGui.QWidget):
         axis_selector_layout.addWidget(self.axis_c_chk)
         axis_selector_layout.addWidget(self.axis_c_cmb)
         
+        axis_selector_layout.addStretch()
+        
+        self.export_to_image_btn = QtGui.QPushButton('Export image')
+        axis_selector_layout.addWidget(self.export_to_image_btn)
+        self.export_to_image_btn.clicked.connect(self.export_axes_to_image)
+        
+        
         axis_selector.setLayout(axis_selector_layout)
+        
 
         layout.addWidget(axis_selector)
         
@@ -167,6 +179,12 @@ class IScatterWidget(QtGui.QWidget):
         
         self.canvas.mpl_connect('scroll_event', self.mouse_wheel_zoom)
         
+    def export_axes_to_image(self):
+        file_name = QtGui.QFileDialog.getSaveFileName(self, "Select file name", ".", "Image Files (*.png *.jpg *.pdf)")
+        print file_name
+        if file_name:
+            extent = self.axes.get_window_extent().transformed(self.figure.dpi_scale_trans.inverted())
+            self.figure.savefig(str(file_name), bbox_inches=extent)
         
     def sample_selection_changed(self, type_, idx):
         self.sample_selection = [True] * len(self.sample_selection)

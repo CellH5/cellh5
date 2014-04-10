@@ -253,8 +253,8 @@ class CellH5Analysis(object):
         training_matrix = self.get_data(train_on)
         training_matrix = self.normalize_training_data(training_matrix)
         log.info('Compute PCA: found NaNss in features after normalization? %r' % numpy.any(numpy.isnan(training_matrix)))
-        self.pca = PCA(self.pca_dims)
-#        self.pca = KernelPCA(self.pca_dims, kernel='rbf', gamma=self.gamma, fit_inverse_transform=False,)
+        #self.pca = PCA(self.pca_dims)
+        self.pca = KernelPCA(self.pca_dims, kernel='rbf', gamma=self.gamma, fit_inverse_transform=False,)
         self.pca.fit(training_matrix)
         
         #print "PCA dimension:", ", ".join(["%d for %4.2f" % (numpy.nonzero(self.pca.fracs.cumsum() >= fr)[0][0], fr) for fr in [0.8, 0.9, 0.95, 0.99]])

@@ -30,6 +30,110 @@ from sklearn.metrics.metrics import roc_curve
 
 DEBUG = True
 
+import vigra
+import pylab
+from sklearn.metrics import accuracy_score
+
+class OneClassRandomForest(object):
+    def __init__(self, outlier_over_sampling_factor=4, *args, **kwargs):
+        self.outlier_over_sampling_factor = outlier_over_sampling_factor
+        self.rf = vigra.learning.RandomForest(100)
+    
+    def fit(self, data):
+        data = numpy.require(data, numpy.float32)
+        d = data.shape[1]
+        n = data.shape[0]
+        synt_outliers = numpy.random.random((n*self.outlier_over_sampling_factor, d))
+        for i in xrange(d):
+            i_min, i_max = data[:,i].min()*1.1, data[:,i].max()*1.1
+            synt_outliers[:,i]*= (i_max - i_min)
+            synt_outliers[:,i]+= i_min
+                    
+        training_data = numpy.r_[data, synt_outliers].astype(numpy.float32)
+        trianing_labels = numpy.r_[numpy.zeros((n,1), dtype=numpy.uint32), numpy.ones((n * self.outlier_over_sampling_factor,1), dtype=numpy.uint32)]
+        
+        print 'oob', self.rf.learnRFWithFeatureSelection(training_data, trianing_labels)
+    
+    def predict(self, data):
+        data = numpy.require(data, numpy.float32)
+        res = self.rf.predictProbabilities(data.astype(numpy.float32))
+        outlier = (res[:,1] > 0.05).astype(numpy.int32)*-2 + 1
+        
+        return outlier
+    
+    def decision_function(self, data):
+        return numpy.ones((data.shape[0],1))
+        
+    @staticmethod
+    def test_simple():
+        d = 100
+        n = 6000 
+        mean = numpy.zeros((d,)) 
+        cov = numpy.eye(d,d)
+        
+        x = numpy.random.multivariate_normal(mean, cov, n)
+        rf = OneClassRandomForest()
+        rf.fit(x)
+        
+        x_2 = numpy.random.random((n, d))
+        for i in xrange(d):
+            i_min, i_max = x[:,i].min()*1.2, x[:,i].max()*1.2
+            x_2[:,i]*= (i_max - i_min)
+            x_2[:,i]+= i_min
+            
+   
+        testing_data = numpy.r_[x, x_2].astype(numpy.float32)
+        testing_labels = numpy.r_[numpy.zeros((n,1), dtype=numpy.uint32), numpy.ones((n,1), dtype=numpy.uint32)]
+        testing_pred = rf.predict(testing_data)
+        
+        print accuracy_score(testing_labels, testing_pred)
+
+class OneClassAngle(object):
+    def __init__(self, *args, **kwargs):
+        pass
+    
+    def fit(self, data):
+        self.data = data
+        self._data_norm = []
+        for row in data:
+            self._data_norm.append(numpy.linalg.norm(row))
+            
+        result = numpy.zeros((data.shape[0], data.shape[0]))
+        
+        for t1 in xrange(data.shape[0]):
+            for t2 in xrange(data.shape[0]):
+                t1_vec = data[t1, :]
+                t2_vec = data[t2, :]               
+                result[t1, t2] = numpy.dot(t1_vec, t2_vec) / (self._data_norm[t1] * self._data_norm[t2])
+        
+        outlier_score = result.std(1)
+        self.outlier_cutoff =  outlier_score.mean()*0.85
+        
+        print ' outlier cutoff', self.outlier_cutoff
+
+    
+    def predict(self, data_new):
+        result = numpy.zeros((data_new.shape[0], self.data.shape[0]))
+        
+        _data_norm_new = []
+        for row in data_new:
+            _data_norm_new.append(numpy.linalg.norm(row))
+        
+        for test in xrange(data_new.shape[0]):
+            for train in xrange(self.data.shape[0]):
+                test_vec = data_new[test, :]
+                train_vec = self.data[train, :]               
+                result[test, train] = numpy.dot(test_vec, train_vec) / (_data_norm_new[test] * self._data_norm[train])
+        
+        outlier_score = result.std(1)
+        print 'mean score', outlier_score.mean()
+        
+        return (outlier_score < self.outlier_cutoff)*-2+1
+    
+    def decision_function(self, data):
+        return numpy.ones((data.shape[0],1))
+
+
 from matplotlib import rcParams
 import matplotlib
 def setupt_matplot_lib_rc():
@@ -93,6 +197,9 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
 
 class OutlierDetection(cellh5_analysis.CellH5Analysis):
     classifier_class = OneClassSVM
+    #classifier_class = OneClassRandomForest
+    #classifier_class = OneClassAngle
+    
     def __init__(self, name, mapping_files, cellh5_files, training_sites=(1,2,3,4,), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
         cellh5_analysis.CellH5Analysis.__init__(self, name, mapping_files, cellh5_files, sites=(1,2,3,4,), rows=rows, cols=cols, locations=locations)
         self.gamma = gamma
@@ -125,7 +232,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
         self.train_classifier(training_matrix)
         if DEBUG:
-            print '%04.2f %%' % (100 * float(self.classifier.support_vectors_.shape[0]) / training_matrix.shape[0]), 'support vectors'
+            pass#print '%04.2f %%' % (100 * float(self.classifier.support_vectors_.shape[0]) / training_matrix.shape[0]), 'support vectors'
         
     def predict(self, test_on=('target', 'pos', 'neg')):
         if DEBUG:
@@ -158,7 +265,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         self.classifier = self.classifier_class(kernel=self.kernel, nu=self.nu, gamma=self.gamma)
         
         if self.kernel == 'linear':
-            max_training_samples = 20000
+            max_training_samples = 20000000
             idx = range(training_matrix.shape[0])
             #numpy.random.shuffle(idx)
             self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
@@ -174,7 +281,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 self.rfe_selection = rfe.support_
                 self.classifier = rfe.estimator_
         else:
-            max_training_samples = 100000
+            max_training_samples = 10000000
             idx = range(training_matrix.shape[0])
             #numpy.random.shuffle(idx)
             self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
@@ -826,8 +933,12 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         iscatter_widget = iscatter.IScatterWidgetHisto()
         iscatter_widget.set_countour_eval_cb(contour_eval)
         iscatter_widget.set_data(features, names, sample_names, 0, 1, data_cellh5, img_gen)
+        
+        iscatter_widget2 = iscatter.IScatterWidgetHisto()
+        iscatter_widget2.set_countour_eval_cb(contour_eval)
+        iscatter_widget2.set_data(features, names, sample_names, 0, 1, data_cellh5, img_gen)
     
-        mw = iscatter.IScatter(iscatter_widget)
+        mw = iscatter.IScatter(iscatter_widget, iscatter_widget2)
         
         
         
@@ -1201,9 +1312,9 @@ class MatthiasOutlier(object):
                                   locations=locations,
                                   )
         
-        greater_equal = lambda x, cv: numpy.logical_and(numpy.greater(x, cv[0]), numpy.less(x, cv[1]))
-        od.set_read_feature_time_predicate(greater_equal, (7,12))
+        greater_less = lambda x, cv: numpy.logical_and(numpy.greater(x, cv[0]), numpy.less(x, cv[1]))
         #od.set_read_feature_time_predicate(numpy.equal, 7)
+        od.set_read_feature_time_predicate(greater_less, (7, 12))
         od.read_feature()
         
         return od
@@ -1233,10 +1344,13 @@ class MatthiasOutlierFigure1(MatthiasOutlier):
     
             self.od.train_pca()
             self.od.predict_pca()
-            #self.od.train()
+            self.od.train()
             
-            #self.od.predict()
-            #self.od.compute_outlyingness()
+            self.od.predict()
+            self.od.compute_outlyingness()
+            
+            print self.od.evaluate()
+            
             self.od.interactive_plot()
         
         elif False:
@@ -1394,10 +1508,27 @@ if __name__ == "__main__":
                             '002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/analysis_outlier_3/hdf5/_all_positions.ch5',
                                         },
                     'locations' : (
-                               ("A",  8), ("B", 8), ("C", 8), ("D", 8),
+                                  ("A",  8), ("B", 8), ("C", 8), ("D", 8),
                                ("H", 6), ("H", 7), ("G", 6), ("G", 7),
                                ("H",12), ("H",13), ("G",12), ("G",13),
-#                             ("A",  8), ("A",  8),("A",  19), ("B",  19), ("C",  19), ("D",  19), ("E",  19), # NEG
+
+#                                 ("A",  8), ("B", 8), ("C", 8), ("D", 8), ("E", 8),
+#                                 ("D",  13), ("F",  13), ("H",  13), # Taxol No Rev
+#                                 ("D",  7), ("F",  7), ("H",  7), # Noco No Rev 
+#                                 ("D",  12), ("F",  12), ("H",  12), # Taxol 300 Rev
+#                                 ("D",  6), ("F",  6), ("H",  6), # Noco 300 Rev
+#                                 ("D",  9), ("F",  9), ("H",  9), # Taxol 900 Rev
+#                                 ("D",  3), ("F",  3), ("H",  3), # Noco 900 Rev
+#                                 
+#                                 ("J",  13), ("L",  13), ("N",  13), # Taxol No Rev
+#                                 ("J",  7), ("L",  7), ("N",  7), # Noco No Rev 
+#                                 ("J",  12), ("L",  12), ("N",  12), # Taxol 300 Rev
+#                                 ("J",  6), ("L",  6), ("N",  6), # Noco 300 Rev
+#                                 ("J",  9), ("L",  9), ("N",  9), # Taxol 900 Rev
+#                                 ("J",  3), ("L",  3), ("N",  3), # Noco 900 Rev
+                               
+                               
+#                             ("B",  19), ("C",  19), ("D",  19), ("E",  19), # NEG
 #                             ("D",  24), ("F",  24), ("H",  24), # Taxol No Rev
 #                             ("D",  18), ("F",  18), ("H",  18), # Noco No Rev 
 #                             ("D",  23), ("F",  23), ("H",  23), # Taxol 300 Rev
@@ -1407,9 +1538,9 @@ if __name__ == "__main__":
                                   ),
 #                       'rows' : list("ABCDEFGHIJKLMNOP")[:3],
 #                         'cols' : tuple(range(19,25)),
-                      'gamma' : 0.001,
-                      'nu' : 0.15,
-                      'pca_dims' : 10,
+                      'gamma' : 0.0001,
+                      'nu' : 0.1,
+                      'pca_dims' : 20,
                       'kernel' :'linear'
                      }
                   }
