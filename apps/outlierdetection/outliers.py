@@ -1327,8 +1327,8 @@ class MatthiasOutlier(object):
                                   )
         
         greater_less = lambda x, cv: numpy.logical_and(numpy.greater(x, cv[0]), numpy.less(x, cv[1]))
-        #od.set_read_feature_time_predicate(numpy.equal, 7)
-        od.set_read_feature_time_predicate(greater_less, (7, 9))
+        od.set_read_feature_time_predicate(numpy.equal, 7)
+        #od.set_read_feature_time_predicate(greater_less, (6, 9))
         od.read_feature()
         
         return od

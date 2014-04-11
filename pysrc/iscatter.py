@@ -165,9 +165,13 @@ class IScatterWidget(QtGui.QWidget):
         
         axis_selector_layout.addStretch()
         
-        self.export_to_image_btn = QtGui.QPushButton('Export image')
+        self.export_to_image_btn = QtGui.QPushButton('Export image File')
         axis_selector_layout.addWidget(self.export_to_image_btn)
         self.export_to_image_btn.clicked.connect(self.export_axes_to_image)
+        
+        self.export_to_cp_btn = QtGui.QPushButton('Export image clipboard')
+        axis_selector_layout.addWidget(self.export_to_cp_btn)
+        self.export_to_cp_btn.clicked.connect(self.export_axes_to_clipboard)
         
         
         axis_selector.setLayout(axis_selector_layout)
@@ -178,6 +182,17 @@ class IScatterWidget(QtGui.QWidget):
         self.setLayout(layout)
         
         self.canvas.mpl_connect('scroll_event', self.mouse_wheel_zoom)
+        
+    def export_axes_to_clipboard(self):
+        bbox = self.axes.get_window_extent().transformed(self.figure.dpi_scale_trans.inverted())
+        x, y, width, height = bbox.x0, bbox.y1, bbox.width, bbox.height
+        width *= self.figure.dpi
+        height *= self.figure.dpi
+        x *= self.figure.dpi
+        y *= self.figure.dpi
+        
+        pixmap = QtGui.QPixmap.grabWidget(self.canvas, int(x), self.canvas.height() - int(y), int(width), int(height))
+        QtGui.QApplication.clipboard().setPixmap(pixmap)
         
     def export_axes_to_image(self):
         file_name = QtGui.QFileDialog.getSaveFileName(self, "Select file name", ".", "Image Files (*.png *.jpg *.pdf)")
