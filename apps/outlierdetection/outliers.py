@@ -751,7 +751,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         #pylab.show()
     
     
-    def make_top_hit_list(self, top=100):
+    def make_top_hit_list(self, top=50):
         if DEBUG:
             print 'Make hit list plot'
         min_object_coutn_group = 15
@@ -770,10 +770,10 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         #iterate over plates and make hit list figure
         label = []
         values = []
-        
 
-        group = self.mapping[(self.mapping['Object count'] > 0)].groupby(['Plate', 'Well', 'siRNA ID', 'Gene Symbol'])            
+        group = self.mapping[(self.mapping['Object count'] > 0)].groupby(['Plate', 'Well', 'siRNA ID', 'Gene Symbol', 'Group'])            
         means = group.apply(lambda x: (x['Outlyingness'] * x['Object count']).sum() / x['Object count'].sum())
+        
 
         for g, m in means.iteritems():
             count = self.mapping['Object count'][group.groups[g]].sum()
@@ -783,18 +783,26 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 
                     
         svalues, slabel = zip(*sorted(zip(values, label)))
-#         svalues = svalues[-top:]
-#         slabel = slabel[-top:]
         
-        svalues = svalues[:top]
-        slabel = slabel[:top]
+
+        svalues = svalues[-top:]
+        slabel = slabel[-top:]
+        
+#         svalues = svalues[:top]
+#         slabel = slabel[:top]
         
                 
         fig = pylab.figure(figsize=(top/6 + 3, 10))
         ax = pylab.subplot(111)
         ax.errorbar(range(len(svalues)), svalues, fmt='o', markeredgecolor='none')
         ax.set_xticks(range(len(svalues)), minor=False)
-        ax.set_xticklabels(["%s %s %s %s (%d)" % g for g in slabel], rotation=90)
+        ax.set_xticklabels(["%s %s %s %s %s (%d)" % g for g in slabel], rotation=90)
+        for i, tl in enumerate(ax.get_xticklabels()):
+            if slabel[i][-2].startswith('pos'):
+                tl.set_color("red") 
+            elif slabel[i][-2].startswith('neg'):
+                tl.set_color("green")  
+        
         ax.axhline(numpy.mean(values), label='Target mean')
         ax.axhline(numpy.mean(values) + numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at +2 sigma')
         ax.axhline(numpy.mean(values) - numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at -2 sigma')
@@ -813,7 +821,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         prefix_lut = {}
         for ii, g in enumerate(reversed(slabel)):
             prefix_lut[(g[0], g[1])] = "%04d" % (ii+1)
-        self.make_outlier_galleries(prefix_lut)
+#         self.make_outlier_galleries(prefix_lut)
             
 
     def make_hit_list(self):
@@ -897,7 +905,6 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             
             c5f = self.cellh5_handles[plate]
             
-            print "---", plate, well, site
             pca = self.mapping['PCA'].iloc[row_index][:,:20]
             cellh5idx = numpy.array(row['CellH5 object index'])
             prediction = numpy.array(row['Predictions'])
@@ -1205,8 +1212,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 shape = (16,8)
                 if include_excluded:
                     excluded_img = cf.get_gallery_image_matrix(index_tpl_ex, shape).swapaxes(1,0) 
-                outlier_img = cf.get_gallery_image_matrix(index_tpl_in, shape).swapaxes(1,0)
-                inlier_img = cf.get_gallery_image_matrix(index_tpl_out, shape).swapaxes(1,0)
+                outlier_img = cf.get_gallery_image_matrix(index_tpl_out, shape).swapaxes(1,0)
+                inlier_img = cf.get_gallery_image_matrix(index_tpl_in, shape).swapaxes(1,0)
                 
                 if include_excluded:
                     img = numpy.concatenate((excluded_img, numpy.ones((5, inlier_img.shape[1]))*255, inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
@@ -1296,7 +1303,7 @@ class SaraOutlier(object):
         
         
         #self.od.cluster_outliers()                    
-        self.od.interactive_plot()
+        #self.od.interactive_plot()
         
         
         self.od.make_top_hit_list()
@@ -1489,38 +1496,39 @@ if __name__ == "__main__":
                      {
                       'mapping_files' : {
                         'SP_9': 'F:/sara_adhesion_screen/sp9.txt',
-#                         'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
-#                         'SP_7': 'F:/sara_adhesion_screen/sp7.txt',
-#                         'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
-#                         'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
-#                         'SP_4': 'F:/sara_adhesion_screen/sp4.txt',
+                        'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
+                        'SP_7': 'F:/sara_adhesion_screen/sp7.txt',
+                        'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
+                        'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
+                        'SP_4': 'F:/sara_adhesion_screen/sp4.txt',
                         'SP_3': 'F:/sara_adhesion_screen/sp3.txt',
-#                         'SP_2': 'F:/sara_adhesion_screen/sp2.txt',
-#                         'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
+                        'SP_2': 'F:/sara_adhesion_screen/sp2.txt',
+                        'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
                                         },
                       'ch5_files' : {
                             'SP_9': 'F:/sara_adhesion_screen/sp9__all_positions_with_data_combined.ch5',
-#                             'SP_8': 'F:/sara_adhesion_screen/sp8__all_positions_with_data_combined.ch5',
-#                             'SP_7': 'F:/sara_adhesion_screen/sp7__all_positions_with_data_combined.ch5',
-#                             'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
-#                             'SP_5': 'F:/sara_adhesion_screen/sp5__all_positions_with_data_combined.ch5',
-#                             'SP_4': 'F:/sara_adhesion_screen/sp4__all_positions_with_data_combined.ch5',
+                            'SP_8': 'F:/sara_adhesion_screen/sp8__all_positions_with_data_combined.ch5',
+                            'SP_7': 'F:/sara_adhesion_screen/sp7__all_positions_with_data_combined.ch5',
+                            'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
+                            'SP_5': 'F:/sara_adhesion_screen/sp5__all_positions_with_data_combined.ch5',
+                            'SP_4': 'F:/sara_adhesion_screen/sp4__all_positions_with_data_combined.ch5',
                             'SP_3': 'F:/sara_adhesion_screen/sp3__all_positions_with_data_combined.ch5',
-#                             'SP_2': 'F:/sara_adhesion_screen/sp2__all_positions_with_data_combined.ch5',
-#                             'SP_1': 'F:/sara_adhesion_screen/sp1__all_positions_with_data_combined.ch5',
+                            'SP_2': 'F:/sara_adhesion_screen/sp2__all_positions_with_data_combined.ch5',
+                            'SP_1': 'F:/sara_adhesion_screen/sp1__all_positions_with_data_combined.ch5',
                                         },
-                    'locations' : (
-                        ("F",  19), ("B", 8), ("H", 9), ("D", 8),
-                         ("H", 6), ("H", 7), ("G", 6), ("G", 7),
-                        ("H",12), ("H",13), ("G",12), ("G",13),
-                      ),
+#                     'locations' : (
+#                         ("F",  19), ("B", 8), ("H", 9), ("D", 8),
+#                          ("H", 6), ("H", 7), ("G", 6), ("G", 7),
+#                         ("H",12), ("H",13), ("G",12), ("G",13),
+#                       ),
 #                       'rows' : list("ABCDEFGHIJKLMNOP")[3:],
 #                       'cols' : tuple(range(1,4)),
-                      'gamma' : 0.0001,
-                      'nu' : 0.15,
-                      'pca_dims' : 20,
+                      'gamma' : 0.005,
+                      'nu' : 0.10,
+                      'pca_dims' : 239,
                       'kernel' :'rbf'
                      },
+                 
                  
                  'matthias_od':
                      {
@@ -1538,7 +1546,7 @@ if __name__ == "__main__":
 #                       'rows' : list("ABCDEFGHIJKLMNOP")[:3],
 #                         'cols' : tuple(range(19,25)),
                       'gamma' : 0.0001,
-                      'nu' : 0.15,
+                      'nu' : 0.10,
                       'pca_dims' : 10,
                       'kernel' :'linear'
 #                       'gamma' : 0.005,
