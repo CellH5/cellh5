@@ -253,8 +253,8 @@ class CellH5Analysis(object):
         training_matrix = self.get_data(train_on)
         training_matrix = self.normalize_training_data(training_matrix)
         log.info('Compute PCA: found NaNss in features after normalization? %r' % numpy.any(numpy.isnan(training_matrix)))
-        #self.pca = PCA(self.pca_dims)
-        self.pca = KernelPCA(self.pca_dims, kernel='rbf', gamma=self.gamma, fit_inverse_transform=False,)
+        self.pca = PCA(self.pca_dims)
+        #self.pca = KernelPCA(self.pca_dims, kernel='rbf', gamma=self.gamma, fit_inverse_transform=False,)
         self.pca.fit(training_matrix)
         
         #print "PCA dimension:", ", ".join(["%d for %4.2f" % (numpy.nonzero(self.pca.fracs.cumsum() >= fr)[0][0], fr) for fr in [0.8, 0.9, 0.95, 0.99]])
@@ -289,6 +289,7 @@ class CellH5Analysis(object):
             features = []
             object_counts = []
             c5_object_index = []
+            c5_object_index_not = []
             
             for i, row in self.mapping[self.mapping['Plate']==plate_name].iterrows():
                 well = row['Well']
@@ -326,6 +327,7 @@ class CellH5Analysis(object):
                 else:
                     features.append(numpy.zeros((0, )))
                 c5_object_index.append(numpy.where(idx)[0])
+                c5_object_index_not.append(numpy.where(numpy.logical_not(idx))[0])
                 
                 
             
@@ -333,6 +335,7 @@ class CellH5Analysis(object):
             self.mapping.loc[plate_idx, 'Object features'] = features
             self.mapping.loc[plate_idx, 'Object count'] = object_counts
             self.mapping.loc[plate_idx, 'CellH5 object index'] = c5_object_index
+            self.mapping.loc[plate_idx, 'CellH5 object index excluded'] = c5_object_index_not
         selector_output_file.close()
             
     def get_data(self, target, type='Object features'):

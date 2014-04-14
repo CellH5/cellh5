@@ -1,10 +1,16 @@
 import matplotlib
 import numpy
-import pylab
 import vigra
+import pylab
+import scipy
 
 from sklearn.svm import OneClassSVM
 from sklearn.feature_selection import RFE
+from sklearn.decomposition import PCA, KernelPCA
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, accuracy_score, roc_curve, auc
+from sklearn.metrics.metrics import roc_curve
+from sklearn.covariance import EmpiricalCovariance, MinCovDet
+from sklearn.metrics import accuracy_score
 import sklearn.cluster
 import sklearn.mixture
 
@@ -24,15 +30,7 @@ import iscatter
 from cellh5 import CH5File
 from collections import defaultdict
 
-from sklearn.decomposition import PCA, KernelPCA
-from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, accuracy_score, roc_curve, auc
-from sklearn.metrics.metrics import roc_curve
-
 DEBUG = True
-
-import vigra
-import pylab
-from sklearn.metrics import accuracy_score
 
 class OneClassRandomForest(object):
     def __init__(self, outlier_over_sampling_factor=4, *args, **kwargs):
@@ -133,6 +131,26 @@ class OneClassAngle(object):
     def decision_function(self, data):
         return numpy.ones((data.shape[0],1))
 
+class OneClassMahalanobis(object):
+    def __init__(self, *args, **kwargs):
+        pass
+    
+    def fit(self, data):
+        #self.cov = MinCovDet().fit(data)
+        self.cov = EmpiricalCovariance().fit(data)
+    
+    def predict(self, data):
+        mahal_emp_cov = self.cov.mahalanobis(data)
+        d = data.shape[1]
+        thres = scipy.stats.chi2.ppf(0.975, d)
+        
+        return (mahal_emp_cov > thres).astype(numpy.int32)*-2+1
+    
+    def decision_function(self, data):
+        return numpy.ones((data.shape[0],1))
+        
+ 
+
 
 from matplotlib import rcParams
 import matplotlib
@@ -196,7 +214,7 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
 
 
 class OutlierDetection(cellh5_analysis.CellH5Analysis):
-    classifier_class = OneClassSVM
+    classifier_class = OneClassMahalanobis
     #classifier_class = OneClassRandomForest
     #classifier_class = OneClassAngle
     
@@ -890,7 +908,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             data_features.append(features)
             data_pca.append(pca)
             for _ in range(features.shape[0]):
-                sample_names.append((plate, well, site, sirna, gene))
+                sample_names.append((plate, well, str(site), sirna, gene))
             cellh5_list.append(cellh5idx)
             
             
@@ -1128,8 +1146,9 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 if DEBUG:
                     print 'Exporting gallery matrix image for', info 
         
-    def make_outlier_galleries(self, prefix_lut=None):  
+    def make_outlier_galleries(self, prefix_lut=None, include_excluded=True):  
         group = self.mapping[(self.mapping['Object count'] > 0)].groupby(('Plate', 'Well'))
+        plates_exludes = defaultdict(list)
         plates_inlier = defaultdict(list)
         plates_outlier = defaultdict(list)
         plates_info  = defaultdict(list)
@@ -1137,13 +1156,14 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         for grp, grp_values in group:
             index_tpl_in = []
             index_tpl_out = []
+            index_tpl_exc = []
             
             if prefix_lut is None:
                 pass
             elif not  (grp_values['Plate'].unique()[0],  grp_values['Well'].unique()[0]) in prefix_lut:
                 continue
 
-            for _, (plate_name, well, site, ge, si, prediction, hyper, ch5_ind) in grp_values[['Plate', 'Well', 'Site', 'Gene Symbol', 'siRNA ID', 'Predictions', "Hyperplane distance", "CellH5 object index"]].iterrows():
+            for _, (plate_name, well, site, ge, si, prediction, hyper, ch5_ind, ch5_ind_excl) in grp_values[['Plate', 'Well', 'Site', 'Gene Symbol', 'siRNA ID', 'Predictions', "Hyperplane distance", "CellH5 object index", "CellH5 object index excluded"]].iterrows():
                 in_ch5_index = ch5_ind[prediction == 1]
                 in_dist =  hyper[prediction == 1]
                 in_sorted_ch5_index = zip(*sorted(zip(in_dist, in_ch5_index), reverse=True))
@@ -1162,22 +1182,32 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                     
                 index_tpl_in.append((well, site, in_sorted_ch5_index))
                 index_tpl_out.append((well, site, out_sorted_ch5_index))
+                index_tpl_exc.append((well, site, ch5_ind_excl))
                     
             plates_inlier[plate_name].append(index_tpl_in)
             plates_outlier[plate_name].append(index_tpl_out)
+            plates_exludes[plate_name].append(index_tpl_exc)
             plates_info[plate_name].append((plate_name, well, ge, si))
+            
            
         for plate_name in plates_inlier.keys():
             pl_in_index_tpl = plates_inlier[plate_name]
             pl_on_index_tpl = plates_outlier[plate_name]
+            pl_ex_index_tpl = plates_exludes[plate_name]
             pl_info = plates_info[plate_name]
             
-            for index_tpl_in, index_tpl_out, info in zip(pl_in_index_tpl, pl_on_index_tpl, pl_info): 
+            for index_tpl_in, index_tpl_out, index_tpl_ex, info in zip(pl_in_index_tpl, pl_on_index_tpl, pl_ex_index_tpl, pl_info): 
                 cf = self.cellh5_handles[plate_name]
-                outlier_img = cf.get_gallery_image_matrix(index_tpl_in, (30, 20)).swapaxes(1,0)
-                inlier_img = cf.get_gallery_image_matrix(index_tpl_out, (30, 20)).swapaxes(1,0)
+                shape = (16,8)
+                if include_excluded:
+                    excluded_img = cf.get_gallery_image_matrix(index_tpl_ex, shape).swapaxes(1,0) 
+                outlier_img = cf.get_gallery_image_matrix(index_tpl_in, shape).swapaxes(1,0)
+                inlier_img = cf.get_gallery_image_matrix(index_tpl_out, shape).swapaxes(1,0)
                 
-                img = numpy.concatenate((inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
+                if include_excluded:
+                    img = numpy.concatenate((inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
+                else:
+                    img = numpy.concatenate((excluded_img, numpy.ones((5, inlier_img.shape[1]))*255, inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
                 assert plate_name == info[0]
                 if prefix_lut is None:
                     img_name = 'xgal_%s_%s_%s_%s.png' % info
@@ -1327,8 +1357,8 @@ class MatthiasOutlier(object):
                                   )
         
         greater_less = lambda x, cv: numpy.logical_and(numpy.greater(x, cv[0]), numpy.less(x, cv[1]))
-        od.set_read_feature_time_predicate(numpy.equal, 7)
-        #od.set_read_feature_time_predicate(greater_less, (6, 9))
+        #od.set_read_feature_time_predicate(numpy.equal, 7)
+        od.set_read_feature_time_predicate(greater_less, (6, 9))
         od.read_feature()
         
         return od
@@ -1460,7 +1490,7 @@ if __name__ == "__main__":
 #                         'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
 #                         'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
 #                         'SP_4': 'F:/sara_adhesion_screen/sp4.txt',
-                        'SP_3': 'F:/sara_adhesion_screen/sp3.txt',
+#                         'SP_3': 'F:/sara_adhesion_screen/sp3.txt',
 #                         'SP_2': 'F:/sara_adhesion_screen/sp2.txt',
 #                         'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
                                         },
@@ -1471,7 +1501,7 @@ if __name__ == "__main__":
 #                             'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
 #                             'SP_5': 'F:/sara_adhesion_screen/sp5__all_positions_with_data_combined.ch5',
 #                             'SP_4': 'F:/sara_adhesion_screen/sp4__all_positions_with_data_combined.ch5',
-                            'SP_3': 'F:/sara_adhesion_screen/sp3__all_positions_with_data_combined.ch5',
+#                             'SP_3': 'F:/sara_adhesion_screen/sp3__all_positions_with_data_combined.ch5',
 #                             'SP_2': 'F:/sara_adhesion_screen/sp2__all_positions_with_data_combined.ch5',
 #                             'SP_1': 'F:/sara_adhesion_screen/sp1__all_positions_with_data_combined.ch5',
                                         },
@@ -1554,12 +1584,12 @@ if __name__ == "__main__":
 #                         'cols' : tuple(range(19,25)),
                       'gamma' : 0.0001,
                       'nu' : 0.1,
-                      'pca_dims' : 10,
+                      'pca_dims' : 50,
                       'kernel' :'linear'
                      }
                   }
     setupt_matplot_lib_rc()
-    #run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
-    run_exp('matthias_figure_1', EXPLOOKUP, MatthiasOutlierFigure1)
+    run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
+    #run_exp('matthias_figure_1', EXPLOOKUP, MatthiasOutlierFigure1)
 
     print 'finished'

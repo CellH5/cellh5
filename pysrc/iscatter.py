@@ -191,7 +191,7 @@ class IScatterWidget(QtGui.QWidget):
         x *= self.figure.dpi
         y *= self.figure.dpi
         
-        pixmap = QtGui.QPixmap.grabWidget(self.canvas, int(x), self.canvas.height() - int(y), int(width), int(height))
+        pixmap = QtGui.QPixmap.grabWidget(self.canvas, int(x)+3, self.canvas.height() - int(y)+3, int(width)-5, int(height)-5)
         QtGui.QApplication.clipboard().setPixmap(pixmap)
         
     def export_axes_to_image(self):
