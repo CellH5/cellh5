@@ -883,9 +883,10 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         predictions = []
         classifications = []
         
-        c5f = self.cellh5_handles.values()[0]
+        
         
         for row_index, row in self.mapping[self.mapping['Object count'] > 0].iterrows():
+            
             features = self.mapping['Object features'].iloc[row_index]
 
             plate = row['Plate']
@@ -894,6 +895,9 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             sirna = row['siRNA ID']
             gene = row['Gene Symbol']
             
+            c5f = self.cellh5_handles[plate]
+            
+            print "---", plate, well, site
             pca = self.mapping['PCA'].iloc[row_index][:,:20]
             cellh5idx = numpy.array(row['CellH5 object index'])
             prediction = numpy.array(row['Predictions'])
@@ -1205,9 +1209,9 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 inlier_img = cf.get_gallery_image_matrix(index_tpl_out, shape).swapaxes(1,0)
                 
                 if include_excluded:
-                    img = numpy.concatenate((inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
-                else:
                     img = numpy.concatenate((excluded_img, numpy.ones((5, inlier_img.shape[1]))*255, inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
+                else:
+                    img = numpy.concatenate((inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
                 assert plate_name == info[0]
                 if prefix_lut is None:
                     img_name = 'xgal_%s_%s_%s_%s.png' % info
@@ -1490,7 +1494,7 @@ if __name__ == "__main__":
 #                         'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
 #                         'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
 #                         'SP_4': 'F:/sara_adhesion_screen/sp4.txt',
-#                         'SP_3': 'F:/sara_adhesion_screen/sp3.txt',
+                        'SP_3': 'F:/sara_adhesion_screen/sp3.txt',
 #                         'SP_2': 'F:/sara_adhesion_screen/sp2.txt',
 #                         'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
                                         },
@@ -1501,20 +1505,20 @@ if __name__ == "__main__":
 #                             'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
 #                             'SP_5': 'F:/sara_adhesion_screen/sp5__all_positions_with_data_combined.ch5',
 #                             'SP_4': 'F:/sara_adhesion_screen/sp4__all_positions_with_data_combined.ch5',
-#                             'SP_3': 'F:/sara_adhesion_screen/sp3__all_positions_with_data_combined.ch5',
+                            'SP_3': 'F:/sara_adhesion_screen/sp3__all_positions_with_data_combined.ch5',
 #                             'SP_2': 'F:/sara_adhesion_screen/sp2__all_positions_with_data_combined.ch5',
 #                             'SP_1': 'F:/sara_adhesion_screen/sp1__all_positions_with_data_combined.ch5',
                                         },
                     'locations' : (
-                          ("F",  19), ("B", 8), ("H", 9), ("D", 8),
-#                           ("H", 6), ("H", 7), ("G", 6), ("G", 7),
-#                           ("H",12), ("H",13), ("G",12), ("G",13),
+                        ("F",  19), ("B", 8), ("H", 9), ("D", 8),
+                         ("H", 6), ("H", 7), ("G", 6), ("G", 7),
+                        ("H",12), ("H",13), ("G",12), ("G",13),
                       ),
 #                       'rows' : list("ABCDEFGHIJKLMNOP")[3:],
 #                       'cols' : tuple(range(1,4)),
-                      'gamma' : 0.005,
-                      'nu' : 0.10,
-                      'pca_dims' : 239,
+                      'gamma' : 0.0001,
+                      'nu' : 0.15,
+                      'pca_dims' : 20,
                       'kernel' :'rbf'
                      },
                  
