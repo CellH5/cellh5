@@ -32,6 +32,12 @@ from collections import defaultdict
 
 DEBUG = True
 
+def sara_correlation_1_4_vs_1_8():
+    folder = "C:/Users/sommerc/cellh5/apps/outlierdetection/sara_results"
+    a = pandas.read_csv('%s/sites_1-4_top_list_txt/top_outlier_list.txt' % folder, '\t')
+    a = pandas.read_csv('%s/sites_5-8_top_list_txt/top_outlier_list.txt' % folder, '\t')
+
+
 class OneClassRandomForest(object):
     def __init__(self, outlier_over_sampling_factor=4, *args, **kwargs):
         self.outlier_over_sampling_factor = outlier_over_sampling_factor
@@ -214,12 +220,8 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
 
 
 class OutlierDetection(cellh5_analysis.CellH5Analysis):
-    classifier_class = OneClassMahalanobis
-    #classifier_class = OneClassRandomForest
-    #classifier_class = OneClassAngle
-    
-    def __init__(self, name, mapping_files, cellh5_files, training_sites=(1,2,3,4,), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
-        cellh5_analysis.CellH5Analysis.__init__(self, name, mapping_files, cellh5_files, sites=(1,2,3,4,), rows=rows, cols=cols, locations=locations)
+    def __init__(self, name, mapping_files, cellh5_files, training_sites=(5,6,7,8,), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
+        cellh5_analysis.CellH5Analysis.__init__(self, name, mapping_files, cellh5_files, sites=training_sites, rows=rows, cols=cols, locations=locations)
         self.gamma = gamma
         self.nu = nu
         self.pca_dims = pca_dims
@@ -240,7 +242,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
     def set_pca_dims(self, pca_dims):
         self.pca_dims = pca_dims
 
-    def train(self, train_on=('neg',)):
+    def train(self, train_on=('neg',), classifier_class=OneClassSVM):
         if DEBUG:
             print 'Training OneClass Classifier for', train_on, 'on', self.feature_set
         training_matrix = self.get_data(train_on, self.feature_set)
@@ -248,7 +250,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         if self.feature_set == 'Object features':
             training_matrix = self.normalize_training_data(training_matrix)
         
-        self.train_classifier(training_matrix)
+        self.train_classifier(training_matrix, classifier_class)
         if DEBUG:
             pass#print '%04.2f %%' % (100 * float(self.classifier.support_vectors_.shape[0]) / training_matrix.shape[0]), 'support vectors'
         
@@ -279,13 +281,14 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         self.mapping['Predictions'] = pandas.Series(predictions)
         self.mapping['Hyperplane distance'] = pandas.Series(distances)
             
-    def train_classifier(self, training_matrix):
-        self.classifier = self.classifier_class(kernel=self.kernel, nu=self.nu, gamma=self.gamma)
+    def train_classifier(self, training_matrix, classifier_class=OneClassSVM):
+        self.classifier = classifier_class(kernel=self.kernel, nu=self.nu, gamma=self.gamma)
         
         if self.kernel == 'linear':
-            max_training_samples = 20000000
+            max_training_samples = 20000
             idx = range(training_matrix.shape[0])
-            #numpy.random.shuffle(idx)
+            numpy.random.shuffle(idx)
+            numpy.random.seed(1)
             self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
             self.rfe_selection = numpy.ones((training_matrix.shape[1],), dtype=numpy.bool)
             
@@ -299,9 +302,10 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 self.rfe_selection = rfe.support_
                 self.classifier = rfe.estimator_
         else:
-            max_training_samples = 10000000
+            max_training_samples = 30000
             idx = range(training_matrix.shape[0])
-            #numpy.random.shuffle(idx)
+            numpy.random.seed(1)
+            numpy.random.shuffle(idx)
             self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
             self.rfe_selection = numpy.ones((training_matrix.shape[1],), dtype=numpy.bool)
             
@@ -751,10 +755,10 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         #pylab.show()
     
     
-    def make_top_hit_list(self, top=50):
+    def make_top_hit_list(self, top=150, for_group=('neg', 'pos', 'target')):
         if DEBUG:
             print 'Make hit list plot'
-        min_object_coutn_group = 15
+        min_object_coutn_group = 20
         group_on = ['Plate', 'siRNA ID', 'Gene Symbol']
 
         # get global values of all plates        
@@ -777,7 +781,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
 
         for g, m in means.iteritems():
             count = self.mapping['Object count'][group.groups[g]].sum()
-            if count > min_object_coutn_group:
+            if count > min_object_coutn_group and self.mapping['Group'][group.groups[g]].iloc[0] in for_group:
                 values.append(m)
                 label.append(g + (count,))
                 
@@ -791,37 +795,48 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
 #         svalues = svalues[:top]
 #         slabel = slabel[:top]
         
-                
-        fig = pylab.figure(figsize=(top/6 + 3, 10))
-        ax = pylab.subplot(111)
-        ax.errorbar(range(len(svalues)), svalues, fmt='o', markeredgecolor='none')
-        ax.set_xticks(range(len(svalues)), minor=False)
-        ax.set_xticklabels(["%s %s %s %s %s (%d)" % g for g in slabel], rotation=90)
-        for i, tl in enumerate(ax.get_xticklabels()):
-            if slabel[i][-2].startswith('pos'):
-                tl.set_color("red") 
-            elif slabel[i][-2].startswith('neg'):
-                tl.set_color("green")  
+          
+        if top < 200:
+            # Do plot      
+            fig = pylab.figure(figsize=(top/6 + 3, 10))
+            ax = pylab.subplot(111)
+            ax.errorbar(range(len(svalues)), svalues, fmt='o', markeredgecolor='none')
+            ax.set_xticks(range(len(svalues)), minor=False)
+            ax.set_xticklabels(["%s %s %s %s %s (%d)" % g for g in slabel], rotation=90)
+            for i, tl in enumerate(ax.get_xticklabels()):
+                if slabel[i][-2].startswith('pos'):
+                    tl.set_color("red") 
+                elif slabel[i][-2].startswith('neg'):
+                    tl.set_color("green")  
+            
+            ax.axhline(numpy.mean(values), label='Target mean')
+            ax.axhline(numpy.mean(values) + numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at +2 sigma')
+            ax.axhline(numpy.mean(values) - numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at -2 sigma')
+            ax.axhline(neg_mean, color='g', label='Negative control mean')
+            #ax.axhline(pos_mean, color='r', label='Positive control mean')
+            
+            pylab.legend(loc=2)
+            pylab.ylabel('Outlyingness (OC-SVM)')
+            pylab.xlabel('Target genes')
+            pylab.ylim(0, overall_max+0.1)
+            pylab.xlim(-1, len(svalues)+1)
+            pylab.tight_layout()
+            pylab.savefig(self.output('top_%d_hit_list.pdf' % top))
+            pylab.show()
+            
+            prefix_lut = {}
+            for ii, g in enumerate(reversed(slabel)):
+                prefix_lut[(g[0], g[1])] = "%04d" % (ii+1)
+            
+            
+        # Export to file
+        with open(self.output('top_outlier_list.txt'), 'wb') as fw:
+            fw.write("\t".join(['Plate', 'Well', 'siRNA ID', 'Gene Symbol', 'Group', 'CellCount', 'Outlyingness']) + "\n")
+            for info, value in zip(slabel, svalues):
+                tmp = "\t".join(map(str,info)) + "\t" + str(value) + "\n"
+                fw.write(tmp)
         
-        ax.axhline(numpy.mean(values), label='Target mean')
-        ax.axhline(numpy.mean(values) + numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at +2 sigma')
-        ax.axhline(numpy.mean(values) - numpy.std(values) * 2, color='k', linestyle='--', label='Target cutoff at -2 sigma')
-        ax.axhline(neg_mean, color='g', label='Negative control mean')
-        #ax.axhline(pos_mean, color='r', label='Positive control mean')
-        
-        pylab.legend(loc=2)
-        pylab.ylabel('Outlyingness (OC-SVM)')
-        pylab.xlabel('Target genes')
-        pylab.ylim(0, overall_max+0.1)
-        pylab.xlim(-1, len(svalues)+1)
-        pylab.tight_layout()
-        pylab.savefig(self.output('top_%d_hit_list.pdf' % top))
-        pylab.show()
-        
-        prefix_lut = {}
-        for ii, g in enumerate(reversed(slabel)):
-            prefix_lut[(g[0], g[1])] = "%04d" % (ii+1)
-#         self.make_outlier_galleries(prefix_lut)
+        #self.make_outlier_galleries(prefix_lut)
             
 
     def make_hit_list(self):
@@ -1281,7 +1296,7 @@ class SaraOutlier(object):
             vigra.impex.writeImage(img, os.path.join(outdir, 'mito_live_%s_%s_%s_%s.png' % (plate_name,  well, site, treatment )))
         return idx
     
-    def __init__(self, name, mapping_files, ch5_files, rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
+    def __init__(self, name, mapping_files, ch5_files, rows=None, cols=None, locations=None, training_sites=None, gamma=None, nu=None, pca_dims=None, kernel=None):
         self.od = OutlierDetection(name,
                                   mapping_files,
                                   ch5_files,
@@ -1291,13 +1306,18 @@ class SaraOutlier(object):
                                   gamma=gamma,
                                   nu=nu,
                                   pca_dims=pca_dims,
-                                  kernel=kernel
+                                  kernel=kernel,
+                                  training_sites=training_sites
                                   )
         self.od.set_read_feature_time_predicate(numpy.equal, 0)
         self.od.read_feature(self.sara_mitotic_live_selector)
-        self.od.train_pca()
+        self.od.set_gamma(gamma)
+        self.od.set_nu(nu)
+        self.od.set_pca_dims(pca_dims)
+        self.od.set_kernel(kernel)
+        self.od.train_pca(pca_type=PCA)
         self.od.predict_pca()
-        self.od.train()
+        self.od.train(classifier_class=OneClassSVM)
         self.od.predict()
         self.od.compute_outlyingness()
         
@@ -1306,9 +1326,9 @@ class SaraOutlier(object):
         #self.od.interactive_plot()
         
         
-        self.od.make_top_hit_list()
+        self.od.make_top_hit_list(top=20000, for_group=('neg', 'target', 'pos'))
         #self.od.make_hit_list_single_feature('roisize')
-        self.od.make_heat_map()
+        #self.od.make_heat_map()
         #self.od.make_outlier_galleries()
         if DEBUG:
             print 'Results:', self.od.output_dir
@@ -1480,7 +1500,6 @@ class MatthiasOutlierFigure1(MatthiasOutlier):
                 for idx in numpy.array(cellh5_idx)[idx_c[0:64]]:
                     img = c5p.get_gallery_image(idx)
                     vigra.impex.writeImage(img.swapaxes(1,0), self.od.output('%d_%d_%s_%02d.png' % (c, idx, well, site)))
-   
     
     def panal_b(self):
         pass
@@ -1521,11 +1540,13 @@ if __name__ == "__main__":
 #                          ("H", 6), ("H", 7), ("G", 6), ("G", 7),
 #                         ("H",12), ("H",13), ("G",12), ("G",13),
 #                       ),
-#                       'rows' : list("ABCDEFGHIJKLMNOP")[3:],
-#                       'cols' : tuple(range(1,4)),
+#                     'rows' : list("ABCDEFGHIJKLMNOP")[:],
+#                     'cols' : tuple(range(19,25)),
+#                     'training_sites' : (1,2,3,4),
+                    'training_sites' : (5,6,7,8),
                       'gamma' : 0.005,
                       'nu' : 0.10,
-                      'pca_dims' : 239,
+                      'pca_dims' : 68,
                       'kernel' :'rbf'
                      },
                  

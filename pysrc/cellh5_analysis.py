@@ -168,7 +168,7 @@ class CellH5Analysis(object):
             
             for _, e_idx in enumerate(event_ids):   
                 start_idx = e_idx[-1]
-                track_ids = e_idx + cellh5pos.track_first(start_idx)
+                track_ids = list(e_idx) + cellh5pos.track_first(start_idx)
                 
                 track_labels_list.append(cellh5pos.get_class_label(track_ids))
                 track_id_list.append(track_ids)
@@ -249,11 +249,11 @@ class CellH5Analysis(object):
         data = (data - self._normalization_means) / self._normalization_stds
         return data
     
-    def train_pca(self, train_on=('neg', 'pos', 'target')):
+    def train_pca(self, train_on=('neg', 'pos', 'target'), pca_type=PCA):
         training_matrix = self.get_data(train_on)
         training_matrix = self.normalize_training_data(training_matrix)
-        log.info('Compute PCA: found NaNss in features after normalization? %r' % numpy.any(numpy.isnan(training_matrix)))
-        self.pca = PCA(self.pca_dims)
+        log.info('Compute PCA (%s): found NaNss in features after normalization? %r' % (str(pca_type), numpy.any(numpy.isnan(training_matrix))))
+        self.pca = pca_type(self.pca_dims)
         #self.pca = KernelPCA(self.pca_dims, kernel='rbf', gamma=self.gamma, fit_inverse_transform=False,)
         self.pca.fit(training_matrix)
         
@@ -319,6 +319,7 @@ class CellH5Analysis(object):
                 else:
                     feature_matrix = []
                     object_count = 0
+                    idx =[]
                 
                 object_counts.append(object_count)
                 
@@ -338,9 +339,9 @@ class CellH5Analysis(object):
             self.mapping.loc[plate_idx, 'CellH5 object index excluded'] = c5_object_index_not
         selector_output_file.close()
             
-    def get_data(self, target, type='Object features'):
+    def get_data(self, target, type_='Object features'):
         tmp = self.mapping[self.mapping['Group'].isin(target) & (self.mapping['Object count'] > 0)].reset_index()
-        res = numpy.concatenate(list(tmp[type]))
+        res = numpy.concatenate(list(tmp[type_]))
         log.info('get_data for %r positions' % len(tmp['siRNA ID']))
         log.info('get_data for treatment %r with training matrix shape %r' % (list(tmp['siRNA ID'].unique()), res.shape))
 
@@ -696,6 +697,6 @@ def test_eigen_cell():
     
 
 if __name__ == '__main__':
-    test_eigen_cell()
-#     test_event_tracking()
+#     test_eigen_cell()
+    test_event_tracking()
     

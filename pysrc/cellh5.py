@@ -1021,8 +1021,11 @@ class TestCH5Examples(CH5TestBase):
             image.append(self.pos.get_gallery_image(tuple(event)))
 
 
-def repack_cellh5(cellh5_folder):
+def repack_cellh5(cellh5_folder, output_file=None):
     """copies a cellh5 folder wellbased into one single postition file"""
+    if output_file is None:
+        output_file='%s/_all_positions_with_data.ch5' % cellh5_folder
+  
     import glob, re
     PLATE_PREFIX = '/sample/0/plate/'
     WELL_PREFIX = PLATE_PREFIX + '%s/experiment/'
@@ -1036,7 +1039,7 @@ def repack_cellh5(cellh5_folder):
 
     flist = sorted(glob.glob('%s/*.ch5' % cellh5_folder))
 
-    f = h5py.File('%s/_all_positions_with_data.ch5' % cellh5_folder, 'w')
+    f = h5py.File(output_file, 'w')
 
     reg = re.compile('^[A-Z]\d{2}_\d{2}')
     cnt = 0
