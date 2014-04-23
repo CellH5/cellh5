@@ -174,7 +174,7 @@ class CellH5Analysis(object):
                 track_id_list.append(track_ids)
             all_track_ids.append(track_id_list)
             all_track_labels.append(track_labels_list)
-            log.info("Tracking events from ch5: %r %r %r with %r" % (plate, w, p, "with", list(self.get_treatment(plate, w, p))))
+            log.info("Tracking events from ch5: %r %r %r %s with %r" % (plate, w, p, "with", list(self.get_treatment(plate, w, p))))
             cellh5file.close()
         self.mapping['Event track labels'] = pandas.Series(all_track_labels)
         self.mapping['Event track ids'] = pandas.Series(all_track_ids)
@@ -228,7 +228,7 @@ class CellH5Analysis(object):
         self.mapping['Event HMM track labels'] = -1 
         all_hmm_labels_list = []
         for _, (plate, w, p, track_labs) in self.mapping[['Plate', 'Well', 'Site', class_selector]].iterrows():
-            log.info("  %r %r Rr" % (plate, w, p)) 
+            log.info("  %r %r %r" % (plate, w, p)) 
             hmm_labels_list = []
             for t in track_labs:   
                 hmm_class_labels = self.hmm.predict(numpy.array(t-1)) + 1
@@ -600,13 +600,13 @@ def test_event_tracking():
                                                     '#00FF00']), 'cmap17')  
     pm.plot_track_order_map(['Event track labels', 'Event HMM track labels'], [cmap, CMAP17])
     pm.onset_frame = 5
-    pm.event_curves('Event HMM track labels',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    cmap,
-                    (-20,240),
-                    (0,1.5),
-                    16)
+#     pm.event_curves('Event HMM track labels',
+#                     'tertiary__expanded',
+#                     'n2_avg',
+#                     cmap,
+#                     (-20,240),
+#                     (0,1.5),
+#                     16)
     
 import vigra
 from itertools import izip
