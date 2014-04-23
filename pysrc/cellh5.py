@@ -458,7 +458,11 @@ class CH5Position(object):
         return self['feature'][object_][feature].value
 
     def has_events(self):
-        return bool(self['object/event'].size)
+        # either group is emtpy or key does not exist
+        try:
+            return bool(self['object/event'].size)
+        except KeyError:
+            return False
 
     def get_events(self, output_second_branch=False, random=None):
         assert isinstance(output_second_branch, bool)
