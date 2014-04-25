@@ -11,8 +11,9 @@
 
 import os
 import zlib
-import h5py
 import numpy
+import h5py
+
 import base64
 import warnings
 import unittest
@@ -485,6 +486,8 @@ class CH5Position(object):
         assert isinstance(random, (type(None), int))
 
         evtable = self.get_object_table('event')
+        if len(evtable) == 0:
+            return numpy.array([]) 
         event_ids = numpy.unique(evtable['obj_id'])
 
         if random is not None:
