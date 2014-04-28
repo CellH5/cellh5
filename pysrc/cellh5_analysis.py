@@ -55,7 +55,7 @@ def hex_to_rgb(hex_string):
                          
 
 class CellH5Analysis(object):
-    output_formats = ('pdf',)
+    output_formats = ('png',)
     def __init__(self, name, mapping_files, cellh5_files, output_dir=None, 
                        sites=None, rows=None, cols=None, locations=None):
         self.name = name
@@ -79,6 +79,7 @@ class CellH5Analysis(object):
                 self.time_lapse[plate_name] = time_lapse / 60.0
 #             plate_cellh5.close()
             self.cellh5_handles[plate_name] = plate_cellh5
+            log.info("Found time lapse of plate '%s' = %5.3f min" % (plate_name, self.time_lapse[plate_name]))
             
             mappings.append(plate_mappings)
         self.mapping = pandas.concat(mappings, ignore_index=True)
@@ -112,7 +113,7 @@ class CellH5Analysis(object):
     @staticmethod    
     def str_sanatize(input_str):
         input_str = input_str.replace(" ","_")
-        input_str = input_str.replace("/","_")
+        #input_str = input_str.replace("/","_")
         input_str = input_str.replace("#","_")
         input_str = input_str.replace(")","_")
         input_str = input_str.replace("(","_")
@@ -475,7 +476,7 @@ class CellH5Analysis(object):
                     
                     def my_cmp(x,y):
                         counter = lambda x, items: reduce(lambda a,b:a+b, [list(x).count(xx) for xx in items])
-                        tmp =  cmp(counter(x, [2,3,4]), counter(y, [2,3,4]))
+                        tmp =  cmp(counter(x, [2,3,4,5]), counter(y, [2,3,4,5]))
                         return tmp if tmp!=0 else cmp(len(x),len(y)) 
                     
                     for i, t in enumerate([tmp[0] for tmp in sorted(zip(tracks, self.mapping[idx][track_selection[-1]].iloc[0]), cmp=my_cmp, key=lambda x:x[1])]):
@@ -490,7 +491,7 @@ class CellH5Analysis(object):
                     pylab.axis('off')
                     extent = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
                     for fmt in self.output_formats:
-                        fig.savefig(self.output('tracks\\short_%s_%d.%s' % (title, track_short_crop_in_min, fmt)), bbox_inches=extent)  
+                        fig.savefig(self.output('tracks/short_%s_%d.%s' % (title, track_short_crop_in_min, fmt)), bbox_inches=extent)  
 
                     # plot long
                     pylab.clf()
@@ -500,7 +501,7 @@ class CellH5Analysis(object):
                     pylab.axis('off')
                     extent = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
                     for fmt in self.output_formats:
-                        fig.savefig(self.output('tracks\\full_%s_%d.%s' % (title, int(max_track_length*self.time_lapse[plate]+0.5), fmt)), bbox_inches=extent)
+                        fig.savefig(self.output('tracks/full_%s_%d.%s' % (title, int(max_track_length*self.time_lapse[plate]+0.5), fmt)), bbox_inches=extent)
                     
 
                 else:
@@ -624,7 +625,7 @@ def test_event_tracking():
 #                     (0,1.5),
 #                     16)
     
-import vigra
+#import vigra
 from itertools import izip
 from sklearn.neighbors import KernelDensity
 from sklearn.grid_search import GridSearchCV
