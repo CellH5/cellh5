@@ -558,8 +558,10 @@ def ch5_scatter(ch5_file, well, site, time=0):
     iscatter = IScatterWidgetHisto()
     iscatter.set_data(features, data_names, [('H2bPlate', '0038', '1', 'Kiff11', 'no grugs') for k in xrange(features.shape[0])], 222, 236, numpy.nonzero(times_idx)[0], lambda y, x: ch5_pos.get_gallery_image_matrix(x, (5, 25)))
 
+    iscatter2 = IScatterWidgetHisto()
+    iscatter2.set_data(features, data_names, [('H2bPlate', '0038', '1', 'Kiff11', 'no grugs') for k in xrange(features.shape[0])], 222, 236, numpy.nonzero(times_idx)[0], lambda y, x: ch5_pos.get_gallery_image_matrix(x, (5, 25)))
     
-    mw = IScatter(iscatter)
+    mw = IScatter(iscatter, iscatter2)
     mw.show()
     app.exec_()
     
