@@ -225,7 +225,7 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
 
 
 class OutlierDetection(cellh5_analysis.CellH5Analysis):
-    def __init__(self, name, mapping_files, cellh5_files, training_sites=(5,6,7,8,), rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
+    def __init__(self, name, mapping_files, cellh5_files, training_sites=None, rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
         cellh5_analysis.CellH5Analysis.__init__(self, name, mapping_files, cellh5_files, sites=training_sites, rows=rows, cols=cols, locations=locations)
         self.gamma = gamma
         self.nu = nu
@@ -987,7 +987,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
         features = numpy.c_[data_pca, data_features[:,self._non_nan_feature_idx], predictions, classifications]
     
-        names = pca_names + feature_names  + ['Outliers', 'Sup. Classification']
+        names = pca_names + feature_names  + ['Outliers', 'Classification']
   
         def contour_eval(xlim, ylim, xdim, ydim):
             xx, yy = numpy.meshgrid(numpy.linspace(xlim[0], xlim[1], 100), numpy.linspace(ylim[0], ylim[1], 100))
@@ -1627,6 +1627,7 @@ if __name__ == "__main__":
                                   ),
 #                       'rows' : list("ABCDEFGHIJKLMNOP")[:3],
 #                         'cols' : tuple(range(19,25)),
+            
                       'gamma' : 0.0001,
                       'nu' : 0.1,
                       'pca_dims' : 50,
@@ -1634,7 +1635,7 @@ if __name__ == "__main__":
                      }
                   }
     setupt_matplot_lib_rc()
-    run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
-    #run_exp('matthias_figure_1', EXPLOOKUP, MatthiasOutlierFigure1)
+    #run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
+    run_exp('matthias_figure_1', EXPLOOKUP, MatthiasOutlierFigure1)
 
     print 'finished'
