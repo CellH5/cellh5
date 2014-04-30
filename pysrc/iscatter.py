@@ -60,14 +60,23 @@ def blend_images(image_list, cmap_list, normalize=True):
     
     blend_img = []
     for img, cm in zip(image_list, cmap_list):
-        img_q = qimage2ndarray.array2qimage(img, normalize=(0, numpy.max(map(numpy.max, image_list))))
+#         img_q = qimage2ndarray.array2qimage(img, normalize=(0, numpy.max(map(numpy.max, image_list))))
+        img_q = qimage2ndarray.gray2qimage(img, normalize=(0, numpy.max(map(numpy.max, image_list))))
+        #img_q = qimage2ndarray.array2qimage(img, normalize=(0, 255))
         cm_q = colormaps[cm]
-        blend_img.append( img_q.convertToFormat(img_q.Format_Indexed8, cm_q.qt) )
+        img_q.setColorTable(cm_q.qt)
+        blend_img.append(img_q)
     
     qimage = blend_images_max(blend_img)
     result =  qimage2ndarray.rgb_view(QtGui.QImage(qimage))
     
+    if False:
+        tmp = result.astype('int') 
+        tmp[result.sum(2) > 0] *= 255
+        result = numpy.clip(tmp, 0 ,255).astype('uint8')
     result[result.sum(2) == 0] = 128
+    
+    
     return result
 
 class DataPoint(object):
@@ -197,9 +206,10 @@ class IScatterWidget(QtGui.QWidget):
         self.cmb_result_sample_selection = QtGui.QComboBox(self)
         axis_selector_layout.addWidget(self.cmb_result_sample_selection)
         self.cmb_result_sample_selection.addItem("All")
+        self.cmb_result_sample_selection.addItem("Clustering")
         self.cmb_result_sample_selection.addItem("Outliers")
         self.cmb_result_sample_selection.addItem("Classification")
-        self.cmb_result_sample_selection.currentIndexChanged[str].connect(partial(self.sample_selection_changed, 'Result'))
+        self.cmb_result_sample_selection.currentIndexChanged[str].connect(self.result_selection_changed)
              
         axis_selector_layout.addStretch()
         
@@ -286,6 +296,9 @@ class IScatterWidget(QtGui.QWidget):
                 if not s[lkp_tmp[cur_sel_type]].startswith(cur_sel):
                     self.sample_selection[i] = False
                         
+        self.update_axis()
+        
+    def result_selection_changed(self, type_):
         self.update_axis()
         
         
@@ -511,30 +524,44 @@ class IScatterWidgetHisto(IScatterWidget):
         if str(self.cmb_result_sample_selection.currentText()).startswith("Outliers"):
             image_list = []
             for k in [1, -1]:
+                tmp_idx_2 = numpy.logical_and(self.sample_selection, self.data_matrix[:,-2] == k)
      
-                hist_img = numpy.histogram2d(self.xs[self.data_matrix[tmp_idx, -2] == k], self.ys[self.data_matrix[tmp_idx, -2] == k], 
-                                             bins=64, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
-                                                             [self.data_mins[self.y_dim], self.data_maxs[self.y_dim]]])
+                hist_img = numpy.histogram2d(self.xs[tmp_idx_2], self.ys[tmp_idx_2], 
+                                             bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
+                                                              [self.data_mins[self.y_dim], self.data_maxs[self.y_dim]]])
                 img = numpy.flipud(hist_img[0].swapaxes(1,0))
                 image_list.append(img)
     
             img = blend_images(image_list, ['red', 'green'])
             self.current_image = img
             
-        elif str(self.cmb_result_sample_selection.currentText()).startswith("Classific"):
+        elif str(self.cmb_result_sample_selection.currentText()).startswith("Classi"):
             image_list = []
-            for k in range(6):
-     
-                hist_img = numpy.histogram2d(self.xs[self.data_matrix[tmp_idx, -1] == k], self.ys[self.data_matrix[tmp_idx, -1] == k], 
-                                             bins=64, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
+            for k in range(8):
+                tmp_idx_2 = numpy.logical_and(self.sample_selection, self.data_matrix[:,-1] == k)
+                hist_img = numpy.histogram2d(self.xs[tmp_idx_2], self.ys[tmp_idx_2], 
+                                             bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
                                                              [self.data_mins[self.y_dim], self.data_maxs[self.y_dim]]])
                 img = numpy.flipud(hist_img[0].swapaxes(1,0))
                 image_list.append(img)
     
-            img = blend_images(image_list, ['red', 'green','blue', 'yellow', 'cyan', 'magenta'])
+            img = blend_images(image_list, ['green','red','blue', 'yellow', 'cyan', 'magenta', 'purple', 'olive'])
+            self.current_image = img
+            
+        elif str(self.cmb_result_sample_selection.currentText()).startswith("Clustering"):
+            image_list = []
+            for k in range(8):
+                tmp_idx_2 = numpy.logical_and(self.sample_selection, self.data_matrix[:,-3] == k)
+                hist_img = numpy.histogram2d(self.xs[tmp_idx_2], self.ys[tmp_idx_2], 
+                                             bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
+                                                             [self.data_mins[self.y_dim], self.data_maxs[self.y_dim]]])
+                img = numpy.flipud(hist_img[0].swapaxes(1,0))
+                image_list.append(img)
+    
+            img = blend_images(image_list, ['green','red','blue', 'yellow', 'cyan', 'magenta', 'purple', 'olive'])
             self.current_image = img
         else:
-            hist_img = numpy.histogram2d(self.xs[tmp_idx], self.ys[tmp_idx], bins=64, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
+            hist_img = numpy.histogram2d(self.xs[tmp_idx], self.ys[tmp_idx], bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
                                                                                              [self.data_mins[self.y_dim], self.data_maxs[self.y_dim]]])
             
             img = numpy.flipud(hist_img[0].swapaxes(1,0))
@@ -616,6 +643,8 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
                           ("yellow" , '#FFFF00'),
                           ("magenta" ,'#FF00FF'),
                           ("cyan" , '#00FFFF'),
+                          ("purple" , '#800080'),
+                          ("olive" , '#808000'),
                           ("white" , '#FFFFFF')])
     def __init__(self, *args, **kwargs):
         SimpleMplImageViewer.__init__(self, *args, **kwargs)

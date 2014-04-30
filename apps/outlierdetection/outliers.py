@@ -231,7 +231,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         self.nu = nu
         self.pca_dims = pca_dims
         self.kernel = kernel
-        self.feature_set = 'PCA'
+        self.feature_set = 'Object features'
         #self.output_dir += "/-o%s-p%d-k%s-n%f-g%f" % (self.feature_set, self.pca_dims, self.kernel, self.nu, self.gamma)
         try:
             os.makedirs(self.output_dir)
@@ -288,7 +288,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             
     def train_classifier(self, training_matrix, classifier_class=OneClassSVM):
         self.classifier = classifier_class(kernel=self.kernel, nu=self.nu, gamma=self.gamma)
-        
+        print '  Using', classifier_class, self.kernel, self.nu, self.gamma
         if self.kernel == 'linear':
             max_training_samples = 20000
             idx = range(training_matrix.shape[0])
@@ -336,7 +336,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
 
     def cluster_get_k(self, training_data):
-        max_k = 7
+        max_k = 4
         bics = numpy.zeros(max_k)
         bics[0] = 0
         for k in range(1, max_k):
@@ -369,7 +369,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         training_data = numpy.concatenate(training_data)
         
         k = self.cluster_get_k(training_data)
-        
+        k=3
         if DEBUG:
             print 'Run clustering for training data shape ', training_data.shape, 'with k = ', k
         km = sklearn.cluster.KMeans(k)
@@ -916,7 +916,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         sites = []
         predictions = []
         classifications = []
-        
+        all_clustering = []
         
         
         for row_index, row in self.mapping[self.mapping['Object count'] > 0].iterrows():
@@ -934,7 +934,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             pca = self.mapping['PCA'].iloc[row_index][:,:20]
             cellh5idx = numpy.array(row['CellH5 object index'])
             prediction = numpy.array(row['Predictions'])
-        
+            clustering = numpy.array(row['Outlier clustering'])
+            all_clustering.append(clustering)
             c5p = c5f.get_position(well, str(site))
             class_prediction = c5p.get_class_prediction()['label_idx'][cellh5idx]
             classifications.append(class_prediction)
@@ -956,6 +957,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         data_features = numpy.concatenate(data_features)
         data_cellh5 = numpy.concatenate(cellh5_list)
         classifications = numpy.concatenate(classifications)
+        all_clustering = numpy.concatenate(all_clustering)
   
         cf = self.cellh5_handles.values()[0]
         feature_names = cf.object_feature_def()
@@ -985,9 +987,9 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             img = CH5File.gallery_image_matrix_layouter(img_gens, shape)
             return img
         
-        features = numpy.c_[data_pca, data_features[:,self._non_nan_feature_idx], predictions, classifications]
+        features = numpy.c_[data_pca, data_features[:,self._non_nan_feature_idx], all_clustering, predictions, classifications]
     
-        names = pca_names + feature_names  + ['Outliers', 'Classification']
+        names = pca_names + feature_names  + ['Clustering', 'Outliers', 'Classification']
   
         def contour_eval(xlim, ylim, xdim, ydim):
             xx, yy = numpy.meshgrid(numpy.linspace(xlim[0], xlim[1], 100), numpy.linspace(ylim[0], ylim[1], 100))
@@ -1437,6 +1439,7 @@ class MatthiasOutlierFigure1(MatthiasOutlier):
             self.od.compute_outlyingness()
             
             print self.od.evaluate()
+            self.od.cluster_outliers()
             
             self.od.interactive_plot()
         
@@ -1602,17 +1605,17 @@ if __name__ == "__main__":
 #                                ("H",12), ("H",13), ("G",12), ("G",13),
 
                                 ("A",  8), ("B", 8), ("C", 8), ("D", 8), ("E", 8),
-                                ("D",  13), ("F",  13), ("H",  13), # Taxol No Rev
+                                #("D",  13), ("F",  13), ("H",  13), # Taxol No Rev
                                 ("D",  7), ("F",  7), ("H",  7), # Noco No Rev 
                                 ("D",  12), ("F",  12), ("H",  12), # Taxol 300 Rev
-                                ("D",  6), ("F",  6), ("H",  6), # Noco 300 Rev
+                                #("D",  6), ("F",  6), ("H",  6), # Noco 300 Rev
                                 #("D",  9), ("F",  9), ("H",  9), # Taxol 900 Rev
                                 #("D",  3), ("F",  3), ("H",  3), # Noco 900 Rev
 #                                 
-                                ("J",  13), ("L",  13), ("N",  13), # Taxol No Rev
+                                #("J",  13), ("L",  13), ("N",  13), # Taxol No Rev
                                 ("J",  7), ("L",  7), ("N",  7), # Noco No Rev 
                                 ("J",  12), ("L",  12), ("N",  12), # Taxol 300 Rev
-                                ("J",  6), ("L",  6), ("N",  6), # Noco 300 Rev
+                                #("J",  6), ("L",  6), ("N",  6), # Noco 300 Rev
 #                                 ("J",  9), ("L",  9), ("N",  9), # Taxol 900 Rev
 #                                 ("J",  3), ("L",  3), ("N",  3), # Noco 900 Rev
                                
@@ -1628,10 +1631,10 @@ if __name__ == "__main__":
 #                       'rows' : list("ABCDEFGHIJKLMNOP")[:3],
 #                         'cols' : tuple(range(19,25)),
             
-                      'gamma' : 0.0001,
-                      'nu' : 0.1,
-                      'pca_dims' : 50,
-                      'kernel' :'linear'
+                      'gamma' : 0.005,
+                      'nu' : 0.10,
+                      'pca_dims' : 68,
+                      'kernel' :'rbf'
                      }
                   }
     setupt_matplot_lib_rc()
