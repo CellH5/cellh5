@@ -122,6 +122,7 @@ class CellH5Analysis(object):
     def read_events(self, onset_frame=4, events_before_frame=99999):   
         self.mapping['Event labels'] = -1   
         self.mapping['Event ids'] = -1
+        self.onset_frame = onset_frame
         event_label_list = []
         event_id_list = []   
         for _, (plate, w, p) in self.mapping[['Plate', 'Well','Site']].iterrows(): 
@@ -433,17 +434,17 @@ class CellH5Analysis(object):
         old_l_idx = 0
         for l_idx, l1 in enumerate(line):
             if l1 != old_l:
-                x = (numpy.arange(old_l_idx, l_idx+1) - self.onset_frame ) * self.time_lapse
+                x = (numpy.arange(old_l_idx, l_idx+1) - self.onset_frame ) * self.time_lapse.values()[0]
                 y = values[old_l_idx:(l_idx+1)]
                 #print 'x', x[0], 'to', x[-1]
                 #print 'y', y[0], 'to', y[-1]
-                ax.plot(x, y, color=self.cmap(int(old_l)), linewidth=1)
+                ax.plot(x, y, color=cmap(int(old_l)), linewidth=1)
                 old_l = l1
                 old_l_idx = l_idx
                 
-        x = (numpy.arange(old_l_idx, len(line)) - self.onset_frame) * self.time_lapse
+        x = (numpy.arange(old_l_idx, len(line)) - self.onset_frame) * self.time_lapse.values()[0]
         y = values[old_l_idx:(len(line))]
-        ax.plot(x, y, color=self.cmap(int(l1)), linewidth=1)
+        ax.plot(x, y, color=cmap(int(l1)), linewidth=1)
               
     def plot_track_order_map(self, track_selection, color_maps, track_short_crop_in_min=240):
         try:
