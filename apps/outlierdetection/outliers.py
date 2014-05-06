@@ -13,6 +13,8 @@ from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, a
 from sklearn.metrics.metrics import roc_curve
 from sklearn.covariance import EmpiricalCovariance, MinCovDet
 from sklearn.metrics import accuracy_score
+from sklearn.metrics.pairwise import pairwise_distances
+from sklearn.metrics import silhouette_score
 import sklearn.cluster
 import sklearn.mixture
 
@@ -30,10 +32,23 @@ from itertools import chain
 
 import iscatter
 from cellh5 import CH5File
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
+from matplotlib.colors import rgb2hex
+
+from matplotlib import rcParams 
+rcParams['font.family'] = 'sans-serif'
+rcParams['font.sans-serif'] = ['Arial']
+rcParams['pdf.fonttype'] = 42
+rcParams['ps.usedistiller' ] = 'xpdf'
 
 
-
+COLOR_LUT_6 = OrderedDict([
+        ("blue"    , "#000087"),
+        ("green"   , "#00A600"),
+        ("red"     , "#AF0000"),
+        ("magenta" , "#904190"),
+        ("yellow"  , "#EFEF43"),
+        ("cyan"    , "#00EFEF")])
 
 DEBUG = True
 
@@ -184,7 +199,7 @@ def setupt_matplot_lib_rc():
 
 
 def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
-    width=0.33
+    width=0.5
         
     labels = []
     rects = []
@@ -198,28 +213,29 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
             
         bottom=0
         for c, h in enumerate(hs):
-            rect = ax.bar(x, h, width, bottom=bottom, color=color_dict[c])
+            rect = ax.bar(x, h, width, bottom=bottom, color=color_dict[c], edgecolor = "none")
             bottom+=h
             rects.append(rect)
         x +=1  
           
     rects.append(rect)
     lg = ax.legend(rects, label_list, 
-                   loc=3, 
-                   ncol=2,
+                   loc=1, 
+                   ncol=4,
                    #bbox_to_anchor=(-0.1, -0.4)
                    )
     lg.draw_frame(False)
             
     ax.set_xticks(numpy.arange(len(treatment_dict))+width/2.0)
-    ax.set_xticklabels(labels, rotation=90)
+    ax.set_xticklabels(labels,)
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
     ax.get_xaxis().tick_bottom()
     ax.get_yaxis().tick_left()
-    #ax.set_xlim(-0.2,len(fates)-0.35)
+    ax.set_xlim(-0.2,len(labels)-0.35)
+    ax.set_ylim(0,1.2)
     
-    pylab.xlabel('Treatment')
+    #pylab.xlabel('Treatment')
     pylab.ylabel('Cluster (relative frequency)')
     pylab.tight_layout()
 
@@ -231,7 +247,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         self.nu = nu
         self.pca_dims = pca_dims
         self.kernel = kernel
-        self.feature_set = 'Object features'
+        self.feature_set = 'PCA'
         #self.output_dir += "/-o%s-p%d-k%s-n%f-g%f" % (self.feature_set, self.pca_dims, self.kernel, self.nu, self.gamma)
         try:
             os.makedirs(self.output_dir)
@@ -336,23 +352,70 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
 
     def cluster_get_k(self, training_data):
-        max_k = 4
+        max_k = 5
         bics = numpy.zeros(max_k)
         bics[0] = 0
-        for k in range(1, max_k):
-            gmm = sklearn.mixture.GMM(k)
-            gmm.fit(training_data)
-            b = gmm.bic(training_data)
-            bics[k] = b
-        K = numpy.argmin(bics[1:])
-        K+=1
-        pylab.plot(range(1, max_k), bics[1:])
-        pylab.xlim(0, len(bics)+0.5)
-        mi, ma = pylab.gca().get_ylim()
-        pylab.vlines(K, mi, ma, color='r', lw=3)
-        pylab.xlabel("Number of clusters (k)")
-        pylab.ylabel("Baysian Information Criterion (BIC)")
-        pylab.savefig(self.output("outlier_clustering_bic.pdf"))
+        if True:
+            if True:
+                for k in range(1, max_k):
+                    gmm = sklearn.mixture.GMM(k, covariance_type='full')
+                    gmm.fit(training_data)
+                    cluster_assignment = gmm.predict(training_data)
+                    res = numpy.array([numpy.count_nonzero(cluster_assignment==kk) for kk in numpy.unique(cluster_assignment)]) / float(len(cluster_assignment))
+                    b = gmm.bic(training_data)
+                    bics[k] = -b
+                    
+                    print ' cluster k', k, 'distro', res, 'bic', b
+                    
+                bicd = numpy.diff(bics[1:])
+                bicd = bicd > numpy.mean(bicd)
+                kkk = 1
+                for bd in bicd:
+                    if bd:
+                        kkk+=1
+                    else:
+                        break
+                    
+                bics /= 10000.0
+                       
+                K = numpy.argmax(numpy.diff(numpy.diff(numpy.diff(bics[1:]))))
+                #K = numpy.argmin(bics[1:])
+                K = kkk
+                fig = pylab.figure()
+                pylab.plot(range(1, max_k), bics[1:], lw=2, label=r"$-2 \ln \left( \mathcal{L}(x \vert \mathrm{G}_k) \right) + \vert \mathrm{G}_k \vert \ln(n)$")
+                pylab.xlim(0, len(bics)+0.5)
+                pylab.plot(K, bics[K], 'r', marker='o', markersize=20, markeredgecolor="r", markerfacecolor="none", ls="", label="Knee point")
+                pylab.xlabel("Number of clusters (k)")
+                pylab.ylabel("Bayesian Information Criterion BIC ($\\times -10^4$)")
+                ax = pylab.gca()
+                ax.spines["right"].set_visible(False)
+                ax.spines["top"].set_visible(False)
+                ax.get_xaxis().tick_bottom()
+                ax.get_yaxis().tick_left()
+                pylab.legend(loc=4)
+                
+                pylab.tight_layout()
+                pylab.savefig(self.output("outlier_clustering_bic.pdf"))
+            else:
+                K=3
+            
+            
+        else:
+            bics[0] = -2
+            # Sillouette
+            pd = pairwise_distances(training_data)
+            for k in range(2, max_k):
+                cluster = sklearn.cluster.KMeans(k, init='random')
+                cluster_assignment = cluster.fit_predict(training_data)
+                res = numpy.array([numpy.count_nonzero(cluster_assignment==k) for k in numpy.unique(cluster_assignment)]) / float(len(cluster_assignment))
+                b = silhouette_score(pd, cluster_assignment, metric='precomputed')
+                print ' cluster k', k, 'distro', res, 'silhouette', b
+                bics[k] = b
+            K = numpy.argmax(bics[2:])
+            K+=2
+            
+        
+
         return K
     
     def cluster_outliers(self):
@@ -360,30 +423,46 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         if DEBUG:
             print 'Setup clustering'
         training_data = []
-        for _ , (data, prediction, w, p, c, g, s) in self.mapping[['PCA', 'Predictions', 'Well', 'Site', 'Object count', 'Gene Symbol', 'siRNA ID']].iterrows():
+        label = []
+        for _ , (data, prediction, w, p, c, g, s, ch5i) in self.mapping[['PCA', 'Predictions', 'Well', 'Site', 'Object count', 'Gene Symbol', 'siRNA ID', 'CellH5 object index']].iterrows():
             print w,p,g,s,c, type(data)
             if c > 0:
                 data_i = data[prediction == -1, :]
                 training_data.append(data_i)
+                label.append([(w,p,g,s, cc) for cc in ch5i])
             
         training_data = numpy.concatenate(training_data)
+        label = numpy.concatenate(label)
+        
+        
         
         k = self.cluster_get_k(training_data)
-        k=3
         if DEBUG:
             print 'Run clustering for training data shape ', training_data.shape, 'with k = ', k
-        km = sklearn.cluster.KMeans(k)
+        km = sklearn.mixture.GMM(k, covariance_type='full')
         km.fit(training_data)
         
         cluster_vectors = {}
-        cluster_teatment_vectors = {}
+        
+        cluster_teatment_vectors = OrderedDict()
         
         if DEBUG:
             print 'Apply Clustering'
-        for idx , (data, prediction, c, g, s)  in self.mapping[['PCA', 'Predictions', 'Object count', 'Gene Symbol', 'siRNA ID']].iterrows():        
+        for idx , (data, prediction, c, g, s, ch5_idx, plate, well, site)  in self.mapping[['PCA', 'Predictions', 'Object count', 'Gene Symbol', 'siRNA ID', 'CellH5 object index', 'Plate', 'Well', 'Site']].iterrows():        
             if c > 0:
                 cluster_predict = km.predict(data) + 1
                 cluster_predict[prediction==1, :] = 0
+                if False:
+                    c5f = self.cellh5_handles[plate]
+                    c5p = c5f.get_position(well, str(site))
+                    img_list = []
+                    for j in range(k+1):
+                        img_j = c5p.get_gallery_image_matrix(ch5_idx[cluster_predict == j], (10, 10))
+                        img_list.append(img_j)
+                        img_list.append(numpy.ones((img_j.shape[0],5))*255)
+                        vigra.impex.writeImage(img_j.swapaxes(1,0), self.output('single_%s_%s_%s_%s_cluster_%d.png' % (g,s,well, site,j)))
+                    img_list = numpy.concatenate(img_list[:-1],1)
+                    vigra.impex.writeImage(img_list.swapaxes(1,0), self.output('all_%s_%s_cluster_class.png' % (well, site)))
             else:
                 cluster_predict = numpy.array([0])
             cluster_vectors[idx] = cluster_predict
@@ -393,10 +472,66 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
         # make plot
         
-        fig = pylab.figure()
+        
+        fig = pylab.figure(figsize=(10,8))
         ax = pylab.gca()
-        treatmentStackedBar(ax, cluster_teatment_vectors, {0:'w', 1:'r', 2:'g', 3:'b', 4:'y', 5:'m', 6:'c', 7:'k'}, ['Inlier',] + ["Cluster %d" % d for d in range(1,k+1)])
+        treatmentStackedBar(ax, cluster_teatment_vectors, {0: COLOR_LUT_6['green'], 
+                                                           1: COLOR_LUT_6['red'], 
+                                                           2: COLOR_LUT_6['yellow'],  
+                                                           3: COLOR_LUT_6['blue'],  
+                                                           4: COLOR_LUT_6['magenta'],   
+                                                           5: COLOR_LUT_6['cyan'],   
+                                                           6:'w', 
+                                                           7:'k'}, ['Inlier',] + ["Cluster %d" % d for d in range(1,k+1)])
         pylab.savefig(self.output("outlier_clustering.pdf"))
+        pylab.show()
+        #self.ward_cluster(training_data, label)
+        
+    def ward_cluster(self, training_data, label):
+        rand_idx = range(training_data.shape[0])
+        numpy.random.shuffle(rand_idx)
+        rand_idx = rand_idx[:100]
+        
+        training_data = training_data[rand_idx, :]
+        label = label[rand_idx] 
+        
+        
+        import scipy.cluster.hierarchy as sch
+
+        D = pairwise_distances(training_data, metric="cityblock")
+        # Compute and plot first dendrogram.
+        fig = pylab.figure(figsize=(8,8))
+        ax1 = fig.add_axes([0.09,0.1,0.2,0.6])
+        Y = sch.linkage(D, method='centroid')
+        Z1 = sch.dendrogram(Y, orientation='right')
+        ax1.set_xticks([])
+        ax1.set_yticks([])
+        
+        # Compute and plot second dendrogram.
+        ax2 = fig.add_axes([0.3,0.71,0.6,0.2])
+        Y = sch.linkage(D, method='centroid')
+        Z2 = sch.dendrogram(Y)
+        ax2.set_xticks([])
+        ax2.set_yticks([])
+                
+        # Plot distance matrix.
+        axmatrix = fig.add_axes([0.3,0.1,0.6,0.6])
+        idx1 = Z1['leaves']
+        idx2 = Z2['leaves']
+        D = D[idx1,:]
+        D = D[:,idx2]
+        im = axmatrix.matshow(D, aspect='auto', origin='lower', cmap=pylab.cm.YlGnBu)
+        axmatrix.set_xticks(range(D.shape[0]))
+        axmatrix.set_yticks(range(D.shape[1]))
+        axmatrix.set_xticklabels(["%s %s %s %s %s" % ( w,str(p),g,s, cc) for w,p,g,s, cc in label[idx1]], rotation=90)
+        axmatrix.set_yticklabels(["%s %s %s %s %s" % ( w,str(p),g,s, cc) for w,p,g,s, cc in label[idx2]])
+        
+        # Plot colorbar.
+        axcolor = fig.add_axes([0.91,0.1,0.02,0.8])
+        pylab.colorbar(im, cax=axcolor)
+
+        # Display and save figure.
+        pylab.show()
         
     def evaluate_roc(self):
         y_true = []
@@ -466,28 +601,28 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             
             
             
-            for c, o in zip(class_prediction,outlier_prediction_2):
+            for c, o in zip(class_prediction, outlier_prediction_2):
                 cm[c,o]+=1
               
-            if i == -1:  
-                pylab.figure()
-                ax = pylab.subplot(111)
-                pylab.pcolor(cm, cmap=pylab.matplotlib.cm.Greens, vmin=0, vmax=cm.max())
-                pylab.colorbar()
-                ax.set_xticks(numpy.arange(cm.shape[1]) + 0.5, minor=False)
-                ax.set_yticks(numpy.arange(cm.shape[0]) + 0.5, minor=False)
-                ax.set_xticklabels(['Inlier', 'Outlier'])
-                ax.set_yticklabels(['Inter', 'Prometa', 'Meta', 'AnaTelo', 'Outlier_grape', 'Outlier_arrest', 'Outlier_polylobed'])
-                ax.invert_yaxis()
-                for c in range(7):
-                    for o in range(2):
-                        t = pylab.text(o + 0.5, c + 0.5,  str(cm[c,o]), horizontalalignment='center', verticalalignment='center', fontsize=14)
-                        if cm[c,o] > 0.3*cm.max():
-                            t.set_color('w')
-                
-                ax.set_title('Accuracy %0.3f\ng %0.5f - n %0.3f - pd %d - k %s -dr %r' % (numpy.mean(acc), self.gamma, self.nu, self.pca_dims, self.kernel, self.pca.__class__.__name__))
-                pylab.tight_layout()
-                pylab.savefig(self.output('outlier_classification_confusion_%s1.png' % well))
+#             if i == -1:  
+#                 pylab.figure()
+#                 ax = pylab.subplot(111)
+#                 pylab.pcolor(cm, cmap=pylab.matplotlib.cm.Greens, vmin=0, vmax=cm.max())
+#                 pylab.colorbar()
+#                 ax.set_xticks(numpy.arange(cm.shape[1]) + 0.5, minor=False)
+#                 ax.set_yticks(numpy.arange(cm.shape[0]) + 0.5, minor=False)
+#                 ax.set_xticklabels(['Inlier', 'Outlier'])
+#                 ax.set_yticklabels(['Inter', 'Prometa', 'Meta', 'AnaTelo', 'Outlier_grape', 'Outlier_arrest', 'Outlier_polylobed'])
+#                 ax.invert_yaxis()
+#                 for c in range(7):
+#                     for o in range(2):
+#                         t = pylab.text(o + 0.5, c + 0.5,  str(cm[c,o]), horizontalalignment='center', verticalalignment='center', fontsize=14)
+#                         if cm[c,o] > 0.3*cm.max():
+#                             t.set_color('w')
+#                 
+#                 ax.set_title('Accuracy %0.3f\ng %0.5f - n %0.3f - pd %d - k %s -dr %r' % (numpy.mean(acc), self.gamma, self.nu, self.pca_dims, self.kernel, self.pca.__class__.__name__))
+#                 pylab.tight_layout()
+#                 pylab.savefig(self.output('outlier_classification_confusion_%s1.png' % well))
             
             
             #print plate_name, well, site, treatment 
@@ -527,7 +662,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         ax.set_title('Accuracy %0.2f' % numpy.mean(acc))
         pylab.tight_layout()
         pylab.savefig(self.output('outlier_classification_confusion.pdf'))
-        pylab.show()
+        pylab.show(block=False)
         if DEBUG:
             print 'Evaluate mean', numpy.mean(acc)
         return numpy.mean(acc)
@@ -1402,8 +1537,8 @@ class MatthiasOutlier(object):
                                   )
         
         greater_less = lambda x, cv: numpy.logical_and(numpy.greater(x, cv[0]), numpy.less(x, cv[1]))
-        #od.set_read_feature_time_predicate(numpy.equal, 7)
-        od.set_read_feature_time_predicate(greater_less, (6, 9))
+#         od.set_read_feature_time_predicate(numpy.equal, 7)
+        od.set_read_feature_time_predicate(greater_less, (5, 10))
         od.read_feature()
         
         return od
@@ -1438,7 +1573,7 @@ class MatthiasOutlierFigure1(MatthiasOutlier):
             self.od.predict()
             self.od.compute_outlyingness()
             
-            print self.od.evaluate()
+            #print self.od.evaluate()
             self.od.cluster_outliers()
             
             self.od.interactive_plot()
@@ -1605,17 +1740,17 @@ if __name__ == "__main__":
 #                                ("H",12), ("H",13), ("G",12), ("G",13),
 
                                 ("A",  8), ("B", 8), ("C", 8), ("D", 8), ("E", 8),
-                                #("D",  13), ("F",  13), ("H",  13), # Taxol No Rev
+#                                 ("D",  13), ("F",  13), ("H",  13), # Taxol No Rev
                                 ("D",  7), ("F",  7), ("H",  7), # Noco No Rev 
                                 ("D",  12), ("F",  12), ("H",  12), # Taxol 300 Rev
-                                #("D",  6), ("F",  6), ("H",  6), # Noco 300 Rev
-                                #("D",  9), ("F",  9), ("H",  9), # Taxol 900 Rev
-                                #("D",  3), ("F",  3), ("H",  3), # Noco 900 Rev
+#                                 ("D",  6), ("F",  6), ("H",  6), # Noco 300 Rev
+#                                 ("D",  9), ("F",  9), ("H",  9), # Taxol 900 Rev
+#                                 ("D",  3), ("F",  3), ("H",  3), # Noco 900 Rev
 #                                 
-                                #("J",  13), ("L",  13), ("N",  13), # Taxol No Rev
+#                                 ("J",  13), ("L",  13), ("N",  13), # Taxol No Rev
                                 ("J",  7), ("L",  7), ("N",  7), # Noco No Rev 
                                 ("J",  12), ("L",  12), ("N",  12), # Taxol 300 Rev
-                                #("J",  6), ("L",  6), ("N",  6), # Noco 300 Rev
+#                                 ("J",  6), ("L",  6), ("N",  6), # Noco 300 Rev
 #                                 ("J",  9), ("L",  9), ("N",  9), # Taxol 900 Rev
 #                                 ("J",  3), ("L",  3), ("N",  3), # Noco 900 Rev
                                
@@ -1634,7 +1769,7 @@ if __name__ == "__main__":
                       'gamma' : 0.005,
                       'nu' : 0.10,
                       'pca_dims' : 68,
-                      'kernel' :'rbf'
+                      'kernel' :'linear'
                      }
                   }
     setupt_matplot_lib_rc()

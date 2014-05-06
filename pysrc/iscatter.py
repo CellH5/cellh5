@@ -26,6 +26,7 @@ import sys
 from collections import OrderedDict 
 from cecog.util.palette import SingleColorPalette
 
+
 def generate_palettes():
     palettes = OrderedDict()
     for name, col in SimpleMplImageViewerWithBlending.colors.items():
@@ -545,7 +546,7 @@ class IScatterWidgetHisto(IScatterWidget):
                 img = numpy.flipud(hist_img[0].swapaxes(1,0))
                 image_list.append(img)
     
-            img = blend_images(image_list, ['green','red','blue', 'yellow', 'cyan', 'magenta', 'purple', 'olive'])
+            img = blend_images(image_list, ['green','red', 'blue', 'yellow', 'cyan', 'magenta', 'purple', 'olive'])
             self.current_image = img
             
         elif str(self.cmb_result_sample_selection.currentText()).startswith("Clustering"):
@@ -556,9 +557,10 @@ class IScatterWidgetHisto(IScatterWidget):
                                              bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
                                                              [self.data_mins[self.y_dim], self.data_maxs[self.y_dim]]])
                 img = numpy.flipud(hist_img[0].swapaxes(1,0))
-                image_list.append(img)
+                if img.sum() > 0:
+                    image_list.append(img)
     
-            img = blend_images(image_list, ['green','red','blue', 'yellow', 'cyan', 'magenta', 'purple', 'olive'])
+            img = blend_images(image_list, ['green','red', 'yellow', 'blue', 'magenta',  'cyan', 'purple'][:len(image_list)])
             self.current_image = img
         else:
             hist_img = numpy.histogram2d(self.xs[tmp_idx], self.ys[tmp_idx], bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
@@ -573,7 +575,8 @@ class IScatterWidgetHisto(IScatterWidget):
         aximg = self.axes.imshow(img, interpolation='nearest', extent=(self.data_mins[self.x_dim], self.data_maxs[self.x_dim],
                                                                             self.data_mins[self.y_dim], self.data_maxs[self.y_dim]),)
         
-
+        self.axes.axis('off')
+        self.axes.set_frame_on(False)
 
         self.update_axis_lims()
         
@@ -646,6 +649,10 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
                           ("purple" , '#800080'),
                           ("olive" , '#808000'),
                           ("white" , '#FFFFFF')])
+    
+    
+
+
     def __init__(self, *args, **kwargs):
         SimpleMplImageViewer.__init__(self, *args, **kwargs)
         layout = self.layout()
@@ -704,7 +711,8 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
         images = tmp[0]
         cmaps = map(str,tmp[1])
         self.axes.imshow(blend_images(images, cmaps), interpolation='nearest')
-        
+        self.axes.tick_params(color="none")
+
         self.canvas.draw()
     
 
@@ -719,8 +727,8 @@ def start_qt_event_loop():
     # rcParams['xtick.major.width'] = 2
     # rcParams['ytick.major.width'] = 2
     # rcParams['text.color'] = 'white'
-    rcParams['xtick.color'] = 'white'
-    rcParams['ytick.color'] = 'white'
+#     rcParams['xtick.color'] = 'white'
+#     rcParams['ytick.color'] = 'white'
     rcParams['ytick.labelsize'] = 14
     rcParams['xtick.labelsize'] = 14
     rcParams['axes.labelsize'] = 18
