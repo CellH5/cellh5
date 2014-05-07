@@ -41,6 +41,7 @@ rcParams['font.sans-serif'] = ['Arial']
 rcParams['pdf.fonttype'] = 42
 rcParams['ps.usedistiller' ] = 'xpdf'
 
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 COLOR_LUT_6 = OrderedDict([
         ("blue"    , "#000087"),
@@ -584,6 +585,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
     def evaluate(self):
         acc = []
         cm = numpy.zeros((7,2), 'float32')
+        cm_2 = numpy.zeros((2,2), 'float32')
         for i, each_row in self.mapping.iterrows():
             plate_name = each_row['Plate']
             well = each_row['Well']
@@ -603,6 +605,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             
             for c, o in zip(class_prediction, outlier_prediction_2):
                 cm[c,o]+=1
+                cm_2[int(c>3), o]+=1
               
 #             if i == -1:  
 #                 pylab.figure()
@@ -636,6 +639,9 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         for r in range(cm.shape[0]):
             cm[r,:] = cm[r,:] / float(cm[r,:].sum()) 
         
+        for r in range(cm_2.shape[0]):
+            cm_2[r,:] = cm_2[r,:] / float(cm_2[r,:].sum()) 
+        
         pylab.figure(figsize=(7,6))
         ax = pylab.subplot(111)
         cax = pylab.pcolor(cm, cmap=pylab.matplotlib.cm.Greens, vmin=0, vmax=1)
@@ -663,6 +669,47 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         pylab.tight_layout()
         pylab.savefig(self.output('outlier_classification_confusion.pdf'))
         pylab.show(block=False)
+        
+        # cm_2
+        
+        pylab.figure(figsize=(6,8))
+        ax = pylab.subplot(111)
+        
+        im = pylab.pcolor(cm_2, cmap=pylab.matplotlib.cm.Greens, vmin=0, vmax=1)
+        
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="10%", pad=0.5)
+
+
+        
+        cbar = pylab.colorbar(im, cax=cax, ticks=[0, 0.5, 1])
+        
+        
+        cbar.ax.set_yticklabels(['0', '0.5', '1'])
+        ax.set_xticks(numpy.arange(cm_2.shape[1]) + 0.5, minor=False)
+        ax.set_yticks(numpy.arange(cm_2.shape[0]) + 0.5, minor=False)
+        ax.set_xticklabels(['Inlier', 'Outlier'])
+        ax.set_yticklabels(['Non-Phenotype', 'Phenotype'])
+        ax.invert_yaxis()
+        for c in range(2):
+            for o in range(2):
+               
+                t = ax.text(o + 0.5, c + 0.5,  "%3.2f" % cm_2[c,o], horizontalalignment='center', verticalalignment='center', fontsize=20)
+                if cm_2[c,o] > 0.3*cm.max():
+                    t.set_color('w')
+                    
+        ax.hlines(1,0,2, colors='w', lw=2)
+        ax.vlines(1,0,2, colors='w', lw=2)
+        ax.set_aspect(1)
+        ax.xaxis.tick_top()
+
+        
+        #ax.set_title('Accuracy %0.3f\ng %0.5f - n %0.3f - pd %d - k %s -dr %r' % (numpy.mean(acc), self.gamma, self.nu, self.pca_dims, self.kernel, self.pca.__class__.__name__))
+        #ax.set_title('Accuracy %0.2f' % numpy.mean(acc))
+        pylab.tight_layout()
+        pylab.savefig(self.output('outlier_classification_confusion_2.pdf'))
+        pylab.show()
+        
         if DEBUG:
             print 'Evaluate mean', numpy.mean(acc)
         return numpy.mean(acc)
@@ -1468,16 +1515,19 @@ class SaraOutlier(object):
         self.od.train(classifier_class=OneClassSVM)
         self.od.predict()
         self.od.compute_outlyingness()
+        self.od.cluster_outliers()
+            
+        self.od.interactive_plot()
         
         
-        self.od.cluster_outliers()                    
-        #self.od.interactive_plot()
-        
-        self.od.make_hit_list_single_feature('roisize')
-        
-        self.od.make_top_hit_list(top=10000, for_group=('neg', 'target', 'pos'))
-        
-        self.od.make_heat_map()
+#         self.od.cluster_outliers()                    
+#         #self.od.interactive_plot()
+#         
+#         self.od.make_hit_list_single_feature('roisize')
+#         
+#         self.od.make_top_hit_list(top=10000, for_group=('neg', 'target', 'pos'))
+#         
+#         self.od.make_heat_map()
         #self.od.make_outlier_galleries()
         if DEBUG:
             print 'Results:', self.od.output_dir
@@ -1573,7 +1623,7 @@ class MatthiasOutlierFigure1(MatthiasOutlier):
             self.od.predict()
             self.od.compute_outlyingness()
             
-            #print self.od.evaluate()
+            print self.od.evaluate()
             self.od.cluster_outliers()
             
             self.od.interactive_plot()
@@ -1773,7 +1823,7 @@ if __name__ == "__main__":
                      }
                   }
     setupt_matplot_lib_rc()
-    #run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
-    run_exp('matthias_figure_1', EXPLOOKUP, MatthiasOutlierFigure1)
+    run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
+    #run_exp('matthias_figure_1', EXPLOOKUP, MatthiasOutlierFigure1)
 
     print 'finished'

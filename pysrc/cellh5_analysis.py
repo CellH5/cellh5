@@ -77,9 +77,10 @@ class CellH5Analysis(object):
             time_lapse = plate_cellh5.current_pos.get_time_lapse()
             if time_lapse is not None:
                 self.time_lapse[plate_name] = time_lapse / 60.0
+                log.info("Found time lapse of plate '%s' = %5.3f min" % (plate_name, self.time_lapse[plate_name]))
 #             plate_cellh5.close()
             self.cellh5_handles[plate_name] = plate_cellh5
-            log.info("Found time lapse of plate '%s' = %5.3f min" % (plate_name, self.time_lapse[plate_name]))
+            
             
             mappings.append(plate_mappings)
         self.mapping = pandas.concat(mappings, ignore_index=True)
