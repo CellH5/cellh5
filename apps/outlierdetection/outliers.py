@@ -199,25 +199,29 @@ def setupt_matplot_lib_rc():
     rcParams['ytick.major.pad']= 8
 
 
-def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
+def treatmentStackedBar(ax, treatment_dict, color_dict, label_list,top=None):
     width=0.5
         
     labels = []
     rects = []
     x = 0 
+    
+    cluster_k = max(map(numpy.max,treatment_dict.values()))
     for treatment, cluster_vec in treatment_dict.items():
-        labels.append(treatment)
+        
         hs = []
-        for cluster in range(cluster_vec.max()+1):
+        for cluster in range(cluster_k+1):
             h = len((cluster_vec==cluster).nonzero()[0])
             hs.append(float(h) / len(cluster_vec))
             
-        bottom=0
-        for c, h in enumerate(hs):
-            rect = ax.bar(x, h, width, bottom=bottom, color=color_dict[c], edgecolor = "none")
-            bottom+=h
-            rects.append(rect)
-        x +=1  
+        if top is None or hs[0] < top:
+            labels.append(treatment)
+            bottom=0
+            for c, h in enumerate(hs):
+                rect = ax.bar(x, h, width, bottom=bottom, color=color_dict[c], edgecolor = "none")
+                bottom+=h
+                rects.append(rect)
+            x +=1  
           
     rects.append(rect)
     lg = ax.legend(rects, label_list, 
@@ -228,7 +232,7 @@ def treatmentStackedBar(ax, treatment_dict, color_dict, label_list):
     lg.draw_frame(False)
             
     ax.set_xticks(numpy.arange(len(treatment_dict))+width/2.0)
-    ax.set_xticklabels(labels,)
+    ax.set_xticklabels(labels, rotation=90)
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
     ax.get_xaxis().tick_bottom()
@@ -353,7 +357,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
 
     def cluster_get_k(self, training_data):
-        max_k = 5
+        max_k = 10
         bics = numpy.zeros(max_k)
         bics[0] = 0
         if True:
@@ -467,7 +471,8 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             else:
                 cluster_predict = numpy.array([0])
             cluster_vectors[idx] = cluster_predict
-            cluster_teatment_vectors['%s\n%s' % (g, s)] = cluster_predict
+#             cluster_teatment_vectors['%s\n%s' % (g, s)] = cluster_predict
+            cluster_teatment_vectors['%s %s' % (g, s)] = cluster_predict
             
         self.mapping['Outlier clustering'] = pandas.Series(cluster_vectors)
         
@@ -476,6 +481,9 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
         fig = pylab.figure(figsize=(10,8))
         ax = pylab.gca()
+        rcParams['ytick.labelsize'] = 8
+        rcParams['xtick.labelsize'] = 8
+        rcParams['axes.labelsize'] = 10
         treatmentStackedBar(ax, cluster_teatment_vectors, {0: COLOR_LUT_6['green'], 
                                                            1: COLOR_LUT_6['red'], 
                                                            2: COLOR_LUT_6['yellow'],  
@@ -483,7 +491,11 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                                                            4: COLOR_LUT_6['magenta'],   
                                                            5: COLOR_LUT_6['cyan'],   
                                                            6:'w', 
-                                                           7:'k'}, ['Inlier',] + ["Cluster %d" % d for d in range(1,k+1)])
+                                                           7:'k'}, ['Inlier',] + ["Cluster %d" % d for d in range(1,k+1)], top=0.6)
+        rcParams['ytick.labelsize'] = 14
+        rcParams['xtick.labelsize'] = 14
+        rcParams['axes.labelsize'] = 18
+        
         pylab.savefig(self.output("outlier_clustering.pdf"))
         pylab.show()
         #self.ward_cluster(training_data, label)
@@ -1715,25 +1727,25 @@ if __name__ == "__main__":
                      {
                       'mapping_files' : {
                         'SP_9': 'F:/sara_adhesion_screen/sp9.txt',
-#                         'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
-#                         'SP_7': 'F:/sara_adhesion_screen/sp7.txt',
-#                         'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
-#                         'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
-#                         'SP_4': 'F:/sara_adhesion_screen/sp4.txt',
-#                         'SP_3': 'F:/sara_adhesion_screen/sp3.txt',
-#                         'SP_2': 'F:/sara_adhesion_screen/sp2.txt',
-#                         'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
+                        'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
+                        'SP_7': 'F:/sara_adhesion_screen/sp7.txt',
+                        'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
+                        'SP_5': 'F:/sara_adhesion_screen/sp5.txt',
+                        'SP_4': 'F:/sara_adhesion_screen/sp4.txt',
+                        'SP_3': 'F:/sara_adhesion_screen/sp3.txt',
+                        'SP_2': 'F:/sara_adhesion_screen/sp2.txt',
+                        'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
                                         },
                       'ch5_files' : {
                             'SP_9': 'F:/sara_adhesion_screen/sp9__all_positions_with_data_combined.ch5',
-#                             'SP_8': 'F:/sara_adhesion_screen/sp8__all_positions_with_data_combined.ch5',
-#                             'SP_7': 'F:/sara_adhesion_screen/sp7__all_positions_with_data_combined.ch5',
-#                             'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
-#                             'SP_5': 'F:/sara_adhesion_screen/sp5__all_positions_with_data_combined.ch5',
-#                             'SP_4': 'F:/sara_adhesion_screen/sp4__all_positions_with_data_combined.ch5',
-#                             'SP_3': 'F:/sara_adhesion_screen/sp3__all_positions_with_data_combined.ch5',
-#                             'SP_2': 'F:/sara_adhesion_screen/sp2__all_positions_with_data_combined.ch5',
-#                             'SP_1': 'F:/sara_adhesion_screen/sp1__all_positions_with_data_combined.ch5',
+                            'SP_8': 'F:/sara_adhesion_screen/sp8__all_positions_with_data_combined.ch5',
+                            'SP_7': 'F:/sara_adhesion_screen/sp7__all_positions_with_data_combined.ch5',
+                            'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
+                            'SP_5': 'F:/sara_adhesion_screen/sp5__all_positions_with_data_combined.ch5',
+                            'SP_4': 'F:/sara_adhesion_screen/sp4__all_positions_with_data_combined.ch5',
+                            'SP_3': 'F:/sara_adhesion_screen/sp3__all_positions_with_data_combined.ch5',
+                            'SP_2': 'F:/sara_adhesion_screen/sp2__all_positions_with_data_combined.ch5',
+                            'SP_1': 'F:/sara_adhesion_screen/sp1__all_positions_with_data_combined.ch5',
                                         },
 #                     'locations' : (
 #                         ("F",  19), ("B", 8), ("H", 9), ("D", 8),
