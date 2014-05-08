@@ -38,17 +38,24 @@ COLORS = OrderedDict([("red" , '#FF0000'),
 
 
 class ImageWithCmap(object):
-    def __init__(self, array, cmap):
+    def __init__(self, array, cmap, name='Image', norm_min=0, norm_max=None):
         self.array = array
         if isinstance(cmap, (str,)):
             cmap = generate_standard_palette(cmap, 0, 1) 
         self.cmap = cmap
+        self._name = name
         
-    def qimage(self, norm_min=0, norm_max=None):
+        self.norm_min = norm_min
+        
         if norm_max is None:
-            norm_max = numpy.max(self.array)
-            
-        qimg = qimage2ndarray.gray2qimage(self.array, normalize=(norm_min, norm_max))
+            self.norm_max = numpy.max(self.array)
+        
+    @property
+    def name(self):
+        return self._name
+        
+    def qimage(self, ):
+        qimg = qimage2ndarray.gray2qimage(self.array, normalize=(self.norm_min, self.norm_max))
         qimg.setColorTable(self.cmap.qt)
         return qimg
     
@@ -81,12 +88,10 @@ def blend_images_max(images):
     painter.end()
     return pixmap
 
-def blend_images(image_list, normalize=True):
+def blend_images(image_list):
     blend_img = []
-    norm_max = numpy.max([tmp.max() for tmp in image_list])
-    
     for img in image_list:
-        img_q = img.qimage(norm_max=norm_max)
+        img_q = img.qimage()
         blend_img.append(img_q)
     
     qimage = blend_images_max(blend_img)
@@ -687,6 +692,30 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
         btn_layout.addWidget(self.btn_clear)
         self.btn_clear.clicked.connect(self.clear_image)
         
+        self.btn_clear = QtGui.QPushButton('Image list')
+        self.cmb_image_list = QtGui.QComboBox(self)
+        self.cmb_image_list.currentIndexChanged[int].connect(self.image_selector_changed)
+        btn_layout.addWidget(self.cmb_image_list)
+        
+        tmp_widget = QtGui.QWidget(self)
+        tmp_layout = QtGui.QHBoxLayout(tmp_widget)
+        
+        self.cmb_norm_min = QtGui.QSpinBox(self)
+        self.cmb_norm_max = QtGui.QSpinBox(self)
+        
+        self.cmb_norm_min.setValue(0)
+        self.cmb_norm_max.setValue(1)
+        
+        tmp_layout.addWidget(QtGui.QLabel('Min'))
+        tmp_layout.addWidget(self.cmb_norm_min)
+        tmp_layout.addWidget(QtGui.QLabel('Max'))
+        tmp_layout.addWidget(self.cmb_norm_max)        
+        
+        self.cmb_norm_min.valueChanged.connect(self.norm_min_changed)
+        self.cmb_norm_max.valueChanged.connect(self.norm_max_changed)
+        
+        btn_layout.addWidget(tmp_widget)
+        
         self.export_to_image_btn = QtGui.QPushButton('Export image File')
         btn_layout.addWidget(self.export_to_image_btn)
         self.export_to_image_btn.clicked.connect(self.export_axes_to_image)
@@ -696,6 +725,24 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
         self.export_to_cp_btn.clicked.connect(self.export_axes_to_clipboard)
         btn_layout.addStretch()
         
+    def image_selector_changed(self, index):
+        img = self._image_list[index]
+        self.cmb_norm_min.setValue(img.norm_min)
+        self.cmb_norm_max.setValue(img.norm_max)
+        
+    def norm_min_changed(self, value):
+        current_img_idx = self.cmb_image_list.currentIndex()
+        current_img = self._image_list[current_img_idx]
+        current_img.norm_min =  value
+        self.show_image_with_colormap([], normalize_to_max=False)
+    
+    def norm_max_changed(self, value):
+        current_img_idx = self.cmb_image_list.currentIndex()
+        current_img = self._image_list[current_img_idx]
+        current_img.norm_max =  value
+        self.show_image_with_colormap([], normalize_to_max=False)
+    
+    
     def export_axes_to_clipboard(self):
         bbox = self.axes.get_window_extent().transformed(self.figure.dpi_scale_trans.inverted())
         x, y, width, height = bbox.x0, bbox.y1, bbox.width, bbox.height
@@ -714,18 +761,35 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
             extent = self.axes.get_window_extent().transformed(self.figure.dpi_scale_trans.inverted())
             self.figure.savefig(str(file_name), bbox_inches=extent)
         
-        
-        
-        
+
     def clear_image(self):
         self._image_list = []
+        self._image_norms = [] 
+        self.cmb_image_list.clear()
         self.axes.clear()
         self.axes.axis('off')
         self.axes.set_frame_on(False)
         self.canvas.draw()
+        
     
-    def show_image_with_colormap(self, img_list):
+    def show_image_with_colormap(self, img_list, normalize_to_max=True):
+        self._image_norms = [] 
+        
+        if normalize_to_max:
+            max_max = numpy.max([img_.max() for img_ in img_list])
+            for img in img_list:
+                img.norm_max = max_max
+            
+        for i, img in enumerate(img_list):
+            self.cmb_image_list.addItem('%s %d' % (img.name, i + len(self._image_list) + 1))
+            self._image_norms.append((img.norm_min, img.norm_max))
+            self.cmb_norm_min.setValue(img.norm_min)
+            self.cmb_norm_max.setValue(img.norm_max)
+            
+        
+        
         self._image_list.extend(img_list)
+        
         
         self.axes.imshow(blend_images(self._image_list), interpolation='nearest')
         self.axes.tick_params(color="none")
