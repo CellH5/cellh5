@@ -361,7 +361,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         bics = numpy.zeros(max_k)
         bics[0] = 0
         if True:
-            if True:
+            if False:
                 for k in range(1, max_k):
                     gmm = sklearn.mixture.GMM(k, covariance_type='full')
                     gmm.fit(training_data)
@@ -477,27 +477,27 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         self.mapping['Outlier clustering'] = pandas.Series(cluster_vectors)
         
         # make plot
+        if False:
         
-        
-        fig = pylab.figure(figsize=(10,8))
-        ax = pylab.gca()
-        rcParams['ytick.labelsize'] = 8
-        rcParams['xtick.labelsize'] = 8
-        rcParams['axes.labelsize'] = 10
-        treatmentStackedBar(ax, cluster_teatment_vectors, {0: COLOR_LUT_6['green'], 
-                                                           1: COLOR_LUT_6['red'], 
-                                                           2: COLOR_LUT_6['yellow'],  
-                                                           3: COLOR_LUT_6['blue'],  
-                                                           4: COLOR_LUT_6['magenta'],   
-                                                           5: COLOR_LUT_6['cyan'],   
-                                                           6:'w', 
-                                                           7:'k'}, ['Inlier',] + ["Cluster %d" % d for d in range(1,k+1)], top=0.6)
-        rcParams['ytick.labelsize'] = 14
-        rcParams['xtick.labelsize'] = 14
-        rcParams['axes.labelsize'] = 18
-        
-        pylab.savefig(self.output("outlier_clustering.pdf"))
-        pylab.show()
+            fig = pylab.figure(figsize=(10,8))
+            ax = pylab.gca()
+            rcParams['ytick.labelsize'] = 8
+            rcParams['xtick.labelsize'] = 8
+            rcParams['axes.labelsize'] = 10
+            treatmentStackedBar(ax, cluster_teatment_vectors, {0: COLOR_LUT_6['green'], 
+                                                               1: COLOR_LUT_6['red'], 
+                                                               2: COLOR_LUT_6['yellow'],  
+                                                               3: COLOR_LUT_6['blue'],  
+                                                               4: COLOR_LUT_6['magenta'],   
+                                                               5: COLOR_LUT_6['cyan'],   
+                                                               6:'w', 
+                                                               7:'k'}, ['Inlier',] + ["Cluster %d" % d for d in range(1,k+1)], top=0.6)
+            rcParams['ytick.labelsize'] = 14
+            rcParams['xtick.labelsize'] = 14
+            rcParams['axes.labelsize'] = 18
+            
+            pylab.savefig(self.output("outlier_clustering.pdf"))
+            pylab.show()
         #self.ward_cluster(training_data, label)
         
     def ward_cluster(self, training_data, label):
@@ -1599,8 +1599,8 @@ class MatthiasOutlier(object):
                                   )
         
         greater_less = lambda x, cv: numpy.logical_and(numpy.greater(x, cv[0]), numpy.less(x, cv[1]))
-#         od.set_read_feature_time_predicate(numpy.equal, 7)
-        od.set_read_feature_time_predicate(greater_less, (5, 10))
+        od.set_read_feature_time_predicate(numpy.equal, 7)
+#         od.set_read_feature_time_predicate(greater_less, (5, 10))
         od.read_feature()
         
         return od
@@ -1635,7 +1635,7 @@ class MatthiasOutlierFigure1(MatthiasOutlier):
             self.od.predict()
             self.od.compute_outlyingness()
             
-            print self.od.evaluate()
+            #print self.od.evaluate()
             self.od.cluster_outliers()
             
             self.od.interactive_plot()
@@ -1835,7 +1835,7 @@ if __name__ == "__main__":
                      }
                   }
     setupt_matplot_lib_rc()
-    run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
-    #run_exp('matthias_figure_1', EXPLOOKUP, MatthiasOutlierFigure1)
+    #run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
+    run_exp('matthias_figure_1', EXPLOOKUP, MatthiasOutlierFigure1)
 
     print 'finished'

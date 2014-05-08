@@ -26,15 +26,43 @@ import sys
 from collections import OrderedDict 
 from cecog.util.palette import SingleColorPalette
 
+COLORS = OrderedDict([("red" , '#FF0000'),
+                          ("green" , '#00FF00'),
+                          ("blue" , '#0000FF'),
+                          ("yellow" , '#FFFF00'),
+                          ("magenta" ,'#FF00FF'),
+                          ("cyan" , '#00FFFF'),
+                          ("purple" , '#800080'),
+                          ("olive" , '#808000'),
+                          ("white" , '#FFFFFF')])
 
-def generate_palettes():
-    palettes = OrderedDict()
-    for name, col in SimpleMplImageViewerWithBlending.colors.items():
-        p = SingleColorPalette.from_hex_color(name, col)
-        palettes[name] = p
-    for palette in palettes.values():
-        palette.qt = [QtGui.qRgb(r, g, b) for r,g,b in palette.lut]
-    return palettes
+
+class ImageWithCmap(object):
+    def __init__(self, array, cmap):
+        self.array = array
+        if isinstance(cmap, (str,)):
+            cmap = generate_standard_palette(cmap, 0, 1) 
+        self.cmap = cmap
+        
+    def qimage(self, norm_min=0, norm_max=None):
+        if norm_max is None:
+            norm_max = numpy.max(self.array)
+            
+        qimg = qimage2ndarray.gray2qimage(self.array, normalize=(norm_min, norm_max))
+        qimg.setColorTable(self.cmap.qt)
+        return qimg
+    
+    def max(self):
+        return self.array.max()
+
+
+def generate_palette(name, color, start, stop):
+    palette = SingleColorPalette.from_hex_color(name, color)
+    palette.qt = [QtGui.qRgb(r, g, b) for r,g,b in palette.lut]
+    return palette
+
+def generate_standard_palette(name, start=0.2, stop=1):
+    return generate_palette(name, COLORS[name], start, stop)
 
 def blend_images_max(images):
     """
@@ -53,31 +81,18 @@ def blend_images_max(images):
     painter.end()
     return pixmap
 
-def blend_images(image_list, cmap_list, normalize=True):
-    assert len(image_list) == len(cmap_list)
-    assert len(image_list) > 0
-    
-    colormaps = generate_palettes()
-    
+def blend_images(image_list, normalize=True):
     blend_img = []
-    for img, cm in zip(image_list, cmap_list):
-#         img_q = qimage2ndarray.array2qimage(img, normalize=(0, numpy.max(map(numpy.max, image_list))))
-        img_q = qimage2ndarray.gray2qimage(img, normalize=(0, numpy.max(map(numpy.max, image_list))))
-        #img_q = qimage2ndarray.array2qimage(img, normalize=(0, 255))
-        cm_q = colormaps[cm]
-        img_q.setColorTable(cm_q.qt)
+    norm_max = numpy.max([tmp.max() for tmp in image_list])
+    
+    for img in image_list:
+        img_q = img.qimage(norm_max=norm_max)
         blend_img.append(img_q)
     
     qimage = blend_images_max(blend_img)
     result =  qimage2ndarray.rgb_view(QtGui.QImage(qimage))
-    
-    if False:
-        tmp = result.astype('int') 
-        tmp[result.sum(2) > 0] *= 255
-        result = numpy.clip(tmp, 0 ,255).astype('uint8')
+
     result[result.sum(2) == 0] = 128
-    
-    
     return result
 
 class DataPoint(object):
@@ -168,7 +183,7 @@ class IScatter(QtGui.QMainWindow):
 class IScatterWidget(QtGui.QWidget):
     image_changed = QtCore.pyqtSignal(numpy.ndarray)
     selection_changed = QtCore.pyqtSignal(list)
-    send_current_image = QtCore.pyqtSignal(numpy.ndarray, str)
+    send_current_image = QtCore.pyqtSignal(list)
     
     def __init__(self, parent=None):   
         QtGui.QWidget.__init__(self, parent)
@@ -266,7 +281,7 @@ class IScatterWidget(QtGui.QWidget):
         self.current_cmap = str(colormap)
         self.update_axis()
     def move_to_combined_image(self):
-        self.send_current_image.emit(self.current_image, self.current_cmap)
+        self.send_current_image.emit(self.current_raw_images)
         
     def export_axes_to_clipboard(self):
         bbox = self.axes.get_window_extent().transformed(self.figure.dpi_scale_trans.inverted())
@@ -507,7 +522,6 @@ class IScatterWidgetHisto(IScatterWidget):
         self.axis_c_cmb.setVisible(False)
         self.axis_c_label.setVisible(False)
         
-        self.gamma_cor = 0.5
         self.current_cmap = 'red'
         
     def update_axis(self):
@@ -524,58 +538,64 @@ class IScatterWidgetHisto(IScatterWidget):
         
         if str(self.cmb_result_sample_selection.currentText()).startswith("Outliers"):
             image_list = []
-            for k in [1, -1]:
+            for k, cmap_name in zip([1, -1], ['red', 'green']):
                 tmp_idx_2 = numpy.logical_and(self.sample_selection, self.data_matrix[:,-2] == k)
      
                 hist_img = numpy.histogram2d(self.xs[tmp_idx_2], self.ys[tmp_idx_2], 
                                              bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
                                                               [self.data_mins[self.y_dim], self.data_maxs[self.y_dim]]])
                 img = numpy.flipud(hist_img[0].swapaxes(1,0))
-                image_list.append(img)
-    
-            img = blend_images(image_list, ['red', 'green'])
+                image_list.append(ImageWithCmap(img, generate_standard_palette(cmap_name)))
+
+            img = blend_images(image_list)
+            self.current_raw_images = image_list
             self.current_image = img
             
         elif str(self.cmb_result_sample_selection.currentText()).startswith("Classi"):
             image_list = []
-            for k in range(8):
+            for k, cmap_name in zip(range(8), ['green','red', 'blue', 'yellow', 'cyan', 'magenta', 'purple', 'olive']):
                 tmp_idx_2 = numpy.logical_and(self.sample_selection, self.data_matrix[:,-1] == k)
                 hist_img = numpy.histogram2d(self.xs[tmp_idx_2], self.ys[tmp_idx_2], 
                                              bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
                                                              [self.data_mins[self.y_dim], self.data_maxs[self.y_dim]]])
                 img = numpy.flipud(hist_img[0].swapaxes(1,0))
-                image_list.append(img)
+                image_list.append(ImageWithCmap(img, generate_standard_palette(cmap_name)))
     
-            img = blend_images(image_list, ['green','red', 'blue', 'yellow', 'cyan', 'magenta', 'purple', 'olive'])
+            img = blend_images(image_list)
+            self.current_raw_images = image_list
             self.current_image = img
             
         elif str(self.cmb_result_sample_selection.currentText()).startswith("Clustering"):
             image_list = []
-            for k in range(8):
+            for k, cmap_name in zip(range(8), ['green','red', 'yellow', 'blue', 'magenta',  'cyan', 'purple']):
                 tmp_idx_2 = numpy.logical_and(self.sample_selection, self.data_matrix[:,-3] == k)
                 hist_img = numpy.histogram2d(self.xs[tmp_idx_2], self.ys[tmp_idx_2], 
                                              bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
                                                              [self.data_mins[self.y_dim], self.data_maxs[self.y_dim]]])
                 img = numpy.flipud(hist_img[0].swapaxes(1,0))
-                if img.sum() > 0:
-                    image_list.append(img)
+                image_list.append(ImageWithCmap(img, generate_standard_palette(cmap_name)))
     
-            img = blend_images(image_list, ['green','red', 'yellow', 'blue', 'magenta',  'cyan', 'purple'][:len(image_list)])
+            img = blend_images(image_list)
+            self.current_raw_images = image_list
             self.current_image = img
         else:
             hist_img = numpy.histogram2d(self.xs[tmp_idx], self.ys[tmp_idx], bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
                                                                                              [self.data_mins[self.y_dim], self.data_maxs[self.y_dim]]])
             
             img = numpy.flipud(hist_img[0].swapaxes(1,0))
-            self.current_image = img
+            self.current_raw_images = [ImageWithCmap(img, self.current_cmap)]
     
-            img = blend_images([img], [self.current_cmap])
+            img = blend_images(self.current_raw_images)
+            self.current_image = img
             
         
         aximg = self.axes.imshow(img, interpolation='nearest', extent=(self.data_mins[self.x_dim], self.data_maxs[self.x_dim],
                                                                             self.data_mins[self.y_dim], self.data_maxs[self.y_dim]),)
         
-        self.axes.axis('off')
+#         self.axes.xaxis.set_ticks_position('none') 
+        for tt in self.axes.xaxis.get_ticklines(): tt.set_visible(False) 
+        for tt in self.axes.yaxis.get_ticklines(): tt.set_visible(False) 
+        #self.axes.axis('off')
         self.axes.set_frame_on(False)
 
         self.update_axis_lims()
@@ -704,13 +724,10 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
         self.axes.set_frame_on(False)
         self.canvas.draw()
     
-    def show_image_with_colormap(self, img, cmap_name):
-        self._image_list.append((img, cmap_name))
+    def show_image_with_colormap(self, img_list):
+        self._image_list.extend(img_list)
         
-        tmp = zip(*self._image_list)
-        images = tmp[0]
-        cmaps = map(str,tmp[1])
-        self.axes.imshow(blend_images(images, cmaps), interpolation='nearest')
+        self.axes.imshow(blend_images(self._image_list), interpolation='nearest')
         self.axes.tick_params(color="none")
 
         self.canvas.draw()
@@ -726,9 +743,9 @@ def start_qt_event_loop():
     # rcParams['legend.markerscale'] = 0
     # rcParams['xtick.major.width'] = 2
     # rcParams['ytick.major.width'] = 2
-    # rcParams['text.color'] = 'white'
-#     rcParams['xtick.color'] = 'white'
-#     rcParams['ytick.color'] = 'white'
+    rcParams['text.color'] = 'white'
+    rcParams['xtick.color'] = 'white'
+    rcParams['ytick.color'] = 'white'
     rcParams['ytick.labelsize'] = 14
     rcParams['xtick.labelsize'] = 14
     rcParams['axes.labelsize'] = 18
@@ -776,7 +793,7 @@ def ch5_scatter(ch5_file,time=0):
     iscatter = IScatterWidgetHisto()
     iscatter.set_data(all_features, all_data_names, all_sample_names, 222, 236, numpy.nonzero(all_times)[0], lambda y, x: ch5_pos.get_gallery_image_matrix(x, (12, 32)))
 
-    iscatter2 = IScatterWidgetHisto()
+    iscatter2 = IScatterWidget()
     iscatter2.set_data(all_features, all_data_names, all_sample_names, 222, 236, numpy.nonzero(all_times)[0], lambda y, x: ch5_pos.get_gallery_image_matrix(x, (12, 32)))
     
     mw = IScatter(iscatter, iscatter2)
