@@ -161,23 +161,28 @@ class CellH5Analysis(object):
                 cellh5file = cellh5.CH5File(self.cellh5_files[plate])
                 cellh5pos = cellh5file.get_position(w, str(p))
             except:
-                print "Positon", (w, p), "is corrupt. Process again with CellCognition"
+                log.error("Positon %s %s is corrupt. Process again with CellCognition" % (w, str(p)))
                 cellh5file.close()
                 continue
             
             track_labels_list = []
             track_id_list = []
             
-            for _, e_idx in enumerate(event_ids):   
-                start_idx = e_idx[-1]
-                track_ids = list(e_idx) + cellh5pos.track_first(start_idx)
-                
-                track_labels_list.append(cellh5pos.get_class_label(track_ids))
-                track_id_list.append(track_ids)
-            all_track_ids.append(track_id_list)
-            all_track_labels.append(track_labels_list)
-            log.info("Tracking events from ch5: %r %r %r %s with %r" % (plate, w, p, "with", list(self.get_treatment(plate, w, p))))
-            cellh5file.close()
+            if not isinstance(event_ids, (list,)):
+                log.warning("Tracking events from ch5, no events found: %r %r %r %s with %r" % (plate, w, p, "with", list(self.get_treatment(plate, w, p))))
+                all_track_ids.append([])
+            else:
+            
+                for _, e_idx in enumerate(event_ids):
+                    start_idx = e_idx[-1]
+                    track_ids = list(e_idx) + cellh5pos.track_first(start_idx)
+                    
+                    track_labels_list.append(cellh5pos.get_class_label(track_ids))
+                    track_id_list.append(track_ids)
+                all_track_ids.append(track_id_list)
+                all_track_labels.append(track_labels_list)
+                log.info("Tracking events from ch5: %r %r %r %s with %r" % (plate, w, p, "with", list(self.get_treatment(plate, w, p))))
+                cellh5file.close()
         self.mapping['Event track labels'] = pandas.Series(all_track_labels)
         self.mapping['Event track ids'] = pandas.Series(all_track_ids)
         
@@ -396,11 +401,12 @@ class CellH5Analysis(object):
             pylab.clf()
             ax = pylab.subplot(111)          
             
-            feature_table = cellh5pos.get_object_features(region_name)
+            feature_table = cellh5pos.get_object_features(region_name)   
             feature_idx = cellh5file.get_object_feature_idx_by_name(region_name, feature_name)
             tracks = self.mapping.loc[idx][event_selector].iloc[0]
+            track_ids = self.mapping.loc[idx]['Event track ids'].iloc[0]  
             
-            all_feature_values = [feature_table[t, feature_idx] for t in tracks]
+            all_feature_values = [feature_table[t, feature_idx] for t in track_ids]
                 
             for line, feature_values in zip(tracks, all_feature_values):
                 x_values = numpy.array(map(int,list(line)))
