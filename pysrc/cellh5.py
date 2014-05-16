@@ -258,6 +258,35 @@ class CH5Position(object):
         if len(index) > 1:
             return numpy.concatenate(images, axis=1)
         return images[0]
+    
+    def get_gallery_image_with_class(self, index, object_=('primary__primary',), color=None):
+        if len(object_) == 1:
+            img_ = self.get_gallery_image(index, object_[0])
+            rgb_shape = img_.shape + (3,)
+            img = numpy.zeros(rgb_shape, img_.dtype)
+            for c in range(3): img[:,:,c] = img_
+        else:
+
+            for c in range(3):
+                if c == 0:
+                    img_ = self.get_gallery_image(index, object_[c])
+                    rgb_shape = img_.shape + (3,)
+                    img = numpy.zeros(rgb_shape, img_.dtype)
+                    img[:,:, 0] = img_
+                if 0 < c < len(object_):
+                    img[:,:,c] = self.get_gallery_image(index, object_[c])
+        
+        if color is None:
+            class_color = self.get_class_color(index)
+            if class_color is None:
+                class_color = '#FFFFFF'
+
+        col_tmp = hex2rgb(class_color)
+        for c in range(3):
+            img[:10, :10, c] = col_tmp[c]
+
+        
+        return img
 
     def get_gallery_image_rgb(self, index, object_=('primary__primary',)):
         if len(object_) == 1:
