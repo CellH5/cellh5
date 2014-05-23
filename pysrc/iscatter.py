@@ -37,18 +37,27 @@ COLORS = OrderedDict([("red" , '#FF0000'),
                           ("white" , '#FFFFFF')])
 
 
+
 class ImageWithCmap(object):
     def __init__(self, array, cmap, name='Image', norm_min=0, norm_max=None):
-        self.array = array
-        if isinstance(cmap, (str,)):
-            cmap = generate_standard_palette(cmap, 0, 1) 
-        self.cmap = cmap
-        self._name = name
-        
-        self.norm_min = norm_min
+        self.array = array.astype(numpy.float64)
+        self.count = self.array.sum()
+        print 'Total count of cells', self.count
+        self.array /= float(self.count)
         
         if norm_max is None:
             self.norm_max = numpy.max(self.array)
+            
+        self.norm_min = norm_min
+        
+        if isinstance(cmap, (str,)):
+            cmap = generate_standard_palette(cmap, self.norm_min, self.norm_max) 
+        self.cmap = cmap
+        self._name = name
+        
+        
+        
+        
         
     @property
     def name(self):
@@ -61,6 +70,10 @@ class ImageWithCmap(object):
     
     def max(self):
         return self.array.max()
+    
+    def reset_scaling(self):
+        self.norm_min = self.array.min()
+        self.norm_max = self.array.max()
 
 
 def generate_palette(name, color, start, stop):
@@ -81,7 +94,7 @@ def blend_images_max(images):
     # for some reason the pixmap is NOT empty
     pixmap.fill(QtCore.Qt.black)
     painter = QtGui.QPainter(pixmap)
-    painter.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
+    painter.setCompositionMode(QtGui.QPainter.CompositionMode_Lighten)
     for image in images:
         if not image is None:
             painter.drawImage(0, 0, image)
@@ -97,7 +110,20 @@ def blend_images(image_list):
     qimage = blend_images_max(blend_img)
     result =  qimage2ndarray.rgb_view(QtGui.QImage(qimage))
 
-    result[result.sum(2) == 0] = 128
+    
+    
+    mask_img = numpy.zeros(image_list[0].array.shape)
+    for img in image_list:
+        mask_img += img.array
+        
+    mask_img = mask_img > 0
+    
+    tmp_ = result.sum(2) > 0
+    
+    result[mask_img]+=1
+    result[tmp_]-=1
+    
+    result[result.sum(2) == 0] = 64    
     return result
 
 class DataPoint(object):
@@ -572,7 +598,7 @@ class IScatterWidgetHisto(IScatterWidget):
             
         elif str(self.cmb_result_sample_selection.currentText()).startswith("Clustering"):
             image_list = []
-            for k, cmap_name in zip(range(8), ['green','red', 'yellow', 'blue', 'magenta',  'cyan', 'purple']):
+            for k, cmap_name in zip(range(4), ['green','red', 'yellow', 'blue', 'magenta',  'cyan', 'purple']):
                 tmp_idx_2 = numpy.logical_and(self.sample_selection, self.data_matrix[:,-3] == k)
                 hist_img = numpy.histogram2d(self.xs[tmp_idx_2], self.ys[tmp_idx_2], 
                                              bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
@@ -700,8 +726,24 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
         tmp_widget = QtGui.QWidget(self)
         tmp_layout = QtGui.QHBoxLayout(tmp_widget)
         
-        self.cmb_norm_min = QtGui.QSpinBox(self)
-        self.cmb_norm_max = QtGui.QSpinBox(self)
+        self.cmb_norm_min = QtGui.QDoubleSpinBox(self)
+        self.cmb_norm_max = QtGui.QDoubleSpinBox(self)
+        
+        self.cmb_norm_min.setDecimals(3)
+        self.cmb_norm_min.setSingleStep(0.01)
+        
+        self.cmb_norm_max.setDecimals(3)
+        self.cmb_norm_max.setSingleStep(0.001)
+        
+        
+        self.cmb_norm_max.setMaximum(1)
+        self.cmb_norm_max.setValue(0.01)
+        
+        self.btn_norm_reset = QtGui.QPushButton('Reset')
+        self.btn_norm_reset.clicked.connect(self.norm_reset)
+        
+        self.btn_del_img = QtGui.QPushButton('Del')
+        self.btn_del_img.clicked.connect(self.remove_image)
         
         self.cmb_norm_min.setValue(0)
         self.cmb_norm_max.setValue(1)
@@ -709,7 +751,9 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
         tmp_layout.addWidget(QtGui.QLabel('Min'))
         tmp_layout.addWidget(self.cmb_norm_min)
         tmp_layout.addWidget(QtGui.QLabel('Max'))
-        tmp_layout.addWidget(self.cmb_norm_max)        
+        tmp_layout.addWidget(self.cmb_norm_max)   
+        tmp_layout.addWidget(self.btn_norm_reset)     
+        tmp_layout.addWidget(self.btn_del_img)     
         
         self.cmb_norm_min.valueChanged.connect(self.norm_min_changed)
         self.cmb_norm_max.valueChanged.connect(self.norm_max_changed)
@@ -724,6 +768,19 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
         btn_layout.addWidget(self.export_to_cp_btn)
         self.export_to_cp_btn.clicked.connect(self.export_axes_to_clipboard)
         btn_layout.addStretch()
+        
+    def norm_reset(self):
+        current_img_idx = self.cmb_image_list.currentIndex()
+        current_img = self._image_list[current_img_idx]
+        
+        current_img.reset_scaling()
+        self.cmb_norm_min.setValue(current_img.norm_min)
+        self.cmb_norm_max.setValue(current_img.norm_max)
+        
+    def remove_image(self):
+        current_img_idx = self.cmb_image_list.currentIndex()
+        del self._image_list[current_img_idx]
+        self.show_image_with_colormap([], normalize_to_max=False)
         
     def image_selector_changed(self, index):
         img = self._image_list[index]
@@ -780,16 +837,9 @@ class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
             for img in img_list:
                 img.norm_max = max_max
             
-        for i, img in enumerate(img_list):
-            self.cmb_image_list.addItem('%s %d' % (img.name, i + len(self._image_list) + 1))
-            self._image_norms.append((img.norm_min, img.norm_max))
-            self.cmb_norm_min.setValue(img.norm_min)
-            self.cmb_norm_max.setValue(img.norm_max)
-            
-        
-        
-        self._image_list.extend(img_list)
-        
+        for _, img in enumerate(img_list):
+            self._image_list.append(img)
+            self.cmb_image_list.addItem('%s %d' % (img.name, len(self._image_list)))    
         
         self.axes.imshow(blend_images(self._image_list), interpolation='nearest')
         self.axes.tick_params(color="none")

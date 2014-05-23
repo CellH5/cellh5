@@ -251,7 +251,7 @@ class CellH5Analysis(object):
         data = (data - self._normalization_means) / self._normalization_stds
         return data
     
-    def train_pca(self, train_on=('neg', 'target', 'pos' ), pca_type=PCA):
+    def train_pca(self, train_on=('neg', 'pos', 'target' ), pca_type=PCA):
         training_matrix = self.get_data(train_on)
         training_matrix = self.normalize_training_data(training_matrix)
         log.info('Compute PCA (%s): found NaNss in features after normalization? %r' % (str(pca_type), numpy.any(numpy.isnan(training_matrix))))

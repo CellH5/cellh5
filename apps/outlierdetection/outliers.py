@@ -13,7 +13,7 @@ from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, a
 from sklearn.metrics.metrics import roc_curve
 from sklearn.covariance import EmpiricalCovariance, MinCovDet
 from sklearn.metrics import accuracy_score
-from sklearn.metrics.pairwise import pairwise_distances
+from sklearn.metrics.pairwise import pairwise_distances, pairwise_kernels
 from sklearn.metrics import silhouette_score
 import sklearn.cluster
 import sklearn.mixture
@@ -35,11 +35,30 @@ from cellh5 import CH5File
 from collections import defaultdict, OrderedDict
 from matplotlib.colors import rgb2hex
 
-from matplotlib import rcParams 
+from matplotlib import rcParams , RcParams
 rcParams['font.family'] = 'sans-serif'
 rcParams['font.sans-serif'] = ['Arial']
 rcParams['pdf.fonttype'] = 42
 rcParams['ps.usedistiller' ] = 'xpdf'
+rcParams['font.family'] = 'sans-serif'
+rcParams['font.size'] = 20
+rcParams['font.sans-serif'] = ['Arial']
+rcParams['xtick.labelsize'] = 16 
+rcParams['ytick.labelsize'] = 16 
+rcParams['axes.labelsize'] = 16
+rcParams['lines.color'] = 'white'
+rcParams['patch.edgecolor'] = 'white'
+rcParams['text.color'] = 'white'
+rcParams['axes.facecolor'] = 'black'
+rcParams['axes.edgecolor'] = 'white'
+rcParams['axes.labelcolor'] = 'white'
+rcParams['xtick.color'] = 'white'
+rcParams['ytick.color'] = 'white'
+rcParams['grid.color'] = 'white'
+rcParams['figure.facecolor'] = 'black'
+rcParams['figure.edgecolor'] = 'black'
+rcParams['savefig.facecolor'] = 'black'
+rcParams['savefig.edgecolor'] = 'none'
 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -52,6 +71,46 @@ COLOR_LUT_6 = OrderedDict([
         ("cyan"    , "#00EFEF")])
 
 DEBUG = True
+
+YlBlCMap = matplotlib.colors.LinearSegmentedColormap.from_list('asdf', [(0,0,1), (1,1,0)])
+
+
+def invert_plots(func):
+    def wrapper(*arg):
+        rcParamsBackup = rcParams.copy()
+        
+        rcParams['font.family'] = 'sans-serif'
+        rcParams['font.size'] = 20
+        rcParams['font.sans-serif'] = ['Arial']
+        rcParams['xtick.labelsize'] = 16 
+        rcParams['ytick.labelsize'] = 16 
+        rcParams['axes.labelsize'] = 16
+        rcParams['lines.color'] = 'white'
+        rcParams['patch.edgecolor'] = 'white'
+        rcParams['text.color'] = 'white'
+        rcParams['axes.facecolor'] = 'black'
+        rcParams['axes.edgecolor'] = 'white'
+        rcParams['axes.labelcolor'] = 'white'
+        rcParams['xtick.color'] = 'white'
+        rcParams['ytick.color'] = 'white'
+        rcParams['grid.color'] = 'white'
+        rcParams['figure.facecolor'] = 'black'
+        rcParams['figure.edgecolor'] = 'black'
+        rcParams['savefig.facecolor'] = 'black'
+        rcParams['savefig.edgecolor'] = 'none'
+        
+        res = func(*arg)
+        
+        for k in rcParamsBackup:
+            try:
+                rcParams[k] = rcParamsBackup[k]
+            except:
+                pass
+        
+        
+        return res
+
+    return wrapper
 
 def sara_correlation_1_4_vs_1_8():
     folder = "C:/Users/sommerc/cellh5/apps/outlierdetection/sara_results"
@@ -199,6 +258,7 @@ def setupt_matplot_lib_rc():
     rcParams['ytick.major.pad']= 8
 
 
+@invert_plots
 def treatmentStackedBar(ax, treatment_dict, color_dict, label_list,top=None):
     width=0.5
         
@@ -306,8 +366,66 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         log_file_handle.close()
         self.mapping['Predictions'] = pandas.Series(predictions)
         self.mapping['Hyperplane distance'] = pandas.Series(distances)
+        
+    def estimate_gamma_by_sv(self, X, nu):
+        xx = []
+        yy = []
+        for gamma in [2**g for g in range(-16, 2)]:  
+            classifier = OneClassSVM(kernel='rbf', nu=nu, gamma=gamma)  
+            
+            classifier.fit(X)
+            s_frac = (classifier.support_vectors_.shape[0] / float(len(X)) ) 
+            print " SV fraction ", nu, gamma, "\t\t::", s_frac*100, "%"
+            
+            if s_frac > 0.99:
+                break
+            xx.append(numpy.log2(gamma))
+            yy.append(s_frac)
+        
+        yy = numpy.array(yy)
+        ind = numpy.argmax(numpy.diff(yy[yy < 1.67 * nu]))
+        
+        pylab.figure()
+        pylab.plot(xx,yy,'y')
+        pylab.plot(xx[ind], yy[ind], 'ro', markerfacecolor='none', markeredgecolor='r', lw=3)
+        pylab.show()
+        
+        
+       
+        print ' best gamma at', xx[ind], 2**xx[ind], 'with SV frac', yy[ind] 
+        
+        return 2**xx[ind]
+        
+    
+    def estimate_gamma2(self, matrix):
+        result = OrderedDict()
+        all_gammas = [2**(ee) for ee in range(0, 30)]
+        for gamma in all_gammas:
+            kernel_matrix = pairwise_kernels(matrix, metric='rbf', gamma=gamma)
+            mask = numpy.triu(numpy.ones(kernel_matrix.shape),1)
+            l = mask.sum()
+            
+            temp = (kernel_matrix * mask)
+            kappa = temp.sum() / float(l)
+            s_2   = ((temp - kappa)**2).sum() / float(l-1)
+            
+            result[gamma] = indicator = s_2 / (kappa + 0.000001)
+            
+        for g, v in result.items():
+            print 'find gamma:', g, v
+        best_gamma = all_gammas[numpy.argmax(result.values())]
+        
+        print 'best gamma', best_gamma
+        pylab.plot(numpy.log2(all_gammas), result.values())
+        pylab.show()
+        return best_gamma
+        
+
             
     def train_classifier(self, training_matrix, classifier_class=OneClassSVM):
+        if self.kernel == 'rbf':
+            if self.gamma is None:
+                self.gamma = self.estimate_gamma_by_sv(training_matrix, self.nu)
         self.classifier = classifier_class(kernel=self.kernel, nu=self.nu, gamma=self.gamma)
         print '  Using', classifier_class, self.kernel, self.nu, self.gamma
         if self.kernel == 'linear':
@@ -328,11 +446,15 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 self.rfe_selection = rfe.support_
                 self.classifier = rfe.estimator_
         else:
-            max_training_samples = 30000
+            max_training_samples = 10000
             idx = range(training_matrix.shape[0])
             numpy.random.seed(1)
             numpy.random.shuffle(idx)
+            
+            
+            
             self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
+            
             self.rfe_selection = numpy.ones((training_matrix.shape[1],), dtype=numpy.bool)
             
     def compute_outlyingness(self):
@@ -423,7 +545,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
 
         return K
     
-    def cluster_outliers(self):
+    def cluster_outliers(self, cluster_all=False):
         # setup clustering
         if DEBUG:
             print 'Setup clustering'
@@ -432,7 +554,11 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         for _ , (data, prediction, w, p, c, g, s, ch5i) in self.mapping[['PCA', 'Predictions', 'Well', 'Site', 'Object count', 'Gene Symbol', 'siRNA ID', 'CellH5 object index']].iterrows():
             print w,p,g,s,c, type(data)
             if c > 0:
-                data_i = data[prediction == -1, :]
+                if cluster_all:
+                    
+                    data_i = data[prediction == -1, :]
+                else:
+                    data_i = data
                 training_data.append(data_i)
                 label.append([(w,p,g,s, cc) for cc in ch5i])
             
@@ -442,6 +568,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
         
         k = self.cluster_get_k(training_data)
+        k=3
         if DEBUG:
             print 'Run clustering for training data shape ', training_data.shape, 'with k = ', k
         km = sklearn.mixture.GMM(k, covariance_type='full')
@@ -455,8 +582,11 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             print 'Apply Clustering'
         for idx , (data, prediction, c, g, s, ch5_idx, plate, well, site)  in self.mapping[['PCA', 'Predictions', 'Object count', 'Gene Symbol', 'siRNA ID', 'CellH5 object index', 'Plate', 'Well', 'Site']].iterrows():        
             if c > 0:
-                cluster_predict = km.predict(data) + 1
-                cluster_predict[prediction==1, :] = 0
+                if cluster_all:
+                    cluster_predict = km.predict(data)
+                else:
+                    cluster_predict = km.predict(data) + 1
+                    cluster_predict[prediction==1] = 0
                 if False:
                     c5f = self.cellh5_handles[plate]
                     c5p = c5f.get_position(well, str(site))
@@ -474,16 +604,26 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
 #             cluster_teatment_vectors['%s\n%s' % (g, s)] = cluster_predict
             cluster_teatment_vectors['%s %s' % (g, s)] = cluster_predict
             
-        self.mapping['Outlier clustering'] = pandas.Series(cluster_vectors)
+        if cluster_all:
+            self.mapping['Outlier clustering'] = pandas.Series(cluster_vectors)
+        else:
+            self.mapping['Outlier clustering'] = pandas.Series(cluster_vectors)
         
         # make plot
-        if False:
+        if True:
         
             fig = pylab.figure(figsize=(10,8))
             ax = pylab.gca()
             rcParams['ytick.labelsize'] = 8
             rcParams['xtick.labelsize'] = 8
             rcParams['axes.labelsize'] = 10
+             
+            if cluster_all:
+                labels = ["Cluster %d" % d for d in range(1,k+1)]
+            else:
+                labels = ['Inlier',] + ["Cluster %d" % d for d in range(1,k+1)]
+                
+            
             treatmentStackedBar(ax, cluster_teatment_vectors, {0: COLOR_LUT_6['green'], 
                                                                1: COLOR_LUT_6['red'], 
                                                                2: COLOR_LUT_6['yellow'],  
@@ -491,7 +631,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                                                                4: COLOR_LUT_6['magenta'],   
                                                                5: COLOR_LUT_6['cyan'],   
                                                                6:'w', 
-                                                               7:'k'}, ['Inlier',] + ["Cluster %d" % d for d in range(1,k+1)], top=0.6)
+                                                               7:'k'}, labels)
             rcParams['ytick.labelsize'] = 14
             rcParams['xtick.labelsize'] = 14
             rcParams['axes.labelsize'] = 18
@@ -593,17 +733,24 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         pylab.savefig(self.output('outlier_roc.png' ))
         
         return fpr, tpr, th, roc_auc, fpr_f, tpr_f  
+    
+    
 
-    def evaluate(self):
+    def evaluate_outlier_detection(self):
         acc = []
         cm = numpy.zeros((7,2), 'float32')
         cm_2 = numpy.zeros((2,2), 'float32')
+        cm_3 = numpy.zeros((7,4), 'float32')
+        
         for i, each_row in self.mapping.iterrows():
             plate_name = each_row['Plate']
             well = each_row['Well']
             site = each_row['Site']
             treatment = tuple(each_row[['Gene Symbol', 'siRNA ID']]) 
             outlier_prediction = numpy.array(each_row['Predictions'])
+            
+            cluster_prediction = numpy.array(each_row['Outlier clustering'])
+            
             outlier_prediction_b = outlier_prediction == -1
             outlier_prediction_2 = ((outlier_prediction*-1)+1)/2
             
@@ -613,119 +760,81 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             class_prediction = c5p.get_class_prediction()['label_idx'][cellh5_idx]
             class_prediction_b = class_prediction > 3
             
-            
-            
-            for c, o in zip(class_prediction, outlier_prediction_2):
-                cm[c,o]+=1
-                cm_2[int(c>3), o]+=1
-              
-#             if i == -1:  
-#                 pylab.figure()
-#                 ax = pylab.subplot(111)
-#                 pylab.pcolor(cm, cmap=pylab.matplotlib.cm.Greens, vmin=0, vmax=cm.max())
-#                 pylab.colorbar()
-#                 ax.set_xticks(numpy.arange(cm.shape[1]) + 0.5, minor=False)
-#                 ax.set_yticks(numpy.arange(cm.shape[0]) + 0.5, minor=False)
-#                 ax.set_xticklabels(['Inlier', 'Outlier'])
-#                 ax.set_yticklabels(['Inter', 'Prometa', 'Meta', 'AnaTelo', 'Outlier_grape', 'Outlier_arrest', 'Outlier_polylobed'])
-#                 ax.invert_yaxis()
-#                 for c in range(7):
-#                     for o in range(2):
-#                         t = pylab.text(o + 0.5, c + 0.5,  str(cm[c,o]), horizontalalignment='center', verticalalignment='center', fontsize=14)
-#                         if cm[c,o] > 0.3*cm.max():
-#                             t.set_color('w')
-#                 
-#                 ax.set_title('Accuracy %0.3f\ng %0.5f - n %0.3f - pd %d - k %s -dr %r' % (numpy.mean(acc), self.gamma, self.nu, self.pca_dims, self.kernel, self.pca.__class__.__name__))
-#                 pylab.tight_layout()
-#                 pylab.savefig(self.output('outlier_classification_confusion_%s1.png' % well))
-            
-            
-            #print plate_name, well, site, treatment 
-            
-#             cm = confusion_matrix(class_prediction, outlier_prediction)
-#             print cm
-#             print precision_recall_fscore_support(class_prediction.astype('uint8'), outlier_prediction.astype('uint8'), average='micro')
+            for c, o, cl in zip(class_prediction, outlier_prediction_2, cluster_prediction):
+                cm[int(c), int(o)]     += 1
+                cm_2[int(c>3), int(o)] += 1
+                cm_3[int(c), int(cl)] += 1
+                
+                
             acc.append(accuracy_score(class_prediction_b.astype('uint8'), outlier_prediction_b.astype('uint8')))
-            #print "********\n\n"
         
         for r in range(cm.shape[0]):
             cm[r,:] = cm[r,:] / float(cm[r,:].sum()) 
         
         for r in range(cm_2.shape[0]):
-            cm_2[r,:] = cm_2[r,:] / float(cm_2[r,:].sum()) 
+            cm_2[r,:] = cm_2[r,:] / float(cm_2[r,:].sum())
+             
+        for r in range(cm_3.shape[0]):
+            cm_3[r,:] = cm_3[r,:] / float(cm_3[r,:].sum()) 
         
-        pylab.figure(figsize=(7,6))
-        ax = pylab.subplot(111)
-        cax = pylab.pcolor(cm, cmap=pylab.matplotlib.cm.Greens, vmin=0, vmax=1)
-        cbar = pylab.colorbar(cax, ticks=[0, 0.5, 1])
-
-        cbar.ax.set_yticklabels(['0', '0.5', '1'])
-        ax.set_xticks(numpy.arange(cm.shape[1]) + 0.5, minor=False)
-        ax.set_yticks(numpy.arange(cm.shape[0]) + 0.5, minor=False)
-        ax.set_xticklabels(['Inlier', 'Outlier'])
-        ax.set_yticklabels(['Interphase', 'Prometaphase', 'Metaphase', 'Anaphase', 'Grape', 'Prometaphase\narrest', 'Polylobed'])
-        ax.invert_yaxis()
-        for c in range(7):
-            for o in range(2):
-               
-                t = pylab.text(o + 0.5, c + 0.5,  "%3.2f" % cm[c,o], horizontalalignment='center', verticalalignment='center', fontsize=20)
-                if cm[c,o] > 0.3*cm.max():
-                    t.set_color('w')
-                    
-        ax.hlines(4,0,2, colors='w', lw=5)
-        ax.vlines(1,0,7, colors='w', lw=5)
+        self.plot_confusion(cm, ['Interphase', 'Prometaphase', 'Metaphase', 'Anaphase', 'Grape', 'Prometaphase\narrest', 'Polylobed'], ['Inlier', 'Outlier'], 'vs_classi_full', 4, print_values=True)
+        self.plot_confusion(cm_2, ['Wildtype', 'Phenotype'], ['Inlier', 'Outlier'], 'vs_classi_collapsed', print_values=True)
+        self.plot_confusion(cm_3, ['Interphase', 'Prometaphase', 'Metaphase', 'Anaphase', 'Grape', 'Prometaphase\narrest', 'Polylobed'], ['Inlier']+['Cluster %d' % d for d in range(1,cm_3.shape[1]+1) ], 'vs_class', 4, print_values=True)
         
+        return numpy.mean(acc), cm, cm_2, cm_3
+            
+    def plot_confusion(self, cm, row_names, col_names, title='', row_sep=1, col_sep=1, print_values=False, lw=2):
+        rcParamsBackup = rcParams.copy()
         
-        #ax.set_title('Accuracy %0.3f\ng %0.5f - n %0.3f - pd %d - k %s -dr %r' % (numpy.mean(acc), self.gamma, self.nu, self.pca_dims, self.kernel, self.pca.__class__.__name__))
-        ax.set_title('Accuracy %0.2f' % numpy.mean(acc))
-        pylab.tight_layout()
-        pylab.savefig(self.output('outlier_classification_confusion.pdf'))
-        pylab.show(block=False)
+        rcParams['lines.color'] = 'white'
+        rcParams['patch.edgecolor'] = 'white'
+        rcParams['text.color'] = 'white'
+        rcParams['axes.facecolor'] = 'black'
+        rcParams['axes.edgecolor'] = 'white'
+        rcParams['axes.labelcolor'] = 'white'
+        rcParams['xtick.color'] = 'white'
+        rcParams['ytick.color'] = 'white'
+        rcParams['grid.color'] = 'white'
+        rcParams['figure.facecolor'] = 'black'
+        rcParams['figure.edgecolor'] = 'black'
+        rcParams['savefig.facecolor'] = 'black'
+        rcParams['savefig.edgecolor'] = 'none'
         
-        # cm_2
-        
-        pylab.figure(figsize=(6,8))
+        pylab.figure(figsize=(7,7))
         ax = pylab.subplot(111)
         
-        im = pylab.pcolor(cm_2, cmap=pylab.matplotlib.cm.Greens, vmin=0, vmax=1)
+        im = ax.pcolor(cm, cmap=YlBlCMap, vmin=0, vmax=1)
         
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="10%", pad=0.5)
 
-
-        
         cbar = pylab.colorbar(im, cax=cax, ticks=[0, 0.5, 1])
-        
-        
-        cbar.ax.set_yticklabels(['0', '0.5', '1'])
-        ax.set_xticks(numpy.arange(cm_2.shape[1]) + 0.5, minor=False)
-        ax.set_yticks(numpy.arange(cm_2.shape[0]) + 0.5, minor=False)
-        ax.set_xticklabels(['Inlier', 'Outlier'])
-        ax.set_yticklabels(['Non-Phenotype', 'Phenotype'])
-        ax.invert_yaxis()
-        for c in range(2):
-            for o in range(2):
-               
-                t = ax.text(o + 0.5, c + 0.5,  "%3.2f" % cm_2[c,o], horizontalalignment='center', verticalalignment='center', fontsize=20)
-                if cm_2[c,o] > 0.3*cm.max():
-                    t.set_color('w')
-                    
-        ax.hlines(1,0,2, colors='w', lw=2)
-        ax.vlines(1,0,2, colors='w', lw=2)
-        ax.set_aspect(1)
-        ax.xaxis.tick_top()
 
+        cbar.ax.set_yticklabels(['0', '0.5', '1'])
+        ax.set_xticks(numpy.arange(cm.shape[1]) + 0.5, minor=False)
+        ax.set_yticks(numpy.arange(cm.shape[0]) + 0.5, minor=False)
+        ax.set_xticklabels(col_names)
+        ax.set_yticklabels(row_names)
+        ax.invert_yaxis()
+        for c in range(cm.shape[0]):
+            for o in range(cm.shape[1]):
+                if not print_values:
+                    continue
+                t = ax.text(o + 0.5, c + 0.5,  "%3.2f" % cm[c,o], horizontalalignment='center', verticalalignment='center', fontsize=20)
+                if cm[c,o] > 0.3*cm.max():
+                    t.set_color('k')
+                    
+        ax.hlines(row_sep,0, cm.shape[1], colors='w', lw=lw)
+        ax.vlines(col_sep,0, cm.shape[0], colors='w', lw=lw)
         
-        #ax.set_title('Accuracy %0.3f\ng %0.5f - n %0.3f - pd %d - k %s -dr %r' % (numpy.mean(acc), self.gamma, self.nu, self.pca_dims, self.kernel, self.pca.__class__.__name__))
-        #ax.set_title('Accuracy %0.2f' % numpy.mean(acc))
+        ax.set_title(title)
+        if cm.shape[0] == cm.shape[1]:
+            ax.set_aspect(1)
         pylab.tight_layout()
-        pylab.savefig(self.output('outlier_classification_confusion_2.pdf'))
+
+        pylab.savefig(self.output('outlier_classification_confusion_%s.pdf' % title))
+        pylab.savefig(self.output('outlier_classification_confusion_%s.png' % title))
         pylab.show()
-        
-        if DEBUG:
-            print 'Evaluate mean', numpy.mean(acc)
-        return numpy.mean(acc)
-            
         
 
     def plot(self):
@@ -1199,7 +1308,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         #iscatter_widget.set_countour_eval_cb(contour_eval)
         iscatter_widget.set_data(features, names, sample_names, 0, 1, data_cellh5, img_gen)
         
-        iscatter_widget2 = iscatter.IScatterWidget()
+        iscatter_widget2 = iscatter.IScatterWidgetHisto()
         #iscatter_widget2.set_countour_eval_cb(contour_eval)
         iscatter_widget2.set_data(features, names, sample_names, 0, 1, data_cellh5, img_gen)
     
@@ -1518,6 +1627,7 @@ class SaraOutlier(object):
                                   )
         self.od.set_read_feature_time_predicate(numpy.equal, 0)
         self.od.read_feature(self.sara_mitotic_live_selector)
+#         self.od.read_feature()
         self.od.set_gamma(gamma)
         self.od.set_nu(nu)
         self.od.set_pca_dims(pca_dims)
@@ -1529,7 +1639,7 @@ class SaraOutlier(object):
         self.od.compute_outlyingness()
         self.od.cluster_outliers()
             
-        self.od.interactive_plot()
+        #self.od.interactive_plot()
         
         
 #         self.od.cluster_outliers()                    
@@ -1537,7 +1647,7 @@ class SaraOutlier(object):
 #         
 #         self.od.make_hit_list_single_feature('roisize')
 #         
-#         self.od.make_top_hit_list(top=10000, for_group=('neg', 'target', 'pos'))
+        self.od.make_top_hit_list(top=10000, for_group=('neg', 'target', 'pos'))
 #         
 #         self.od.make_heat_map()
         #self.od.make_outlier_galleries()
@@ -1635,8 +1745,8 @@ class MatthiasOutlierFigure1(MatthiasOutlier):
             self.od.predict()
             self.od.compute_outlyingness()
             
-            #print self.od.evaluate()
             self.od.cluster_outliers()
+            print self.od.evaluate_outlier_detection()
             
             self.od.interactive_plot()
         
@@ -1726,7 +1836,7 @@ if __name__ == "__main__":
     EXPLOOKUP = {'sarax_od':
                      {
                       'mapping_files' : {
-                        'SP_9': 'F:/sara_adhesion_screen/sp9.txt',
+#                         'SP_9': 'F:/sara_adhesion_screen/sp9.txt',
                         'SP_8': 'F:/sara_adhesion_screen/sp8.txt',
                         'SP_7': 'F:/sara_adhesion_screen/sp7.txt',
                         'SP_6': 'F:/sara_adhesion_screen/sp6.txt',
@@ -1737,7 +1847,7 @@ if __name__ == "__main__":
                         'SP_1': 'F:/sara_adhesion_screen/sp1.txt',
                                         },
                       'ch5_files' : {
-                            'SP_9': 'F:/sara_adhesion_screen/sp9__all_positions_with_data_combined.ch5',
+#                             'SP_9': 'F:/sara_adhesion_screen/sp9__all_positions_with_data_combined.ch5',
                             'SP_8': 'F:/sara_adhesion_screen/sp8__all_positions_with_data_combined.ch5',
                             'SP_7': 'F:/sara_adhesion_screen/sp7__all_positions_with_data_combined.ch5',
                             'SP_6': 'F:/sara_adhesion_screen/sp6__all_positions_with_data_combined.ch5',
@@ -1755,7 +1865,7 @@ if __name__ == "__main__":
 #                     'rows' : list("ABCDEFGHIJKLMNOP")[:],
 #                     'cols' : tuple(range(19,25)),
 #                     'training_sites' : (1,2,3,4),
-                    'training_sites' : (1,2,3,4),
+                    'training_sites' : (5,6,7,8),
                       'gamma' : 0.005,
                       'nu' : 0.10,
                       'pca_dims' : 68,
@@ -1805,33 +1915,33 @@ if __name__ == "__main__":
 #                                 ("D",  13), ("F",  13), ("H",  13), # Taxol No Rev
                                 ("D",  7), ("F",  7), ("H",  7), # Noco No Rev 
                                 ("D",  12), ("F",  12), ("H",  12), # Taxol 300 Rev
-#                                 ("D",  6), ("F",  6), ("H",  6), # Noco 300 Rev
+                                ("D",  6), ("F",  6), ("H",  6), # Noco 300 Rev
 #                                 ("D",  9), ("F",  9), ("H",  9), # Taxol 900 Rev
 #                                 ("D",  3), ("F",  3), ("H",  3), # Noco 900 Rev
 #                                 
 #                                 ("J",  13), ("L",  13), ("N",  13), # Taxol No Rev
                                 ("J",  7), ("L",  7), ("N",  7), # Noco No Rev 
                                 ("J",  12), ("L",  12), ("N",  12), # Taxol 300 Rev
-#                                 ("J",  6), ("L",  6), ("N",  6), # Noco 300 Rev
+                                ("J",  6), ("L",  6), ("N",  6), # Noco 300 Rev
 #                                 ("J",  9), ("L",  9), ("N",  9), # Taxol 900 Rev
 #                                 ("J",  3), ("L",  3), ("N",  3), # Noco 900 Rev
                                
                                
 #                             ("B",  19), ("C",  19), ("D",  19), ("E",  19), # NEG
 #                             ("D",  24), ("F",  24), ("H",  24), # Taxol No Rev
-#                             ("D",  18), ("F",  18), ("H",  18), # Noco No Rev 
-#                             ("D",  23), ("F",  23), ("H",  23), # Taxol 300 Rev
-#                             ("D",  17), ("F",  17), ("H",  17), # Noco 300 Rev
+                            #("D",  18), ("F",  18), ("H",  18), # Noco No Rev 
+                            #("D",  23), ("F",  23), ("H",  23), # Taxol 300 Rev
+                            #("D",  17), ("F",  17), ("H",  17), # Noco 300 Rev
 #                             ("D",  20), ("F",  20), ("H",  20), # Taxol 900 Rev
 #                             ("D",  14), ("F",  14), ("H",  14), # Noco 900 Rev
                                   ),
 #                       'rows' : list("ABCDEFGHIJKLMNOP")[:3],
 #                         'cols' : tuple(range(19,25)),
             
-                      'gamma' : 0.005,
-                      'nu' : 0.10,
-                      'pca_dims' : 68,
-                      'kernel' :'linear'
+                      'gamma' : None,
+                      'nu' : 0.2,
+                      'pca_dims' : 200,
+                      'kernel' :'rbf'
                      }
                   }
     setupt_matplot_lib_rc()
