@@ -218,7 +218,15 @@ class CH5Position(object):
                    [object_] \
                    ['object_features'].value
         else:
-            return []                 
+            return []           
+        
+    def get_object_feature_by_name(self, name, object_='primary__primary'):   
+        if len(self['feature'][object_][name]) > 0:
+            return self['feature'] \
+                   [object_] \
+                   [name].value
+        else:
+            return []      
                    
     def get_time_lapse(self):
         if 'time_lapse' in self['image']:
@@ -608,6 +616,40 @@ class CH5Position(object):
                 break
 
         return idx_list
+    
+    def del_object_feature_data(self, feature_name, object_='primary__primary'):
+        # Check file mode
+        if self.definitions._file_handle.mode not in ('w', 'a', 'r+'):
+            raise IOError('Error: Cannot write to CellH5 file, since it is opened read-only')
+        path = 'feature/%s/' % object_
+        feature_grp = self[path]
+        
+        if feature_name in feature_grp:
+            del feature_grp[feature_name]
+        
+    def set_object_feature_data(self, feature_name, data, object_='primary__primary', overwrite=True):
+        # Check file mode
+        if self.definitions._file_handle.mode not in ('w', 'a', 'r+'):
+            raise IOError('Error: Cannot write to CellH5 file, since it is opened read-only')
+        
+        path = 'feature/%s/' % object_
+        feature_grp = self[path]
+        
+        if feature_name in feature_grp:
+            if overwrite:
+                "Waring: %s already set in %s... overwrite" % (feature_name, path)
+                del feature_grp[feature_name]
+            else:
+                IOError("Error: %s already set in %s... overwrite" % (feature_name, path))
+        
+        try:
+            feature_grp.create_dataset(feature_name, data=data)
+        except:
+            print "Error: Creation of %s in %s failed " % (feature_name, path)
+            raise
+        
+        
+        
 
 
     def track_first(self, start_idx, max_length=None):
@@ -668,7 +710,7 @@ class CH5CachedPosition(CH5Position):
 
     @memoize
     def get_tracking(self, *args, **kwargs):
-       return super(CH5CachedPosition, self).get_tracking(*args, **kwargs)
+        return super(CH5CachedPosition, self).get_tracking(*args, **kwargs)
 
     @memoize
     def _get_tracking_lookup(self, *args, **kwargs):
@@ -713,7 +755,7 @@ class CH5CachedPosition(CH5Position):
 
 class CH5File(object):
 
-    def __init__(self, filename, mode='r', cached=True):
+    def __init__(self, filename, mode='a', cached=True):
         self.filename = filename
         self._cached = cached
         self._file_handle = h5py.File(filename, mode)
@@ -879,20 +921,18 @@ class CH5TestBase(unittest.TestCase):
             raise IOError(("No CellH5 test data found in 'cellh5/data'."
                            " Please refer to the instructions in "
                            "'cellh5/data/README'"))
-        self.fh = CH5File(data_filename)
+        self.fh = CH5File(data_filename, 'a')
         self.well_str = '0'
         self.pos_str = self.fh.positions[self.well_str][0]
         self.pos = self.fh.get_position(self.well_str, self.pos_str)
 
     def tearDown(self):
         self.fh.close()
-        
-class TestCH5Basic(CH5TestBase): 
+
+class TestCH5Basic(CH5TestBase):
     def testTimeLapse(self):
         time_lapse = self.pos.get_time_lapse()
         assert int(time_lapse) == 276
-    
-class TestCH5Basic(CH5TestBase):
 
     def testGallery(self):
         a1 = self.pos.get_gallery_image(1)
@@ -953,6 +993,15 @@ class TestCH5Basic(CH5TestBase):
     def testObjectFeature(self):
         self.assertTrue('n2_avg' in  self.pos.object_feature_def())
         self.assertTrue(self.pos.get_object_features().shape[1] == 239)
+        
+class TestCH5Write(CH5TestBase):
+    def testSimpleWrite(self):
+        data = numpy.random.rand(10,20)
+        self.pos.set_object_feature_data('_test', data)
+        data_ = self.pos.get_object_feature_by_name('_test')
+        self.pos.del_object_feature_data('_test')
+        assert (data == data_).all()
+        
 
 class TestCH5Examples(CH5TestBase):
 
@@ -1142,5 +1191,12 @@ def repack_cellh5_and_combine(cellh5_folder, cellh5_folder_2, rel_path_src, rel_
             cnt += 1
 
     f.close()
+    
+def run_single_test(cls, func):
+    writing = unittest.TestSuite()
+    writing.addTest( cls(func) )
+    unittest.TextTestRunner().run(writing)
+
 if __name__ == '__main__':
+    #run_single_test(TestCH5Write, 'testSimpleWrite')
     unittest.main()
