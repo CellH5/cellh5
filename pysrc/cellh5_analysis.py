@@ -275,7 +275,9 @@ class CellH5Analysis(object):
             else:
                 ma = self._remove_nan_rows(ma)
                 return self.pca.transform(ma)[:, :self.pca_dims]
-        res = pandas.Series(self.mapping['Object features'].map(_project_on_pca))
+        res = pandas.Series(self.mapping['Object features'][self.mapping['Object count'] > 0].map(_project_on_pca))
+        stds = numpy.concatenate(list(res)).std(0)
+        res2 = res.apply(lambda x: x / stds)
         self.mapping['PCA'] = res
     
     def set_read_feature_time_predicate(self, cmp, value):
