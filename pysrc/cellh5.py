@@ -75,11 +75,15 @@ def ch5open(filename, mode='r', cached=True):
     yield ch5
     ch5.close()
 
+
 class CH5Const(object):
 
     # defaults for unpredicted objects, -1 one might be not a
     UNPREDICTED_LABEL = -99
     UNPREDICTED_PROB = numpy.nan
+
+    REGION = 'region'
+    RELATION = 'relation'
 
 
 class CH5GroupCoordinate(object):
@@ -152,6 +156,16 @@ class CH5Position(object):
         path = "%s/%s" %(self.grp_pos_path, key)
         return self.definitions.get_file_handle()[path]
 
+    def channel_color_by_region(self, region):
+        """Return the the channel information."""
+
+        path = '/definition/image/region'
+        rdef = self.definitions.get_file_handle()[path].value
+
+        i = rdef['channel_idx'][rdef['region_name'] == 'region___%s' %region][0]
+        path = '/definition/image/channel'
+        return self.definitions.get_file_handle()[path]['color'][i]
+
     def get_tracking(self):
         return self['object']['tracking'].value
 
@@ -187,10 +201,12 @@ class CH5Position(object):
             return probs.reshape(ishape+(nclasses, ))
 
     def has_classification(self, object_):
-        return 'object_classification' in self['feature'][object_]
+        fh = self.definitions.get_file_handle()
+        path = 'definition/feature/%s/object_classification' %object_
+        return path in fh
 
     def get_crack_contour(self, index, object_='primary__primary',
-                          bb_corrected=True):
+                          bb_corrected=True, size=GALLERY_SIZE):
         index = to_index_array(index)
         crack_list = []
         for ind in index:
@@ -201,9 +217,9 @@ class CH5Position(object):
 
             if bb_corrected:
                 bb = self['feature'][object_]['center'][ind]
-                crack[:,0] -= bb['x'] - GALLERY_SIZE/2
-                crack[:,1] -= bb['y'] - GALLERY_SIZE/2
-                crack.clip(0, GALLERY_SIZE)
+                crack[:,0] -= bb['x'] - size/2
+                crack[:,1] -= bb['y'] - size/2
+                crack = crack.clip(0, size)
 
             crack_list.append(crack)
 
@@ -242,12 +258,14 @@ class CH5Position(object):
                     ['channel'] \
                     [c, t, z, :, :]
 
-    def get_gallery_image(self, index, object_='primary__primary', size=GALLERY_SIZE):
+    def get_gallery_image(self, index,
+                          object_='primary__primary', size=GALLERY_SIZE):
         index = to_index_array(index)
         images = list()
 
         channel_idx = self.definitions.image_definition['region'] \
             ['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
+
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
 
@@ -469,10 +487,10 @@ class CH5Position(object):
         if len(res) == 1:
             return res[0]
         return res
-    
+
     def get_all_time_idx(self, object_='primary__primary'):
         return self['object'][object_][:]['time_idx']
-    
+
     def get_time_idx(self, index, object_='primary__primary'):
         return self['object'][object_][index]['time_idx']
 
@@ -516,7 +534,11 @@ class CH5Position(object):
         return self['feature'][object_][feature].value
 
     def has_events(self):
-        return bool(self['object/event'].size)
+        # either group is emtpy or key does not exist
+        try:
+            return bool(self['object/event'].size)
+        except KeyError:
+            return False
 
     def get_events(self, output_second_branch=False, random=None):
         assert isinstance(output_second_branch, bool)
