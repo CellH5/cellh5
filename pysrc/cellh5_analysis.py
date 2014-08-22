@@ -310,7 +310,13 @@ class CellH5Analysis(object):
                 
                 feature_matrix = ch5_pos.get_object_features()
                 time_idx = ch5_pos['object']["primary__primary"]['time_idx']
-                log.info('Reading %r %r %r %r using time  %r  %r' %(plate_name, well, site, len(feature_matrix), self._rf_time_predicate_cmp.__name__, self._rf_time_predicate_value))
+                log.info('Reading %s %s %s %d %s using time  %r  %r' % (plate_name, 
+                                                                     well, 
+                                                                     site, 
+                                                                     len(feature_matrix),
+                                                                     " ".join(self.get_treatment(plate_name, well, int(site))),
+                                                                     self._rf_time_predicate_cmp.__name__, 
+                                                                     self._rf_time_predicate_value))
                 
                 if len(time_idx) > 0:
                     if self._rf_time_predicate_cmp is not None:
@@ -640,8 +646,62 @@ from itertools import izip
 from sklearn.neighbors import KernelDensity
 from sklearn.grid_search import GridSearchCV
 
-cellh5.GALLERY_SIZE = 100
 class CellH5EigenCell(CellH5Analysis):
+    def compute_eigen_face_features(self, result_size=100, outer_size=140):
+        import vigra
+        cellh5.GALLERY_SIZE = outer_size
+        rr = (outer_size-result_size) / 2
+        rot_images = []
+        for _, (plate, w, p) in self.mapping[['Plate', 'Well','Site']].iterrows(): 
+            try:
+                cellh5file = cellh5.CH5File(self.cellh5_files[plate])
+                cellh5pos = cellh5file.get_position(w, str(p))
+            except:
+                print "Positon", (w, p), "is corrupt. Process again with CellCognition"
+                cellh5file.close()
+                continue
+            
+            obj_idx = xrange(len(cellh5pos.get_object_table('primary__primary')['obj_label_id']))
+            orientation =  cellh5pos.get_orientation(obj_idx)[0]
+            
+            cnt = 0
+            for cell_gal, orient in izip(cellh5pos.get_gallery_image_generator(obj_idx), orientation):
+                rot_img = vigra.sampling.rotateImageRadiant( cell_gal.astype(numpy.float32), orient)[rr:-rr,rr:-rr].reshape(1, result_size**2)
+                rot_images.append(rot_img)
+                cnt+=1
+#                 if cnt > 10:
+#                     break
+                
+        rot_images = numpy.concatenate(rot_images)
+        print rot_images.shape
+        
+        pca = PCA(n_components=300, whiten=True)
+        data = pca.fit_transform(rot_images)
+        
+        #params = {'bandwidth': numpy.logspace(-1, 3, 10)}
+        #grid = GridSearchCV(KernelDensity(), params)
+        #grid.fit(data)
+        
+        #print "best bandwidth: {0}".format(grid.best_estimator_.bandwidth)
+        
+        # use the best estimator to compute the kernel density estimate
+        #kde = grid.best_estimator_
+        
+        # sample 44 new points from the data
+        #new_data = kde.sample(100, random_state=41)
+        new_data = pca.inverse_transform(data).reshape((-1,result_size, result_size))
+        
+        orig_data = rot_images.reshape((-1,result_size, result_size))
+        
+        pylab.figure()
+        for i in range(100):
+            ax = pylab.subplot(10,10, i)
+            ax.imshow(numpy.concatenate((new_data[i,:,:], orig_data[i,:,:])), interpolation='nearest', clim=(0, 196), cmap='gray' )
+            pylab.axis('off')
+        pylab.show()
+        
+    
+    
     def normalize_cell_images(self):
         rot_images = []
         for _, (plate, w, p) in self.mapping[['Plate', 'Well','Site']].iterrows(): 
@@ -709,21 +769,16 @@ def test_features_pca():
 def test_eigen_cell():
     ec = CellH5EigenCell('test_eigen_cell', 
                         {'002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/mapping/MD9_Grape_over_Time.txt'}, 
-                        {'002324': 'M:/experiments/Experiments_002300/002324/meta/CellCog/analysis_outlier_3/hdf5/_all_positions.ch5'},
-                        locations=(
-                                    ("B",  13),
-#                                    ("B",  19),
-#                                    ("C",  19),
-                                   ), 
+                        {'002324': 'F:/matthias_screen/cecog/analysis/hdf5/_all_positions.ch5'},
                         )
     
     ec.set_read_feature_time_predicate(numpy.equal, 0)
-    ec.normalize_cell_images()
+    ec.compute_eigen_face_features()
 
     
     
 
 if __name__ == '__main__':
-#     test_eigen_cell()
-    test_event_tracking()
+    test_eigen_cell()
+#     test_event_tracking()
     

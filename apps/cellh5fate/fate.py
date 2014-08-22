@@ -19,13 +19,13 @@ import random
 import pylab
 import myhmm
 from itertools import izip_longest
-
+import csv 
 from matplotlib.mlab import PCA
 from scipy.stats import nanmean
 from matplotlib.backends.backend_pdf import PdfPages
 
 from itertools import cycle
-from cecog.util.color import rgb_to_hex
+#from cecog.util.color import rgb_to_hex
 import matplotlib
 
 from matplotlib.backends.backend_pdf import PdfPages
@@ -35,7 +35,7 @@ from estimator import HMMConstraint, HMMAgnosticEstimator, normalize
 from collections import OrderedDict
 hmm.normalize = lambda A, axis=None: normalize(A, axis, eps=10e-99)
 
-from fate_utils import CMAP17, hex_to_rgb, split_str_into_len, CMAP17_MULTI, pairwise
+from fate_utils import CMAP17, CMAP17SIMPLE, hex_to_rgb, split_str_into_len, CMAP17_MULTI, pairwise
                  
 OUTPUT_FORMATS = ['png', 'pdf']
 TRACK_IMG_CROP = 240 # min
@@ -181,7 +181,7 @@ class CellFateAnalysis(object):
             id_list = []
             for k, e_idx in enumerate(self.tracks[(w,p)]['ids']):   
                 start_idx = e_idx[-1]
-                track = e_idx + cell5pos.track_first(start_idx)
+                track = list(e_idx) + cell5pos.track_first(start_idx)
                 class_labels = cell5pos.get_class_label(track)
                 class_labels_list.append(class_labels)
                 id_list.append(track)
@@ -313,7 +313,8 @@ class CellFateAnalysis(object):
             pylab.savefig(pp, format='pdf')
             for fmt in OUTPUT_FORMATS:
                 pylab.savefig(self.output('securin_fate_all_%s_%s.%s' % (fate_, title, fmt)))
-            pylab.clf()    
+            pylab.clf()
+            pylab.close(f)    
         pp.close()
         
     def event_mean_fate_curves(self, event_selector, 
@@ -403,7 +404,8 @@ class CellFateAnalysis(object):
             pylab.savefig(pp, format='pdf')
             for fmt in OUTPUT_FORMATS:
                 pylab.savefig(self.output('securin_fate_mean_%s_%s.%s' % (fate_, title, fmt)))
-            pylab.clf()    
+            pylab.clf()   
+            pylab.close(f) 
         pp.close()
         
     def event_mean_curves(self, event_selector, 
@@ -444,7 +446,7 @@ class CellFateAnalysis(object):
             
             for line, feature_values in zip(self.tracks[(w,p)][event_selector], all_feature_values):
                 x_values = numpy.array(map(int,list(line)))
-                if numpy.max(feature_values) < 14:
+                if numpy.max(feature_values) < 5:
                     print 'excluding event due to low signal'
                     continue
                 values = numpy.array(feature_values - feature_min) 
@@ -503,7 +505,8 @@ class CellFateAnalysis(object):
             
             f.savefig(pp, format='pdf')
             for fmt in OUTPUT_FORMATS:   
-                f.savefig(self.output('securin_2_mean_%s_%s_.%s'% (fate_, title, fmt)))  
+                f.savefig(self.output('securin_2_mean_%s_%s_.%s'% (fate_, title, fmt)))
+            pylab.close(f)  
         pp.close()
         
     def event_curves(self, event_selector, 
@@ -542,7 +545,7 @@ class CellFateAnalysis(object):
             #print "FEATURE_MIN", feature_min
             for line, feature_values in zip(self.tracks[(w,p)][event_selector], all_feature_values):
                 x_values = numpy.array(map(int,list(line)))
-                if numpy.max(feature_values) < 15:
+                if numpy.max(feature_values) < 5:
                     print 'excluding event due to low signal'
                     continue
                 values = numpy.array(feature_values - feature_min) 
@@ -565,7 +568,8 @@ class CellFateAnalysis(object):
             pylab.savefig(pp, format='pdf')
             for fmt in OUTPUT_FORMATS:
                 pylab.savefig(self.output('securin_2_all_%s_%s.%s' % (fate_, title, fmt)))
-            pylab.clf()    
+            pylab.clf()  
+            pylab.close(f)  
         pp.close()
     
     def setup_hmm(self, k_classes, constraint_xml):
@@ -771,12 +775,12 @@ class CellFateAnalysis(object):
         #print map(int,line)
         for l_idx, l1 in enumerate(line):
             if l1 != old_l:
-                ax.plot([old_l_idx*self.time_lapse, l_idx*self.time_lapse], [line_height, line_height], color=cmap(int(old_l)), linewidth=3)
+                ax.plot([old_l_idx*self.time_lapse, l_idx*self.time_lapse], [line_height, line_height], color=cmap(int(old_l)), linewidth=3, solid_capstyle="butt")
                 #print [old_l_idx, l_idx],
                 old_l = l1
                 old_l_idx = l_idx
         #print [old_l_idx, len(line)]
-        ax.plot([old_l_idx*self.time_lapse, len(line)*self.time_lapse], [line_height, line_height], color=cmap(int(l1)), linewidth=3)
+        ax.plot([old_l_idx*self.time_lapse, len(line)*self.time_lapse], [line_height, line_height], color=cmap(int(l1)), linewidth=3, solid_capstyle="butt")
       
     def _plot_curve(self, line, values, cmap, ax):
         old_l = line[0]
@@ -923,7 +927,7 @@ class CellFateAnalysis(object):
             ax.set_ylim(0, cnt)
                 
             ax.invert_yaxis()
-            ax.set_xlim(0, 450*self.time_lapse)
+            ax.set_xlim(0, 3500)
             title = '%s - %s (%s)' % tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,])
             ax.set_title(title) 
             ax.set_xlabel('Time (min)')
@@ -940,6 +944,108 @@ class CellFateAnalysis(object):
         
         import csv
         with open(self.output('__dyinging_in_mito_or_apo.txt'), 'wb') as f:
+            writer = csv.writer(f, delimiter='\t')
+            writer.writerow(exp_header)
+            for v in exp_content.values():
+                writer.writerow(v)
+            writer.writerow(exp_total)
+            
+    def plot_fate_just_2_groups(self, title, split_len=1):
+        def _plot_separator(cnt, label, col='k'):
+            cnt+=2
+            ax.axhline(cnt, color=col, linewidth=1)
+            #ax.text(460*self.time_lapse, cnt-0.5, label)
+            cnt+=2
+            return cnt
+        
+        def _cmp_len_of_first_inter(x,y):
+            x_ = "".join(map(lambda x: "%02d" % x, x[1]))
+            y_ = "".join(map(lambda x: "%02d" % x, y[1]))
+            try:
+                x_len = re.search(r"(02|03|04)+", x_).end()
+                y_len = re.search(r"(02|03|04)+", y_).end()
+                return cmp(y_len, x_len)
+            except:
+                return cmp(len(y[0]), len(x[0]))
+     
+        pp = PdfPages(self.output("%s.pdf") % title)
+        
+        exp_header = []
+        exp_content = OrderedDict()
+        
+        exp_content['mito_int'] = []
+        exp_content['mito_int_mito_int_mito'] = []
+        exp_content['mito_int_mito_int_apo'] = []
+        exp_content['mito_int_apo'] = []
+        exp_content['mito_int_mito_apo'] = []
+        exp_content['mito_apo'] = []
+        exp_content['mito_unclassified'] = []
+
+        exp_total = []
+        
+        for w, p in sorted(self.tracks):
+            cnt = 0
+            f = pylab.figure(figsize=(8,12))
+            ax = pylab.gca()
+            
+            exp_header.append(w)
+            
+            for c in exp_content.keys():
+                exp_content[c].append(len(self.tracks[(w,p)][c]))
+            
+            total_count = 0
+            
+            combined_groups =  (self.tracks[(w,p)]['mito_int'] + 
+                                self.tracks[(w,p)]['mito_int_mito_int_mito'] +
+                                self.tracks[(w,p)]['mito_int_mito_int_apo'] +
+                                self.tracks[(w,p)]['mito_int_apo'] +
+                                self.tracks[(w,p)]['mito_int_mito_apo'])
+            
+            for line in sorted( combined_groups
+                                , cmp=_cmp_len_of_first_inter):
+                self._plot_line(line[0], cnt, self.cmap, ax)
+                cnt+=1
+            total_count += len(combined_groups)
+            cnt = _plot_separator(cnt, str(len(self.tracks[(w,p)]['mito_int'])))
+            
+            
+            
+            for line in sorted(self.tracks[(w,p)]['mito_apo'], cmp=_cmp_len_of_first_inter):
+                self._plot_line(line[0], cnt, CMAP17, ax)
+                cnt+=1
+            total_count += len(self.tracks[(w,p)]['mito_apo'])
+
+                
+            exp_total.append(total_count)
+            
+            total_count += len(self.tracks[(w,p)]['mito_unclassified'])
+                
+            #cnt = _plot_separator(cnt, str(total_count))
+            
+            #cnt +=4
+            #ax.text(460*self.time_lapse, cnt-0.5, str(total_count))
+            
+            
+            ax.set_ylim(0, cnt)
+                
+            ax.invert_yaxis()
+            ax.set_xlim(0, 3500)
+            title = '%s - %s (%s)' % tuple(list(self.mcellh5.get_treatment_of_pos(w, p)) + [w,])
+            ax.set_title(title) 
+            ax.set_xlabel('Time (min)')
+            ax.set_yticklabels([])
+            ax.get_xaxis().tick_bottom()
+            ax.get_yaxis().set_ticks([])
+            
+            pylab.tight_layout()
+            pylab.savefig(pp, format='pdf')
+            for fmt in OUTPUT_FORMATS:
+                pylab.savefig(self.output('fate2_%s.%s' % (title, fmt))) 
+            pylab.clf()
+        pp.close()
+        
+        import csv
+        with open(self.output('__dyinging2_in_mito_or_apo.txt'), 'wb') as f:
             writer = csv.writer(f, delimiter='\t')
             writer.writerow(exp_header)
             for v in exp_content.values():
@@ -1010,7 +1116,21 @@ class CellFateAnalysisMultiHMM(CellFateAnalysis):
         
         est.constrain(constraints)
         self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
-        self.hmm._set_emissionprob(est.emis)               
+        self.hmm._set_emissionprob(est.emis) 
+        
+    def mitotic_entries_within(self, frame_idx, apo_class_label = 5):
+        
+        with open(self.output("__mitotic_entries_and_intitial_cell_count_interphase_only.txt"), 'wb') as f:
+            writer = csv.writer(f, delimiter='\t')
+            writer.writerow(["Well", "Site", "T1", "T2", "LiveCellCountAtTimeZero", "MitoticEntries"])
+            
+            for w, p in sorted(self.tracks):
+                number_of_events = len(self.tracks[(w,p)]["ids"])
+                cellh5pos = self.mcellh5.get_position(w,str(int(p)))
+                initial_cell_object_idx = numpy.nonzero(cellh5pos.get_object_table('primary__primary')["time_idx"] == 0)[0]
+                interphace_count = numpy.count_nonzero(cellh5pos.get_class_label(initial_cell_object_idx) == 1)
+                writer.writerow([w, str(p)] + list(self.mcellh5.get_treatment_of_pos(w, p)) + [ str(interphace_count), str(number_of_events)])
+                          
                 
     def classify_tracks(self, class_selector):
         class named_list(list):
@@ -1369,7 +1489,7 @@ EXP_LOOKUP = {
              'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
              'hmm_n_classes': 17,
              'hmm_n_obs': 5,
-             'output_dir' : 'M:/experiments/Experiments_002300/002338/002338/_meta/fate',
+#              'output_dir' : 'M:/experiments/Experiments_002300/002338/002338/_meta/fate',
              'securin_region' : "tertiary__expanded"
              },
          '002377':
@@ -1396,7 +1516,7 @@ EXP_LOOKUP = {
              'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
              'hmm_n_classes': 17,
              'hmm_n_obs': 5,
-             'output_dir' : 'M:/experiments/Experiments_002300/002325/_meta/fate',
+#              'output_dir' : 'M:/experiments/Experiments_002300/002325/_meta/fate',
              'securin_region' : "secondary__expanded"
              },
               
@@ -1406,11 +1526,11 @@ EXP_LOOKUP = {
              'mapping_file': "M:/experiments/Experiments_002200/002288/_meta/Mapping/002288_1.txt",
              'time_lapse': 4.5, 
              'events_before_frame': 160, # in frames
-             'onset_frame': 5, # in frames
+             'onset_frame': 4, # in frames
              'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
              'hmm_n_classes': 17,
              'hmm_n_obs': 5,
-             'output_dir' : 'M:/experiments/Experiments_002200/002288/_meta/fate',
+             #'output_dir' : 'M:/experiments/Experiments_002200/002288/_meta/fate',
              'securin_region' : "tertiary__expanded"
              },
               
@@ -1420,11 +1540,11 @@ EXP_LOOKUP = {
              'mapping_file': "M:/experiments/Experiments_002300/002301/_meta/Mapping/002301_01.txt",
              'time_lapse': 4.6, 
              'events_before_frame': 160, # in frames
-             'onset_frame': 5, # in frames
+             'onset_frame': 4, # in frames
              'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
              'hmm_n_classes': 17,
              'hmm_n_obs': 5,
-             'output_dir' : 'M:/experiments/Experiments_002300/002301/_meta/fate',
+             #'output_dir' : 'M:/experiments/Experiments_002300/002301/_meta/fate',
              'securin_region' : "tertiary__expanded"
              },  
         '002404':
@@ -1485,6 +1605,31 @@ EXP_LOOKUP = {
              'events_before_frame': 9999, # in frames
              'onset_frame': 4, # in frames
              },
+        '002382':
+            {
+             'ch5_file': "M:/experiments/Experiments_002300/002382/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002300/002382/_meta/Mapping/002382.txt",
+             'time_lapse': 8.0, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002300/002382/_meta/fate',
+             'events_before_frame': 90, # in frames
+             'onset_frame': 4, # in frames
+             'securin_region' : "tertiary__expanded"
+             },
+         '002587':
+            {
+             'ch5_file': "M:/experiments/Experiments_002500/002587/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002500/002587/_meta/Mapping/002587.txt",
+             'time_lapse': 4.5, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002500/002587/_meta/fate',
+             'events_before_frame': 160, # in frames
+             'onset_frame': 4, # in frames
+             },
       }
        
        
@@ -1519,23 +1664,27 @@ def fate_mitotic_time(plate_id):
       
 def fate_mutli_bi(plate_id):
     pm = CellFateAnalysisMultiHMM(plate_id, 
-                                rows=("B", "C" ), 
-                                cols=(5,9,12), 
+#                                 rows=("B", ), 
+#                                 cols=(12,), 
                                 **EXP_LOOKUP[plate_id])
     
+#     pm.mitotic_entries_within(pm.events_before_frame)
     pm.fate_tracking(out_name='Raw class labels')
     pm.setup_hmm()
     pm.predict_hmm('Raw class labels', 'Multi State HMM')   
-    
-    pm.plot_tracks(['Raw class labels', 'Multi State HMM', 'Multi State HMM', 'Multi State HMM',], 
-                   [pm.cmap, pm.cmap_cycle_3, CMAP17, CMAP17_MULTI],
-                   ['Raw class labels', 'HMM class labels', 'HMM Multi simple', 'HMM Multi full'],
-                    'trajectories_all')
-     
+#     
+#     pm.plot_tracks(['Raw class labels', 'Multi State HMM', 'Multi State HMM', 'Multi State HMM',], 
+#                    [pm.cmap, pm.cmap_cycle_3, CMAP17, CMAP17_MULTI],
+#                    ['Raw class labels', 'HMM class labels', 'HMM Multi simple', 'HMM Multi full'],
+#                     'trajectories_all')
+#      
     pm.classify_tracks('Multi State HMM')
-    #pm.plot_mitotic_timing('Multi State HMM')
+#     #pm.plot_mitotic_timing('Multi State HMM')
     pm.cmap = CMAP17
-    pm.plot('__fate_all', 2)
+#     pm.plot('__fate_all', 2)
+#     pm.cmap = CMAP17SIMPLE
+#     pm.plot_fate_just_2_groups('__fate_simple_all', 2)
+    
     securin_region = EXP_LOOKUP[plate_id]['securin_region']
      
     pm.event_curves('Multi State HMM',
@@ -1622,17 +1771,20 @@ def fate_mutli_bi(plate_id):
     
 if __name__ == "__main__":
     #fate_mutli_bi('002200')
-    #fate_mutli_bi('002338')
+#     fate_mutli_bi('002338')
     #fate_mutli_bi('002377')
-    #fate_mutli_bi('002325')
-    #fate_mutli_bi('002288')
-    #fate_mutli_bi('002301')
+#     fate_mutli_bi('002325')
+#     fate_mutli_bi('002288')
+#     fate_mutli_bi('002301')
+    fate_mutli_bi('002382')
+#     fate_mutli_bi('002587')
     #fate_mitotic_time()
 #     fate_mitotic_time('002404')
 #     fate_mitotic_time('002405')
 #     fate_mitotic_time('002408')
-    fate_mitotic_time('002410')
-    fate_mitotic_time('002415')
-    fate_mitotic_time('002411')
+#     fate_mitotic_time('002410')
+#     fate_mitotic_time('002415')
+#     fate_mitotic_time('002411')
+    fate_mitotic_time('002587')
     print 'FINISH'
 

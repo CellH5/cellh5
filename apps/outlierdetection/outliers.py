@@ -329,6 +329,13 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         self.nu = nu
     def set_pca_dims(self, pca_dims):
         self.pca_dims = pca_dims
+        
+    def write_readme(self):
+        with open(self.output('readme.txt'), 'w') as f:
+            for attr in ('gamma', 'nu', 'pca_dim', 'kernel', 'feature_set'):
+                if hasattr(self, attr):
+                    tmp = getattr(self, attr)
+                    f.write("%s\t%r\n" % (attr, tmp))
 
     def train(self, train_on=('neg',), classifier_class=OneClassSVM):
         if DEBUG:
@@ -359,6 +366,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             if isinstance(tm, (float,)) or (tm.shape[0] == 0):
                 predictions[idx] = numpy.zeros((0, 0))
                 distances[idx] = numpy.zeros((0, 0))
+                log_file_handle.write("\t0 / 0 outliers\t0.00\n")
             else:
                 if self.feature_set == 'Object features':
                     tm = self._remove_nan_rows(tm)
@@ -652,7 +660,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                                                                4: COLOR_LUT_6['magenta'],   
                                                                5: COLOR_LUT_6['cyan'],   
                                                                6:'w', 
-                                                               7:'k'}, labels, 0.58)
+                                                               7:'k'}, labels, 1)
             
             
             rcParams['ytick.labelsize'] = 14
@@ -1257,6 +1265,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             well = row['Well']
             site = row['Site']
             sirna = row['siRNA ID']
+            group = row['Group']
             gene = row['Gene Symbol']
             
             c5f = self.cellh5_handles[plate]
@@ -1276,7 +1285,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             data_features.append(features)
             data_pca.append(pca)
             for _ in range(features.shape[0]):
-                sample_names.append((plate, well, str(site), sirna, gene))
+                sample_names.append((plate, well, str(site), sirna, gene, group))
             cellh5_list.append(cellh5idx)
             
             
@@ -1681,6 +1690,37 @@ class SaraOutlier(object):
         if DEBUG:
             print 'Results:', self.od.output_dir
         os.startfile(os.path.join(os.getcwd(), self.od.output_dir))
+        
+class MatthiasPredrug(object):
+    def __init__(self, name, mapping_files, ch5_files, rows=None, cols=None, locations=None, training_sites=None, gamma=None, nu=None, pca_dims=None, kernel=None):
+        self.od = OutlierDetection(name,
+                                  mapping_files,
+                                  ch5_files,
+                                  rows=rows,
+                                  cols=cols,
+                                  locations=locations,
+                                  gamma=gamma,
+                                  nu=nu,
+                                  pca_dims=pca_dims,
+                                  kernel=kernel,
+                                  training_sites=training_sites
+                                  )
+        self.od.set_read_feature_time_predicate(numpy.equal, 0)
+        self.od.read_feature()
+        self.od.set_gamma(gamma)
+        self.od.set_nu(nu)
+        self.od.set_pca_dims(pca_dims)
+        self.od.set_kernel(kernel)
+        self.od.train_pca(pca_type=PCA)
+        self.od.predict_pca()
+        self.od.train(classifier_class=OneClassSVM)
+        self.od.predict()
+        self.od.compute_outlyingness()
+        self.od.make_top_hit_list(top=4000, for_group=('neg', 'target', 'pos'))
+        self.od.cluster_outliers()
+        self.od.interactive_plot()
+        
+        self.od.write_readme()
       
 class MatthiasOutlier(object):
     def __init__(self, name, mapping_files, ch5_files, rows=None, cols=None, locations=None, gamma=None, nu=None, pca_dims=None, kernel=None):
@@ -1860,7 +1900,46 @@ def run_exp(name, lookup, analysis_class):
     
 
 if __name__ == "__main__":
-    EXPLOOKUP = {'sarax_od':
+    EXPLOOKUP = {'matthias_predrug':
+                     {
+                      'mapping_files' : {
+                        'Screen_Plate_01': 'F:/matthias_predrug/Screen_Plate_01_position_map_PRE.txt',
+                        'Screen_Plate_02': 'F:/matthias_predrug/Screen_Plate_02_position_map_PRE.txt',
+                        'Screen_Plate_03': 'F:/matthias_predrug/Screen_Plate_03_position_map_PRE.txt',
+                        'Screen_Plate_04': 'F:/matthias_predrug/Screen_Plate_04_position_map_PRE.txt',
+                        'Screen_Plate_05': 'F:/matthias_predrug/Screen_Plate_05_position_map_PRE.txt',
+                        'Screen_Plate_06': 'F:/matthias_predrug/Screen_Plate_06_position_map_PRE.txt',
+                        'Screen_Plate_07': 'F:/matthias_predrug/Screen_Plate_07_position_map_PRE.txt',
+                        'Screen_Plate_08': 'F:/matthias_predrug/Screen_Plate_08_position_map_PRE.txt',
+                        'Screen_Plate_09': 'F:/matthias_predrug/Screen_Plate_09_position_map_PRE.txt',
+                                        },
+                      'ch5_files' : {
+                        'Screen_Plate_01': 'F:/matthias_predrug/Screen_Plate_01_all_positions_with_data.ch5',
+                        'Screen_Plate_02': 'F:/matthias_predrug/Screen_Plate_02_all_positions_with_data.ch5',
+                        'Screen_Plate_03': 'F:/matthias_predrug/Screen_Plate_03_all_positions_with_data.ch5',
+                        'Screen_Plate_04': 'F:/matthias_predrug/Screen_Plate_04_all_positions_with_data.ch5',
+                        'Screen_Plate_05': 'F:/matthias_predrug/Screen_Plate_05_all_positions_with_data.ch5',
+                        'Screen_Plate_06': 'F:/matthias_predrug/Screen_Plate_06_all_positions_with_data.ch5',
+                        'Screen_Plate_07': 'F:/matthias_predrug/Screen_Plate_07_all_positions_with_data.ch5',
+                        'Screen_Plate_08': 'F:/matthias_predrug/Screen_Plate_08_all_positions_with_data.ch5',
+                        'Screen_Plate_09': 'F:/matthias_predrug/Screen_Plate_09_all_positions_with_data.ch5',
+                                        },
+#                     'locations' : (
+#                         ("A",  4), ("B", 23), ("H", 9), ("D", 8),
+#                           ("H", 6), ("A", 7), ("G", 6), ("G", 7),
+#                          ("H",12), ("H",13), ("G",12), ("A", 9),
+#                     ),
+#                     'rows' : list("ABCDEFGHIJKLMNOP")[:],
+#                     'cols' : tuple(range(19,25)),
+                     #'training_sites' : (5,6,7,8),
+                    'training_sites' : (1,2,3,4),
+                      'gamma' : None,
+                      'nu' : 0.10,
+                      'pca_dims' : 100,
+                      'kernel' :'rbf'
+                     },
+                 
+                 'sara_od':
                      {
                       'mapping_files' : {
                         'SP_9': 'F:/sara_adhesion_screen/sp9.txt',
@@ -1976,7 +2055,7 @@ if __name__ == "__main__":
                      }
                   }
     setupt_matplot_lib_rc()
-    run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
-    #run_exp('matthias_figure_1', EXPLOOKUP, MatthiasOutlierFigure1)
+#     run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
+    run_exp('matthias_predrug', EXPLOOKUP, MatthiasPredrug)
 
     print 'finished'

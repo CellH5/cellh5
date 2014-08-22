@@ -146,7 +146,7 @@ class IScatter(QtGui.QMainWindow):
         
         self.scatter = scatter
             
-        self.image = SimpleMplImageViewer()
+        self.image = SimpleImageViewer()
         self.image_combined = SimpleMplImageViewerWithBlending()
         self.scatter.image_changed.connect(self.image.show_image)
         scatter2.image_changed.connect(self.image.show_image)
@@ -169,8 +169,8 @@ class IScatter(QtGui.QMainWindow):
         self.main_widget.setLayout(layout)  
         
         #widget_1.canvas.setParent(widget_1)
-        self.scatter.canvas.setFocusPolicy(QtCore.Qt.ClickFocus)
-        self.image.canvas.setFocus()      
+#         self.scatter.canvas.setFocusPolicy(QtCore.Qt.ClickFocus)
+#         self.image.canvas.setFocus()      
         
         self.scatter.selection_changed.connect(self.update_table)
         scatter2.selection_changed.connect(self.update_table)
@@ -241,7 +241,7 @@ class IScatterWidget(QtGui.QWidget):
         axis_selector_layout = QtGui.QVBoxLayout()
         
         self.sample_selection_dct = {}
-        for sample_selection in ['Plate', 'Well', 'Site', 'Treatment 1', 'Treatment 2']:
+        for sample_selection in ['Plate', 'Well', 'Site', 'Treatment 1', 'Treatment 2', 'Group']:
             axis_selector_layout.addWidget(QtGui.QLabel(sample_selection))
             self.sample_selection_dct[sample_selection] = QtGui.QComboBox(self)
             axis_selector_layout.addWidget(self.sample_selection_dct[sample_selection])
@@ -334,7 +334,7 @@ class IScatterWidget(QtGui.QWidget):
         
     def sample_selection_changed(self, type_, idx):
         self.sample_selection = [True] * len(self.sample_selection)
-        lkp_tmp = dict([v, u] for u, v in enumerate(['Plate', 'Well', 'Site', 'Treatment 1', 'Treatment 2']))
+        lkp_tmp = dict([v, u] for u, v in enumerate(['Plate', 'Well', 'Site', 'Treatment 1', 'Treatment 2', 'Group']))
         for cur_sel_type, cur_sel_box in self.sample_selection_dct.items():
             cur_sel = str(cur_sel_box.currentText())
             if cur_sel.startswith('All'):
@@ -453,7 +453,7 @@ class IScatterWidget(QtGui.QWidget):
         
     def fill_selection_boxes(self):
         s = zip(*self.sample_ids)
-        for i, s_name in enumerate(['Plate', 'Well', 'Site', 'Treatment 1', 'Treatment 2']): 
+        for i, s_name in enumerate(['Plate', 'Well', 'Site', 'Treatment 1', 'Treatment 2', 'Group']): 
             for each in numpy.unique(s[i]):
                 self.sample_selection_dct[s_name].addItem(str(each))
 
@@ -584,7 +584,7 @@ class IScatterWidgetHisto(IScatterWidget):
             
         elif str(self.cmb_result_sample_selection.currentText()).startswith("Classi"):
             image_list = []
-            for k, cmap_name in zip(range(8), ['green','red', 'blue', 'yellow', 'cyan', 'magenta', 'purple', 'olive']):
+            for k, cmap_name in zip(numpy.unique(self.data_matrix[:,-1]), ['green','red', 'blue', 'yellow', 'cyan', 'magenta', 'purple', 'olive']):
                 tmp_idx_2 = numpy.logical_and(self.sample_selection, self.data_matrix[:,-1] == k)
                 hist_img = numpy.histogram2d(self.xs[tmp_idx_2], self.ys[tmp_idx_2], 
                                              bins=100, range=[[self.data_mins[self.x_dim], self.data_maxs[self.x_dim]],
@@ -689,6 +689,27 @@ class SimpleMplImageViewer(QtGui.QWidget):
             rect = self.axes.add_patch(Rectangle((q*60, m*60), 60, 60, facecolor='none', edgecolor="red"))
             self.rects.append(rect)
         self.canvas.draw()
+        
+class SimpleImageViewer(QtGui.QWidget):
+    def __init__(self, parent=None):   
+        QtGui.QWidget.__init__(self, parent)
+        self.normalize = False
+        
+        self.image_pane = QtGui.QLabel('Image')
+        self.image_pane.setScaledContents(False)
+        self.image_pane.setMaximumWidth(1000)
+        layout = QtGui.QHBoxLayout()
+        layout.addWidget(self.image_pane)
+        self.setLayout(layout)
+        
+    def show_image(self, img):
+        pixmap = QtGui.QPixmap(qimage2ndarray.gray2qimage(img, self.normalize))
+        scaledPixmap = pixmap.scaled(self.image_pane.size(), QtCore.Qt.KeepAspectRatio)
+        self.image_pane.setPixmap(scaledPixmap)
+        self.update() 
+        
+    def highlight_cell(self, entries):
+        pass
 
 class SimpleMplImageViewerWithBlending(SimpleMplImageViewer):
     colors = OrderedDict([("red" , '#FF0000'),
@@ -895,7 +916,7 @@ def ch5_scatter(ch5_file,time=0):
         
         all_features.append(features)
         
-        sample_names = [(plate, well, str(site), well, str(site),) for k in xrange(features.shape[0])]
+        sample_names = [(plate, well, str(site), well, str(site), 'pos') for k in xrange(features.shape[0])]
         all_sample_names.append(sample_names)
         
         all_times.append(times_idx)

@@ -101,6 +101,27 @@ CMAP17 = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x),
                                                     '#FF0000',
                                                     '#00FF00']), 'cmap17')   
 
+CMAP17SIMPLE = matplotlib.colors.ListedColormap(map(lambda x: hex_to_rgb(x), 
+                                                   ['#FFFFFF', 
+                                                    '#AAAAAA', 
+                                                    '#0000FF',
+                                                    '#0000FF',
+                                                    '#0000FF',
+                                                    '#FFFFFF', 
+                                                    '#FFFFFF',
+                                                    '#FFFFFF',
+                                                    '#FFFFFF',
+                                                    '#FFFFFF', 
+                                                    '#FFFFFF',
+                                                    '#FFFFFF',
+                                                    '#FFFFFF',
+                                                    '#FFFFFF', 
+                                                    '#FFFFFF',
+                                                    '#FFFFFF',
+                                                    '#FFFFFF',
+                                                    '#FFFFFF',
+                                                    '#FFFFFF']), 'cmap17') 
+
 class ColorPicker(object):
     def __init__(self, color_list=None):
         if color_list is None:

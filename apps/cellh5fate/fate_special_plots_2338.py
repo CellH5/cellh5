@@ -6,6 +6,100 @@ from fate_utils import (ConcentrationLine,
 import pylab
 setupt_matplot_lib_rc()
 
+import pandas
+import numpy
+from collections import defaultdict
+
+def _simple_bar_plot(keys, value_dict, key_to_label=None, normalize=False):
+    fig = pylab.figure(figsize=(6,6))
+    ax = pylab.gca()
+    x = range(len(keys))
+    width = 0.5
+    yerr = None
+    
+    if normalize:
+        new_value_dict = defaultdict(list)
+        for k in keys:
+            new_value_dict[k].extend(value_dict[k] / numpy.mean(value_dict[0][:3]))
+    else:
+        new_value_dict = value_dict
+
+    if len(new_value_dict.values()[0]) > 1:
+        yerr = [numpy.std(new_value_dict[k][:3]) for k in keys]
+    
+    means = [numpy.mean(new_value_dict[k][:3]) for k in keys]
+
+    ax.bar(x, means, width, color='k', yerr=yerr, ecolor='k')
+    
+    ax.set_xticks(numpy.arange(len(keys))+width/2.0)
+    labels = keys
+    if key_to_label is not None:
+        labels = [key_to_label[k] for k in keys]
+    ax.set_xticklabels(labels, rotation=90)
+    ax.spines["right"].set_visible(False)
+    ax.spines["top"].set_visible(False)
+    ax.get_xaxis().tick_bottom()
+    ax.get_yaxis().tick_left()
+    ax.set_xlim(-width, len(keys)+width)
+    ax.set_ylim(0, 0.41)
+    pylab.tight_layout()
+    
+    
+
+def boerhinger_mitotic_entry_mix():
+    conc = ["0", "1", "5", "25","50", "100", "200"]
+    input = (("C:/Users/sommerc/cellh5/apps/cellh5fate/002301/14-07-11-11-28/__mitotic_entries_and_intitial_cell_count_interphase_only.txt", 
+              ["F06"], 
+              ["B05", "C05", "D05", "E05", "F05", None]), # 2301
+             
+             ("C:/Users/sommerc/cellh5/apps/cellh5fate/002325/14-07-11-10-42/__mitotic_entries_and_intitial_cell_count_interphase_only.txt", 
+              ["E03"], 
+              ["B06", "C06", "D06", "E06", "F06", "G06"]), # 2325
+             
+             ("C:/Users/sommerc/cellh5/apps/cellh5fate/002288/14-07-11-11-09/__mitotic_entries_and_intitial_cell_count_interphase_only.txt", 
+              ["G05"], 
+              ["C04", "D04", None, None, None, None]), # 2288
+             
+            ("C:/Users/sommerc/cellh5/apps/cellh5fate/002338/14-07-11-10-07/__mitotic_entries_and_intitial_cell_count_interphase_only.txt", 
+              ["D12"], 
+              [None, None, "D07", "D08", "D09", "D10"]), # 2338
+            ("C:/Users/sommerc/cellh5/apps/cellh5fate/002382/14-07-11-11-45/__mitotic_entries_and_intitial_cell_count_interphase_only.txt", 
+              ["C12"], 
+              [None, None, "D03", None, "D04", None]), # 2382
+                   ) 
+    result = defaultdict(list)
+    for file, NEG, BI6727 in input:
+        print file
+        data = pandas.read_csv(file, "\t")
+        for i, pos in enumerate(NEG + BI6727):
+            if pos is not None:
+                initial_count = data[data["Well"] == pos]["LiveCellCountAtTimeZero"]
+                entry_count = data[data["Well"] == pos]["MitoticEntries"]
+                result[i].append(float(entry_count / float(initial_count)))
+            
+    for i, v in result.items():
+        print i, conc[i], numpy.mean(v[:3]), numpy.std(v[:3]), v
+    _simple_bar_plot(range(7), result, conc)
+    pylab.show() 
+    
+def boerhinger_mitotic_entry_2338():
+    input_files = ("C:/Users/sommerc/cellh5/apps/cellh5fate/002338/14-07-09-17-16/__mitotic_entries_and_intitial_cell_count.txt",) 
+    result = defaultdict(list)
+    BI6727 = ["D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09", "D10", "D11",]
+    NEG = ["C12"]
+    for file in input_files:
+        data = pandas.read_csv(file, "\t")
+        for pos in NEG + BI6727:
+            initial_count = data[data["Well"] == pos]["LiveCellCountAtTimeZero"]
+            entry_count = data[data["Well"] == pos]["MitoticEntries"]
+            result[pos].append(float(entry_count / float(initial_count)))
+            
+    for pos in NEG + BI6727:
+        print pos, result[pos] 
+    _simple_bar_plot( NEG + BI6727, result)
+    pylab.show() 
+        
+
 def boehringer_concentration_cells_dying_in():
     # BI
     pylab.figure()
@@ -308,5 +402,6 @@ def boehringer_mitotic_timing(exp_id):
     pylab.show()
 
 if __name__ == "__main__":
-    boehringer_mitotic_timing('2338')
+#     boehringer_mitotic_timing('2338')
+    boerhinger_mitotic_entry_mix()
     print 'Finished boehringer_mitotic_timing'
