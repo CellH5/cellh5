@@ -25,7 +25,7 @@ import matplotlib
 #-------------------------------------------------------------------------------
 # constants:
 #
-MAIN_SCRIPT = '../apps/cellh5browser/cellh5browser.py'
+MAIN_SCRIPT = 'cellh5browser.py'
 
 APP = [MAIN_SCRIPT]
 INCLUDES = ['sip', 'tabdelim',]
