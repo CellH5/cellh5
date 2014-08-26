@@ -10,11 +10,10 @@
 """
 
 from setuptools import find_packages
-import version
 
 name = 'CellH5Browser'
-numversion = version.version_num
-version = version.version
+numversion = "1.1"
+version = "1.1"
 author = 'Christoph Sommer'
 author_email = 'sommerc(at)cellcognition.org',
 license = 'LGPL',

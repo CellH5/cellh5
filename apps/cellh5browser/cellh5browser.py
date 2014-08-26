@@ -176,7 +176,7 @@ class PositionThumbnailBase(QtGui.QLabel):
         self.setStyleSheet(self.css)
 
     def mouseDoubleClickEvent(self, *args, **kwargs):
-        QtGui.QLabel.mouseDoubleClickEvent(self, *args, **kwargs)
+        #QtGui.QLabel.mouseDoubleClickEvent(self, *args, **kwargs)
         self.parent.clicked.emit(self.position_key)
 
 class PositionThumbnailEvents(PositionThumbnailBase):
@@ -224,9 +224,6 @@ class PositionThumbnailEvents(PositionThumbnailBase):
         else:
             self.setText('No thumbnail\navailable...')
 
-    def mouseDoubleClickEvent(self, *args, **kwargs):
-        QtGui.QLabel.mouseDoubleClickEvent(self, *args, **kwargs)
-        self.parent.clicked.emit(self.position_key)
 
 #class PositionThumbnailEvents2(PositionThumbnailBase):
 #    item_length = 10
@@ -857,7 +854,12 @@ class CellGraphicsItem(GraphicsTerminalObjectItem):
     def __init__(self, object_item, position, parent=None):
         GraphicsTerminalObjectItem.__init__(self, object_item, position, parent=None)
         self.object_item = object_item
-
+        
+        secondary_object = ""
+        for o in self.position.definitions.object_definition.keys():
+            if o.startswith('s'):
+                secondary_object = p
+            
         image_own = self.position.get_gallery_image(object_item)
         primary_gallery_item = QtGui.QGraphicsPixmapItem(QtGui.QPixmap(qimage2ndarray.array2qimage(image_own)))
         primary_gallery_item.setPos(0, self.PREDICTION_BAR_HEIGHT)
@@ -873,8 +875,8 @@ class CellGraphicsItem(GraphicsTerminalObjectItem):
         self.primary_contour_item = primary_contour_item
         self.addToGroup(primary_contour_item)
 
-        if True:
-            image_sib = self.position.get_gallery_image(object_item, 'secondary__outside')
+        if len(secondary_object) > 0:
+            image_sib = self.position.get_gallery_image(object_item, secondary_object)
             secondary_gallery_item = QtGui.QGraphicsPixmapItem(QtGui.QPixmap(qimage2ndarray.array2qimage(image_sib)))
             secondary_gallery_item.setPos(0, self.PREDICTION_BAR_HEIGHT)
             self.secondary_gallery_item = secondary_gallery_item
@@ -888,7 +890,7 @@ class CellGraphicsItem(GraphicsTerminalObjectItem):
             composed_gallery_item.setPos(0, self.PREDICTION_BAR_HEIGHT)
             self.composed_gallery_item = composed_gallery_item
 
-            secondary_contour_item = HoverPolygonItem(QtGui.QPolygonF(map(lambda x: QtCore.QPointF(x[0],x[1]), self.position.get_crack_contour(object_item, 'secondary__outside')[0])))
+            secondary_contour_item = HoverPolygonItem(QtGui.QPolygonF(map(lambda x: QtCore.QPointF(x[0],x[1]), self.position.get_crack_contour(object_item, secondary_object)[0])))
             secondary_contour_item.setPos(0, self.PREDICTION_BAR_HEIGHT)
 
 #             secondary_contour_item.setPen(QtGui.QPen(QtGui.QColor(self.position.get_class_color(object_item, 'secondary__expanded'))))
@@ -934,7 +936,7 @@ class MainWindow(QtGui.QMainWindow):
         QtGui.QMainWindow.__init__(self, parent)
         self.setStyleSheet('background-color: qlineargradient(x1: 0, y1: 0, x2: 500, y2: 500, stop: 0 #444444, stop: 1 #0A0A0A); color: white;')
         self.setGeometry(100,100,1200,800)
-        self.setWindowTitle('CellH5Browser %s' %cellh5.version)
+        self.setWindowTitle('CellH5Browser %s' % cellh5.version)
         self.setWindowIcon(QtGui.QIcon(ICON_FILE))
 
         self.mnu_open = QtGui.QAction('&Open', self)

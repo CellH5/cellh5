@@ -17,6 +17,10 @@ import os
 import sys
 import matplotlib
 
+sys.path.append("C:/Python27/Lib/site-packages/PyQt4")
+sys.path.append("C:/Python27/Lib/site-packages/zmq")
+sys.path.append("C:/Users/sommerc/cellh5/pysrc")
+
 #-------------------------------------------------------------------------------
 # cecog imports:
 #
@@ -28,18 +32,17 @@ import matplotlib
 MAIN_SCRIPT = 'cellh5browser.py'
 
 APP = [MAIN_SCRIPT]
-INCLUDES = ['sip', 'tabdelim',]
+INCLUDES = ['sip', ]
 EXCLUDES = ['PyQt4.QtDesigner', 'PyQt4.QtNetwork',
             'PyQt4.QtOpenGL', 'PyQt4.QtScript',
             'PyQt4.QtSql', 'PyQt4.QtTest',
             'PyQt4.QtWebKit', 'PyQt4.QtXml',
-            'PyQt4.phonon',
-            'rpy',
-            '_gtkagg', '_tkagg', '_agg2', '_cairo', '_cocoaagg',
-            '_fltkagg', '_gtk', '_gtkcairo',
-            'Tkconstants', 'Tkinter', 'tcl', 'zmq'
+            'PyQt4.phonon', 'zmq'
             ]
-PACKAGES = ['h5py', 'vigra', 'matplotlib']
+
+PACKAGES = ['h5py', 'vigra', 'matplotlib', 'cellh5']
+
+DLL_EXCLUDES = ['libgdk-win32-2.0-0.dll', 'libgobject-2.0-0.dll', 'libgdk_pixbuf-2.0-0.dll']
 
 
 #-------------------------------------------------------------------------------
@@ -74,16 +77,18 @@ if sys.platform == 'win32':
     FILENAME_ZIP = 'data.zip'
     OPTIONS = {'windows': [{'script': MAIN_SCRIPT,
                             'icon_resources': \
-                               [(1, 'cellh5_icon.ico')],
+                               [(1, 'cecog_analyzer_icon_128x128.ico')],
                            }],
                # FIXME: the one-file version is currently not working!
                'zipfile' : FILENAME_ZIP,
+               
                }
     SYSTEM = 'py2exe'
     DATA_FILES = matplotlib.get_py2exe_datafiles()
     EXTRA_OPTIONS = {'includes': INCLUDES,
                      'excludes': EXCLUDES,
                      'packages': PACKAGES,
+                     'dll_excludes' : DLL_EXCLUDES,
                      'optimize': 2,
                      'compressed': False,
                      'skip_archive': True,
@@ -106,7 +111,6 @@ setup(
     classifiers=pkginfo.classifiers,
     package_dir=pkginfo.package_dir,
     packages=pkginfo.packages,
-    platforms=pkginfo.platforms,
     provides=pkginfo.provides,
     **OPTIONS
 )
