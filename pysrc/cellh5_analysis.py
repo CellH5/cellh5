@@ -284,14 +284,14 @@ class CellH5Analysis(object):
         self._rf_time_predicate_cmp = cmp
         self._rf_time_predicate_value = value
             
-    def read_feature(self, idx_selector_functor=None):
+    def read_feature(self, idx_selector_functor=None, object_="primary__primary"):
         # init new columns
         self.mapping['Object features'] = 0
         self.mapping['Object count'] = 0
         self.mapping['CellH5 object index'] = 0
         
         # read features from each plate
-        selector_output_file = open(self.output('_read_feature_selction.txt'), 'wb')
+        selector_output_file = open(self.output('_read_feature_selection.txt'), 'wb')
         
         
         for plate_name, cellh5_file in self.cellh5_files.items(): 
@@ -308,13 +308,14 @@ class CellH5Analysis(object):
                 
                 ch5_pos = ch5_file.get_position(well, site)
                 
-                feature_matrix = ch5_pos.get_object_features()
+                feature_matrix = ch5_pos.get_object_features(object_=object_)
                 time_idx = ch5_pos['object']["primary__primary"]['time_idx']
-                log.info('Reading %s %s %s %d %s using time  %r  %r' % (plate_name, 
+                log.info('Reading %s %s %s %d %s for object %s using time %r %r' % (plate_name, 
                                                                      well, 
                                                                      site, 
                                                                      len(feature_matrix),
                                                                      " ".join(self.get_treatment(plate_name, well, int(site))),
+                                                                     object_,
                                                                      self._rf_time_predicate_cmp.__name__, 
                                                                      self._rf_time_predicate_value))
                 

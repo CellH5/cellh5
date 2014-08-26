@@ -1706,7 +1706,7 @@ class MatthiasPredrug(object):
                                   training_sites=training_sites
                                   )
         self.od.set_read_feature_time_predicate(numpy.equal, 0)
-        self.od.read_feature()
+        self.od.read_feature(object_="secondary__inside")
         self.od.set_gamma(gamma)
         self.od.set_nu(nu)
         self.od.set_pca_dims(pca_dims)
