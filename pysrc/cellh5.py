@@ -17,7 +17,7 @@ import h5py
 import base64
 import warnings
 import unittest
-from itertools import chain
+from itertools import chain, izip
 import functools
 import collections
 
@@ -228,11 +228,19 @@ class CH5Position(object):
     def has_object_entries(self, object_='primary__primary'):
         return len(self['object'][object_]) > 0
 
-    def get_object_features(self, object_='primary__primary'):
+    def get_object_features(self, object_='primary__primary', index=None):
+        if index is not None and len(index) == 0:
+            return []
         if len(self['feature'][object_]['object_features']) > 0:
-            return self['feature'] \
-                   [object_] \
-                   ['object_features'].value
+            if index is None:
+                return self['feature'] \
+                       [object_] \
+                       ['object_features'].value
+            else:
+                return self['feature'] \
+                       [object_] \
+                       ['object_features'][index,:]
+                
         else:
             return []           
         
@@ -252,6 +260,13 @@ class CH5Position(object):
         else:
             time_lapse = None
         return time_lapse
+    
+    def get_object_idx(self, object_='primary__primary', frame=None):
+        ot = self.get_object_table(object_)
+        if frame is None:
+            return ot
+        else:
+            return numpy.nonzero(ot['time_idx'] == frame)[0]
 
     def get_image(self, t, c, z=0):
         return self['image'] \
@@ -260,7 +275,7 @@ class CH5Position(object):
 
     def get_gallery_image(self, index,
                           object_='primary__primary', size=GALLERY_SIZE):
-        index = to_index_array(index)
+        #index = to_index_array(index)
         images = list()
 
         channel_idx = self.definitions.image_definition['region'] \
@@ -268,18 +283,23 @@ class CH5Position(object):
 
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
-
-        for i in index:
+        centers = self['feature'][object_]['center'][index]
+        size_2 = size/2
+        for i, cen in izip(index, centers):
             time_idx = self['object'][object_][i]['time_idx']
-            cen1 = self['feature'][object_]['center'][i]
-            image = numpy.zeros((size, size), dtype=numpy.uint8)
+            
+            
+            tmp_img = self['image']['channel'][channel_idx, time_idx, 0, 
+                                               max(0, cen[1]-size_2):min(image_width,  cen[1]+size_2),
+                                               max(0, cen[0]-size_2):min(image_height, cen[0]+size_2)]
+            
 
-            tmp_img = self.get_image(time_idx, channel_idx, 0)[
-                              max(0, cen1[1]-size/2):min(image_width,  cen1[1]+size/2),
-                              max(0, cen1[0]-size/2):min(image_height, cen1[0]+size/2)]
-
-            image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
-            images.append(image)
+            if tmp_img.shape != (size, size):
+                image = numpy.zeros((size, size), dtype=numpy.uint8)
+                image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
+                images.append(image)
+            else:
+                images.append(tmp_img)
 
         if len(index) > 1:
             return numpy.concatenate(images, axis=1)
@@ -361,6 +381,11 @@ class CH5Position(object):
         channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
+        
+        try:
+            test_iter = iter(index)
+        except TypeError, te:
+            index = [index]
 
         for ind in index:
             time_idx = self['object'][object_][ind]['time_idx']
@@ -725,6 +750,9 @@ class CH5CachedPosition(CH5Position):
     @memoize
     def get_object_table(self, *args, **kwargs):
         return super(CH5CachedPosition, self).get_object_table(*args, **kwargs)
+    @memoize
+    def get_object_idx(self, *args, **kwargs):
+        return super(CH5CachedPosition, self).get_object_idx(*args, **kwargs)
 
     @memoize
     def get_feature_table(self, *args, **kwargs):
@@ -743,8 +771,8 @@ class CH5CachedPosition(CH5Position):
         return super(CH5CachedPosition, self).get_class_prediction(object_)
 
     @memoize
-    def get_object_features(self, object_='primary__primary'):
-        return super(CH5CachedPosition, self).get_object_features(object_)
+    def get_object_features(self, *args, **kwargs):
+        return super(CH5CachedPosition, self).get_object_features(*args, **kwargs)
 
     @memoize
     def get_gallery_image(self, *args, **kwargs):
@@ -776,11 +804,15 @@ class CH5CachedPosition(CH5Position):
 
 
 class CH5File(object):
-
     def __init__(self, filename, mode='a', cached=True):
-        self.filename = filename
         self._cached = cached
-        self._file_handle = h5py.File(filename, mode)
+        if isinstance(filename, basestring):
+            self.filename = filename
+            self._file_handle = h5py.File(filename, mode)
+        else:
+            self._file_handle = filename
+            self.filename = filename.filename    
+        
         self.plate = self._get_group_members('/sample/0/plate/')[0]
         self.wells = self._get_group_members('/sample/0/plate/%s/experiment/' % self.plate)
         self.positions = collections.OrderedDict()
@@ -898,7 +930,10 @@ class CH5File(object):
         return CH5File.gallery_image_matrix_layouter(img_gen, shape)
 
     def close(self):
-        self._file_handle.close()
+        try:
+            self._file_handle.close()
+        except:
+            pass
 
 
 class CH5MappedFile(CH5File):
