@@ -275,7 +275,7 @@ class CH5Position(object):
 
     def get_gallery_image(self, index,
                           object_='primary__primary', size=GALLERY_SIZE):
-        #index = to_index_array(index)
+        index = to_index_array(index)
         images = list()
 
         channel_idx = self.definitions.image_definition['region'] \
@@ -283,7 +283,7 @@ class CH5Position(object):
 
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
-        centers = self['feature'][object_]['center'][index]
+        centers = self['feature'][object_]['center'][index.tolist()]
         size_2 = size/2
         for i, cen in izip(index, centers):
             time_idx = self['object'][object_][i]['time_idx']
