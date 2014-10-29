@@ -36,29 +36,29 @@ from collections import defaultdict, OrderedDict
 from matplotlib.colors import rgb2hex
 
 from matplotlib import rcParams , RcParams
-rcParams['font.family'] = 'sans-serif'
-rcParams['font.sans-serif'] = ['Arial']
-rcParams['pdf.fonttype'] = 42
-rcParams['ps.usedistiller' ] = 'xpdf'
-rcParams['font.family'] = 'sans-serif'
-rcParams['font.size'] = 20
-rcParams['font.sans-serif'] = ['Arial']
-rcParams['xtick.labelsize'] = 16 
-rcParams['ytick.labelsize'] = 16 
-rcParams['axes.labelsize'] = 16
-rcParams['lines.color'] = 'white'
-rcParams['patch.edgecolor'] = 'white'
-rcParams['text.color'] = 'white'
-rcParams['axes.facecolor'] = 'black'
-rcParams['axes.edgecolor'] = 'white'
-rcParams['axes.labelcolor'] = 'white'
-rcParams['xtick.color'] = 'white'
-rcParams['ytick.color'] = 'white'
-rcParams['grid.color'] = 'white'
-rcParams['figure.facecolor'] = 'black'
-rcParams['figure.edgecolor'] = 'black'
-rcParams['savefig.facecolor'] = 'black'
-rcParams['savefig.edgecolor'] = 'none'
+# rcParams['font.family'] = 'sans-serif'
+# rcParams['font.sans-serif'] = ['Arial']
+# rcParams['pdf.fonttype'] = 42
+# rcParams['ps.usedistiller' ] = 'xpdf'
+# rcParams['font.family'] = 'sans-serif'
+# rcParams['font.size'] = 20
+# rcParams['font.sans-serif'] = ['Arial']
+# rcParams['xtick.labelsize'] = 16 
+# rcParams['ytick.labelsize'] = 16 
+# rcParams['axes.labelsize'] = 16
+# rcParams['lines.color'] = 'white'
+# rcParams['patch.edgecolor'] = 'white'
+# rcParams['text.color'] = 'white'
+# rcParams['axes.facecolor'] = 'black'
+# rcParams['axes.edgecolor'] = 'white'
+# rcParams['axes.labelcolor'] = 'white'
+# rcParams['xtick.color'] = 'white'
+# rcParams['ytick.color'] = 'white'
+# rcParams['grid.color'] = 'white'
+# rcParams['figure.facecolor'] = 'black'
+# rcParams['figure.edgecolor'] = 'black'
+# rcParams['savefig.facecolor'] = 'black'
+# rcParams['savefig.edgecolor'] = 'none'
 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -407,7 +407,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         pylab.figure()
         pylab.plot(xx,yy,'y')
         pylab.plot(xx[ind], yy[ind], 'ro', markerfacecolor='none', markeredgecolor='r', lw=3)
-        pylab.show()
+        #pylab.show()
         
         
        
@@ -436,7 +436,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
         print 'best gamma', best_gamma
         pylab.plot(numpy.log2(all_gammas), result.values())
-        pylab.show()
+        #pylab.show()
         return best_gamma
         
 
@@ -469,11 +469,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             idx = range(training_matrix.shape[0])
             numpy.random.seed(1)
             numpy.random.shuffle(idx)
-            
-            
-            
             self.classifier.fit(training_matrix[idx[:min(max_training_samples, training_matrix.shape[0])],:])
-            
             self.rfe_selection = numpy.ones((training_matrix.shape[1],), dtype=numpy.bool)
             
     def compute_outlyingness(self):
@@ -573,7 +569,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         for _ , (data, prediction, w, p, c, g, s, ch5i) in self.mapping[['PCA', 'Predictions', 'Well', 'Site', 'Object count', 'Gene Symbol', 'siRNA ID', 'CellH5 object index']].iterrows():
             print w,p,g,s,c, type(data)
             if c > 0:
-                if cluster_all:
+                if not cluster_all:
                     data_i = data[prediction == -1, :]
                 else:
                     data_i = data
@@ -586,7 +582,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
         
         #k = self.cluster_get_k(training_data)
-        k=3
+        k=4
         if DEBUG:
             print 'Run clustering for training data shape ', training_data.shape, 'with k = ', k
         km = sklearn.mixture.GMM(k, covariance_type='full')
@@ -628,7 +624,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             self.mapping['Outlier clustering'] = pandas.Series(cluster_vectors)
         
         # make plot
-        if True:
+        if False:
             cluster_teatment_vectors = {}
             treatment_group = self.mapping.groupby(['Gene Symbol','siRNA ID'])
             for tg in treatment_group:
@@ -765,18 +761,53 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         
         return fpr, tpr, th, roc_auc, fpr_f, tpr_f  
     
-    
+    def export_to_file(self, n_classes=6):
+        plate_name = str(self.mapping["Plate"].iloc[0])
+        c5f = self.cellh5_handles[plate_name]
+        class_names = c5f.class_definition('primary__primary')['name']
+        assert len(class_names) == n_classes
+        
+        fh = open(self.output("Classification_vs_outlier.txt"), 'wb')
+        fh.write("Plate\tWell\tGene\tsiRNA\tOutlyingness\tCount\t" + "\t".join(class_names) + "\n")
+        
+        for (plate_name, well, gene, sirna), each_row in self.mapping[self.mapping['Object count'] > 0].groupby(['Plate', 'Well', 'Gene Symbol', 'siRNA ID']):
+            c5f = self.cellh5_handles[plate_name]
+            outlyingness = (each_row['Outlyingness'] * each_row['Object count']).sum() / each_row['Object count'].sum()
+            
+            class_count = numpy.zeros((n_classes,), dtype=numpy.float32)
+            obj_count = 0
+            for _, (site, cellh5_idx, o_count) in each_row[['Site', 'CellH5 object index', 'Object count']].iterrows():
+                c5p = c5f.get_position(well, str(site))
+                class_prediction = c5p.get_class_prediction()['label_idx'][cellh5_idx]
+                class_count += numpy.bincount(class_prediction.astype(numpy.int32), minlength=n_classes) / float(len(class_prediction))
+                obj_count += o_count
+                
+            class_count /= class_count.sum()
+            fh.write(("%s\t%s\t%s\t%s\t%f\t%d" + "\t%f"*n_classes + "\n") % ((plate_name, well, gene, sirna, float(outlyingness), obj_count, ) + tuple([class_count[kk] for kk in range(n_classes)])))   
+
+        fh.close()
+            
+            
 
     def evaluate_outlier_detection(self):
+        # gather information
+        plate_name = str(self.mapping["Plate"].iloc[0])
+        c5f = self.cellh5_handles[plate_name]
+        class_names = c5f.class_definition('primary__primary')['name']
+           
         acc = []
-        cm = numpy.zeros((7,2), 'float32')
+        
+        cm = numpy.zeros((len(class_names),2), 'float32')
         cm_2 = numpy.zeros((2,2), 'float32')
-        cm_3 = numpy.zeros((7,4), 'float32')
+        cm_3 = numpy.zeros((len(class_names),5), 'float32')
         
         for i, each_row in self.mapping.iterrows():
             plate_name = each_row['Plate']
             well = each_row['Well']
             site = each_row['Site']
+            if each_row['Object count'] == 0:
+                print "\tOmmiting (count ==0)", plate_name, well, site
+                continue
             treatment = tuple(each_row[['Gene Symbol', 'siRNA ID']]) 
             outlier_prediction = numpy.array(each_row['Predictions'])
             
@@ -789,11 +820,11 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             c5f = self.cellh5_handles[plate_name]
             c5p = c5f.get_position(well, str(site))
             class_prediction = c5p.get_class_prediction()['label_idx'][cellh5_idx]
-            class_prediction_b = class_prediction > 3
+            class_prediction_b = class_prediction > 1
             
             for c, o, cl in zip(class_prediction, outlier_prediction_2, cluster_prediction):
                 cm[int(c), int(o)]     += 1
-                cm_2[int(c>3), int(o)] += 1
+                cm_2[int(c>1), int(o)] += 1
                 cm_3[int(c), int(cl)] += 1
                 
                 
@@ -808,28 +839,37 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
         for r in range(cm_3.shape[0]):
             cm_3[r,:] = cm_3[r,:] / float(cm_3[r,:].sum()) 
         
-        self.plot_confusion(cm, ['Interphase', 'Prometaphase', 'Metaphase', 'Anaphase', 'Grape', 'Prometaphase\narrest', 'Polylobed'], ['Inlier', 'Outlier'], 'vs_classi_full', 4, print_values=True)
+        print cm
+        print cm_2
+        print cm_3
+        
+#         self.plot_confusion(cm, ['Interphase', 'Prometaphase', 'Metaphase', 'Anaphase', 'Grape', 'Prometaphase\narrest', 'Polylobed'], ['Inlier', 'Outlier'], 'vs_classi_full', 4, print_values=True)
+#         self.plot_confusion(cm_2, ['Wildtype', 'Phenotype'], ['Inlier', 'Outlier'], 'vs_classi_collapsed', print_values=True)
+#         self.plot_confusion(cm_3, ['Interphase', 'Prometaphase', 'Metaphase', 'Anaphase', 'Grape', 'Prometaphase\narrest', 'Polylobed'], ['Inlier']+['Cluster %d' % d for d in range(1,cm_3.shape[1]+1) ], 'vs_class', 4, print_values=True)
+#         
+        self.plot_confusion(cm, class_names, ['Inlier', 'Outlier'], 'vs_classi_full', 2, print_values=True)
         self.plot_confusion(cm_2, ['Wildtype', 'Phenotype'], ['Inlier', 'Outlier'], 'vs_classi_collapsed', print_values=True)
-        self.plot_confusion(cm_3, ['Interphase', 'Prometaphase', 'Metaphase', 'Anaphase', 'Grape', 'Prometaphase\narrest', 'Polylobed'], ['Inlier']+['Cluster %d' % d for d in range(1,cm_3.shape[1]+1) ], 'vs_class', 4, print_values=True)
+        self.plot_confusion(cm_3, class_names, ['Inlier']+['Cluster %d' % d for d in range(1,cm_3.shape[1]+1) ], 'vs_class', 5, print_values=True)
+        
         
         return numpy.mean(acc), cm, cm_2, cm_3
             
     def plot_confusion(self, cm, row_names, col_names, title='', row_sep=1, col_sep=1, print_values=False, lw=3):
-        rcParamsBackup = rcParams.copy()
+        #rcParamsBackup = rcParams.copy()
         
-        rcParams['lines.color'] = 'white'
-        rcParams['patch.edgecolor'] = 'white'
-        rcParams['text.color'] = 'white'
-        rcParams['axes.facecolor'] = 'black'
-        rcParams['axes.edgecolor'] = 'black'
-        rcParams['axes.labelcolor'] = 'white'
-        rcParams['xtick.color'] = 'white'
-        rcParams['ytick.color'] = 'white'
-        rcParams['grid.color'] = 'white'
-        rcParams['figure.facecolor'] = 'black'
-        rcParams['figure.edgecolor'] = 'black'
-        rcParams['savefig.facecolor'] = 'black'
-        rcParams['savefig.edgecolor'] = 'none'
+#         rcParams['lines.color'] = 'white'
+#         rcParams['patch.edgecolor'] = 'white'
+#         rcParams['text.color'] = 'white'
+#         rcParams['axes.facecolor'] = 'black'
+#         rcParams['axes.edgecolor'] = 'black'
+#         rcParams['axes.labelcolor'] = 'white'
+#         rcParams['xtick.color'] = 'white'
+#         rcParams['ytick.color'] = 'white'
+#         rcParams['grid.color'] = 'white'
+#         rcParams['figure.facecolor'] = 'black'
+#         rcParams['figure.edgecolor'] = 'black'
+#         rcParams['savefig.facecolor'] = 'black'
+#         rcParams['savefig.edgecolor'] = 'none'
         
         pylab.figure(figsize=(7,7))
         ax = pylab.subplot(111)
@@ -869,7 +909,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
 
         pylab.savefig(self.output('outlier_classification_confusion_%s.pdf' % title))
         pylab.savefig(self.output('outlier_classification_confusion_%s.png' % title))
-        pylab.show()
+        #pylab.show()
         
 
     def plot(self):
@@ -1171,7 +1211,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             pylab.xlim(-1, len(svalues_val)+1)
             pylab.tight_layout()
             pylab.savefig(self.output('top_%d_hit_list.pdf' % top))
-            pylab.show()
+            #pylab.show()
             
         prefix_lut = {}
         for ii, g in enumerate(reversed(slabel)):
@@ -1185,7 +1225,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
                 tmp = "\t".join(map(str,info)) + "\t" + str(value) + "\n"
                 fw.write(tmp)
         
-        #self.make_outlier_galleries(prefix_lut)
+        #self.make_outlier_galleries(prefix_lut, include_excluded=False)
             
 
     def make_hit_list(self):
@@ -1568,6 +1608,7 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             plates_info[plate_name].append((plate_name, well, ge, si))
             
            
+        shape = (16,8)
         for plate_name in plates_inlier.keys():
             pl_in_index_tpl = plates_inlier[plate_name]
             pl_on_index_tpl = plates_outlier[plate_name]
@@ -1576,24 +1617,24 @@ class OutlierDetection(cellh5_analysis.CellH5Analysis):
             
             for index_tpl_in, index_tpl_out, index_tpl_ex, info in zip(pl_in_index_tpl, pl_on_index_tpl, pl_ex_index_tpl, pl_info): 
                 cf = self.cellh5_handles[plate_name]
-                shape = (16,8)
-                if include_excluded:
-                    excluded_img = cf.get_gallery_image_matrix(index_tpl_ex, shape).swapaxes(1,0) 
-                outlier_img = cf.get_gallery_image_matrix(index_tpl_out, shape).swapaxes(1,0)
-                inlier_img = cf.get_gallery_image_matrix(index_tpl_in, shape).swapaxes(1,0)
-                
-                if include_excluded:
-                    img = numpy.concatenate((excluded_img, numpy.ones((5, inlier_img.shape[1]))*255, inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
-                else:
-                    img = numpy.concatenate((inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
-                assert plate_name == info[0]
-                if prefix_lut is None:
-                    img_name = 'xgal_%s_%s_%s_%s.png' % info
-                else:
-                    img_name = '%s_%s_%s_%s_%s.png' % ((prefix_lut[info[0], info[1]],) + info)
-                vigra.impex.writeImage(img, self.output(img_name))
-                if DEBUG:
-                    print 'Exporting gallery matrix image for', info
+                for object_ in ['primary__primary', 'secondary__inside']:
+                    if include_excluded:
+                        excluded_img = cf.get_gallery_image_matrix(index_tpl_ex, shape, object_=object_).swapaxes(1,0) 
+                    outlier_img = cf.get_gallery_image_matrix(index_tpl_out, shape, object_=object_).swapaxes(1,0)
+                    inlier_img = cf.get_gallery_image_matrix(index_tpl_in, shape, object_=object_).swapaxes(1,0)
+                    
+                    if include_excluded:
+                        img = numpy.concatenate((excluded_img, numpy.ones((5, inlier_img.shape[1]))*255, inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
+                    else:
+                        img = numpy.concatenate((inlier_img, numpy.ones((5, inlier_img.shape[1]))*255, outlier_img))
+                    assert plate_name == info[0]
+                    if prefix_lut is None:
+                        img_name = 'xgal_%s_%s_%s_%s_%s.png' % info  + (object_,)
+                    else:
+                        img_name = '%s_%s_%s_%s_%s_%s.png' % ((prefix_lut[info[0], info[1]],) + info + (object_,))
+                    vigra.impex.writeImage(img, self.output(img_name))
+                    if DEBUG:
+                        print 'Exporting gallery matrix image for', info, object_
 
                 
 class SaraOutlier(object):
@@ -1686,7 +1727,7 @@ class SaraOutlier(object):
         self.od.make_top_hit_list(top=4000, for_group=('neg', 'target', 'pos'))
 #         
 #         self.od.make_heat_map()
-        #self.od.make_outlier_galleries()
+        self.od.make_outlier_galleries()
         if DEBUG:
             print 'Results:', self.od.output_dir
         os.startfile(os.path.join(os.getcwd(), self.od.output_dir))
@@ -1706,7 +1747,7 @@ class MatthiasPredrug(object):
                                   training_sites=training_sites
                                   )
         self.od.set_read_feature_time_predicate(numpy.equal, 0)
-        self.od.read_feature(object_="secondary__inside")
+        self.od.read_feature(object_="primary__primary")
         self.od.set_gamma(gamma)
         self.od.set_nu(nu)
         self.od.set_pca_dims(pca_dims)
@@ -1716,8 +1757,11 @@ class MatthiasPredrug(object):
         self.od.train(classifier_class=OneClassSVM)
         self.od.predict()
         self.od.compute_outlyingness()
-        self.od.make_top_hit_list(top=4000, for_group=('neg', 'target', 'pos'))
+        #self.od.export_to_file(6)
         self.od.cluster_outliers()
+        print self.od.evaluate_outlier_detection()
+        #self.od.make_top_hit_list(top=4000, for_group=('neg', 'target', 'pos'))
+        
         self.od.interactive_plot()
         
         self.od.write_readme()
@@ -1864,7 +1908,7 @@ class MatthiasOutlierFigure1(MatthiasOutlier):
             
             pylab.tight_layout()
             pylab.savefig(self.od.output('outlier_roc_all.png' ))
-            pylab.show() 
+            #pylab.show() 
             
             # Figure 1 b
             print self.od.evaluate()
@@ -1900,42 +1944,42 @@ def run_exp(name, lookup, analysis_class):
     
 
 if __name__ == "__main__":
-    EXPLOOKUP = {'matthias_predrug':
+    EXPLOOKUP = {'matthias_predrug_a6':
                      {
                       'mapping_files' : {
-                        'Screen_Plate_01': 'F:/matthias_predrug/Screen_Plate_01_position_map_PRE.txt',
-                        'Screen_Plate_02': 'F:/matthias_predrug/Screen_Plate_02_position_map_PRE.txt',
-                        'Screen_Plate_03': 'F:/matthias_predrug/Screen_Plate_03_position_map_PRE.txt',
-                        'Screen_Plate_04': 'F:/matthias_predrug/Screen_Plate_04_position_map_PRE.txt',
-                        'Screen_Plate_05': 'F:/matthias_predrug/Screen_Plate_05_position_map_PRE.txt',
-                        'Screen_Plate_06': 'F:/matthias_predrug/Screen_Plate_06_position_map_PRE.txt',
-                        'Screen_Plate_07': 'F:/matthias_predrug/Screen_Plate_07_position_map_PRE.txt',
-                        'Screen_Plate_08': 'F:/matthias_predrug/Screen_Plate_08_position_map_PRE.txt',
-                        'Screen_Plate_09': 'F:/matthias_predrug/Screen_Plate_09_position_map_PRE.txt',
+                        'Screen_Plate_01': 'F:/matthias_predrug_a6/Screen_Plate_01_position_map_PRE.txt',
+                        'Screen_Plate_02': 'F:/matthias_predrug_a6/Screen_Plate_02_position_map_PRE.txt',
+                        'Screen_Plate_03': 'F:/matthias_predrug_a6/Screen_Plate_03_position_map_PRE.txt',
+                        'Screen_Plate_04': 'F:/matthias_predrug_a6/Screen_Plate_04_position_map_PRE.txt',
+                        'Screen_Plate_05': 'F:/matthias_predrug_a6/Screen_Plate_05_position_map_PRE.txt',
+                        'Screen_Plate_06': 'F:/matthias_predrug_a6/Screen_Plate_06_position_map_PRE.txt',
+                        'Screen_Plate_07': 'F:/matthias_predrug_a6/Screen_Plate_07_position_map_PRE.txt',
+                        'Screen_Plate_08': 'F:/matthias_predrug_a6/Screen_Plate_08_position_map_PRE.txt',
+                        'Screen_Plate_09': 'F:/matthias_predrug_a6/Screen_Plate_09_position_map_PRE.txt',
                                         },
                       'ch5_files' : {
-                        'Screen_Plate_01': 'F:/matthias_predrug/Screen_Plate_01_all_positions_with_data.ch5',
-                        'Screen_Plate_02': 'F:/matthias_predrug/Screen_Plate_02_all_positions_with_data.ch5',
-                        'Screen_Plate_03': 'F:/matthias_predrug/Screen_Plate_03_all_positions_with_data.ch5',
-                        'Screen_Plate_04': 'F:/matthias_predrug/Screen_Plate_04_all_positions_with_data.ch5',
-                        'Screen_Plate_05': 'F:/matthias_predrug/Screen_Plate_05_all_positions_with_data.ch5',
-                        'Screen_Plate_06': 'F:/matthias_predrug/Screen_Plate_06_all_positions_with_data.ch5',
-                        'Screen_Plate_07': 'F:/matthias_predrug/Screen_Plate_07_all_positions_with_data.ch5',
-                        'Screen_Plate_08': 'F:/matthias_predrug/Screen_Plate_08_all_positions_with_data.ch5',
-                        'Screen_Plate_09': 'F:/matthias_predrug/Screen_Plate_09_all_positions_with_data.ch5',
+                        'Screen_Plate_01': 'F:/matthias_predrug_a6/Screen_Plate_01_all_positions_with_data.ch5',
+                        'Screen_Plate_02': 'F:/matthias_predrug_a6/Screen_Plate_02_all_positions_with_data.ch5',
+                        'Screen_Plate_03': 'F:/matthias_predrug_a6/Screen_Plate_03_all_positions_with_data.ch5',
+                        'Screen_Plate_04': 'F:/matthias_predrug_a6/Screen_Plate_04_all_positions_with_data.ch5',
+                        'Screen_Plate_05': 'F:/matthias_predrug_a6/Screen_Plate_05_all_positions_with_data.ch5',
+                        'Screen_Plate_06': 'F:/matthias_predrug_a6/Screen_Plate_06_all_positions_with_data.ch5',
+                        'Screen_Plate_07': 'F:/matthias_predrug_a6/Screen_Plate_07_all_positions_with_data.ch5',
+                        'Screen_Plate_08': 'F:/matthias_predrug_a6/Screen_Plate_08_all_positions_with_data.ch5',
+                        'Screen_Plate_09': 'F:/matthias_predrug_a6/Screen_Plate_09_all_positions_with_data.ch5',
                                         },
 #                     'locations' : (
 #                         ("A",  4), ("B", 23), ("H", 9), ("D", 8),
 #                           ("H", 6), ("A", 7), ("G", 6), ("G", 7),
 #                          ("H",12), ("H",13), ("G",12), ("A", 9),
 #                     ),
-#                     'rows' : list("ABCDEFGHIJKLMNOP")[:],
-#                     'cols' : tuple(range(19,25)),
+                     #'rows' : list("A")[:],
+                     #'cols' : tuple(range(4,5)),
                      #'training_sites' : (5,6,7,8),
                     'training_sites' : (1,2,3,4),
-                      'gamma' : None,
-                      'nu' : 0.10,
-                      'pca_dims' : 100,
+                      'gamma' : 0.001,
+                      'nu' : 0.2,
+                      'pca_dims' : 50,
                       'kernel' :'rbf'
                      },
                  
@@ -2054,8 +2098,9 @@ if __name__ == "__main__":
                     'kernel' :'linear'
                      }
                   }
-    setupt_matplot_lib_rc()
+    #setupt_matplot_lib_rc()
 #     run_exp('sarax_od', EXPLOOKUP, SaraOutlier)
-    run_exp('matthias_predrug', EXPLOOKUP, MatthiasPredrug)
+#     run_exp('matthias_predrug_a6', EXPLOOKUP, MatthiasPredrug)
+    run_exp('matthias_figure_1', EXPLOOKUP, MatthiasOutlierFigure1)
 
     print 'finished'

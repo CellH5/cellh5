@@ -1489,7 +1489,7 @@ EXP_LOOKUP = {
              'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
              'hmm_n_classes': 17,
              'hmm_n_obs': 5,
-#              'output_dir' : 'M:/experiments/Experiments_002300/002338/002338/_meta/fate',
+              'output_dir' : 'M:/experiments/Experiments_002300/002338/002338/_meta/fate',
              'securin_region' : "tertiary__expanded"
              },
          '002377':
@@ -1618,6 +1618,21 @@ EXP_LOOKUP = {
              'onset_frame': 4, # in frames
              'securin_region' : "tertiary__expanded"
              },
+              
+        '002383':
+           {
+             'ch5_file': "M:/experiments/Experiments_002300/002383/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002300/002383/_meta/Mapping/002383.txt",
+             'time_lapse': 5.1, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002300/002383/_meta/fate',
+             'events_before_frame': 145, # in frames
+             'onset_frame': 4, # in frames
+#              'securin_region' : "tertiary__expanded"
+             },
+        
          '002587':
             {
              'ch5_file': "M:/experiments/Experiments_002500/002587/_meta/Analysis/hdf5/_all_positions.ch5",
@@ -1630,6 +1645,59 @@ EXP_LOOKUP = {
              'events_before_frame': 160, # in frames
              'onset_frame': 4, # in frames
              },
+              
+          '002614_1' :
+            {
+             'ch5_file': "M:/experiments/Experiments_002600/002614/_meta/Analysis_classifie_anaphase_corrected/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002600/002614/_meta/Mapping/2614.txt",
+             'time_lapse': 5.7, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002600/002614/_meta/Analysis_classifie_anaphase_corrected/fate',
+             'events_before_frame': 130, # in frames
+             'onset_frame': 4, # in frames
+             },   
+              
+            '002614_2' :
+            {
+             'ch5_file': "M:/experiments/Experiments_002600/002614/_meta/Analysis_classifier_140901_shorter_track_length/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002600/002614/_meta/Mapping/2614.txt",
+             'time_lapse': 5.7, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002600/002614/_meta/Analysis_classifier_140901_shorter_track_length/fate',
+             'events_before_frame': 130, # in frames
+             'onset_frame': 2, # in frames
+             },  
+              
+             '002666_1' :
+            {
+             'ch5_file': "M:/experiments/Experiments_002600/002666/002666_1/2666_1_1/_meta/Analysis_shorter_track_lenght/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002600/002666/002666_1/2666_1_2/_meta/Mapping/002666_1.txt",
+             'time_lapse': 6.5, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002600/002666/002666_1/2666_1_1/_meta/fate',
+             'events_before_frame': 120, # in frames
+             'onset_frame': 2, # in frames
+             },  
+              
+              '002666_2' :
+            {
+             'ch5_file': "M:/experiments/Experiments_002600/002666/002666_1/2666_1_2/_meta/Analysis_shorter_track_length/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002600/002666/002666_1/2666_1_2/_meta/Mapping/002666_1.txt",
+             'time_lapse': 6.5, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002600/002666/002666_1/2666_1_2/_meta/fate',
+             'events_before_frame': 120, # in frames
+             'onset_frame': 2, # in frames
+             },  
+              
       }
        
        
@@ -1664,108 +1732,110 @@ def fate_mitotic_time(plate_id):
       
 def fate_mutli_bi(plate_id):
     pm = CellFateAnalysisMultiHMM(plate_id, 
-#                                 rows=("B", ), 
-#                                 cols=(12,), 
+#                                 rows=("A", ), 
+#                                 cols=(3,), 
                                 **EXP_LOOKUP[plate_id])
     
 #     pm.mitotic_entries_within(pm.events_before_frame)
     pm.fate_tracking(out_name='Raw class labels')
     pm.setup_hmm()
     pm.predict_hmm('Raw class labels', 'Multi State HMM')   
-#     
-#     pm.plot_tracks(['Raw class labels', 'Multi State HMM', 'Multi State HMM', 'Multi State HMM',], 
-#                    [pm.cmap, pm.cmap_cycle_3, CMAP17, CMAP17_MULTI],
-#                    ['Raw class labels', 'HMM class labels', 'HMM Multi simple', 'HMM Multi full'],
-#                     'trajectories_all')
-#      
-    pm.classify_tracks('Multi State HMM')
-#     #pm.plot_mitotic_timing('Multi State HMM')
-    pm.cmap = CMAP17
-#     pm.plot('__fate_all', 2)
-#     pm.cmap = CMAP17SIMPLE
-#     pm.plot_fate_just_2_groups('__fate_simple_all', 2)
-    
-    securin_region = EXP_LOOKUP[plate_id]['securin_region']
      
-    pm.event_curves('Multi State HMM',
-                    '_securin_degradation_short',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    False,
-                    pm.cmap,
-                    (-20,240),
-                    (0,1.5),
-                           )
-       
-    pm.event_curves('Multi State HMM',
-                    '_securin_degradation_long',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    True,
-                    pm.cmap,
-                    (-20, 1200),
-                    (0,1.5),
-                           )
+    pm.plot_tracks(['Raw class labels', 'Multi State HMM', 'Multi State HMM', 'Multi State HMM',], 
+                   [pm.cmap, pm.cmap_cycle_3, CMAP17, CMAP17_MULTI],
+                   ['Raw class labels', 'HMM class labels', 'HMM Multi simple', 'HMM Multi full'],
+                    'trajectories_all')
       
-    pm.event_mean_curves('Multi State HMM',
-                            '_securin_degradation_short_mean',
-                            'tertiary__expanded',
-                            'n2_avg',
-                            False,
-                            pm.cmap,
-                            (-20,240),
-                            (0,1.5),
-                                   )
-      
-    pm.event_mean_curves('Multi State HMM', 
-                    '_securin_degradation_long_mean',
-                    'tertiary__expanded',
-                    'n2_avg',
-                    True,
-                    pm.cmap,
-                    (-20,1200),
-                    (0,1.5),
-                           )
+    pm.classify_tracks('Multi State HMM')
+    #pm.plot_mitotic_timing('Multi State HMM')
+    pm.cmap = CMAP17
+    pm.plot('__fate_all', 2)
+    pm.cmap = CMAP17SIMPLE
+    pm.plot_fate_just_2_groups('__fate_simple_all', 2)
     
-    pm.event_mean_fate_curves('Multi State HMM', 
-                    '_securin_degradation_per_fate_mean_long',
-                    securin_region,
-                    'n2_avg',
-                    True,
-                    pm.cmap,
-                    (-20,1200),
-                    (0,1.5),
-                           )
-      
-    pm.event_mean_fate_curves('Multi State HMM', 
-                    '_securin_degradation_per_fate_mean_short',
-                    securin_region,
-                    'n2_avg',
-                    False,
-                    pm.cmap,
-                    (-20,120),
-                    (0,1.5),
-                           )
-      
-    pm.event_fate_curves('Multi State HMM', 
-                    '_securin_degradation_per_fate_all_long',
-                    securin_region,
-                    'n2_avg',
-                    True,
-                    pm.cmap,
-                    (-20,1200),
-                    (0,1.5),
-                           )
-      
-    pm.event_fate_curves('Multi State HMM', 
-                    '_securin_degradation_per_fate_all_short',
-                    securin_region,
-                    'n2_avg',
-                    False,
-                    pm.cmap,
-                    (-20,120),
-                    (0,1.5),
-                           )
+    if False: # Securin ?
+    
+        securin_region = EXP_LOOKUP[plate_id]['securin_region']
+         
+        pm.event_curves('Multi State HMM',
+                        '_securin_degradation_short',
+                        'tertiary__expanded',
+                        'n2_avg',
+                        False,
+                        pm.cmap,
+                        (-20,240),
+                        (0,1.5),
+                               )
+           
+        pm.event_curves('Multi State HMM',
+                        '_securin_degradation_long',
+                        'tertiary__expanded',
+                        'n2_avg',
+                        True,
+                        pm.cmap,
+                        (-20, 1200),
+                        (0,1.5),
+                               )
+          
+        pm.event_mean_curves('Multi State HMM',
+                                '_securin_degradation_short_mean',
+                                'tertiary__expanded',
+                                'n2_avg',
+                                False,
+                                pm.cmap,
+                                (-20,240),
+                                (0,1.5),
+                                       )
+          
+        pm.event_mean_curves('Multi State HMM', 
+                        '_securin_degradation_long_mean',
+                        'tertiary__expanded',
+                        'n2_avg',
+                        True,
+                        pm.cmap,
+                        (-20,1200),
+                        (0,1.5),
+                               )
+        
+        pm.event_mean_fate_curves('Multi State HMM', 
+                        '_securin_degradation_per_fate_mean_long',
+                        securin_region,
+                        'n2_avg',
+                        True,
+                        pm.cmap,
+                        (-20,1200),
+                        (0,1.5),
+                               )
+          
+        pm.event_mean_fate_curves('Multi State HMM', 
+                        '_securin_degradation_per_fate_mean_short',
+                        securin_region,
+                        'n2_avg',
+                        False,
+                        pm.cmap,
+                        (-20,120),
+                        (0,1.5),
+                               )
+          
+        pm.event_fate_curves('Multi State HMM', 
+                        '_securin_degradation_per_fate_all_long',
+                        securin_region,
+                        'n2_avg',
+                        True,
+                        pm.cmap,
+                        (-20,1200),
+                        (0,1.5),
+                               )
+          
+        pm.event_fate_curves('Multi State HMM', 
+                        '_securin_degradation_per_fate_all_short',
+                        securin_region,
+                        'n2_avg',
+                        False,
+                        pm.cmap,
+                        (-20,120),
+                        (0,1.5),
+                               )
     
     print 'CellFateAnalysisMultiHMM done'
     
@@ -1776,7 +1846,14 @@ if __name__ == "__main__":
 #     fate_mutli_bi('002325')
 #     fate_mutli_bi('002288')
 #     fate_mutli_bi('002301')
-    fate_mutli_bi('002382')
+#     fate_mutli_bi('002382')
+#     fate_mutli_bi('002383')
+#     fate_mutli_bi('002614_1')
+#     fate_mutli_bi('002614_2')
+    
+    fate_mutli_bi('002666_1')
+#     fate_mutli_bi('002666_2')
+
 #     fate_mutli_bi('002587')
     #fate_mitotic_time()
 #     fate_mitotic_time('002404')
@@ -1785,6 +1862,6 @@ if __name__ == "__main__":
 #     fate_mitotic_time('002410')
 #     fate_mitotic_time('002415')
 #     fate_mitotic_time('002411')
-    fate_mitotic_time('002587')
+#     fate_mitotic_time('002587')
     print 'FINISH'
 
