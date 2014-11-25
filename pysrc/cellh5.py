@@ -9,6 +9,7 @@
     See AUTHORS.txt for author contributions.
 """
 
+import sys
 import os
 import zlib
 import numpy
@@ -20,6 +21,7 @@ import unittest
 from itertools import chain, izip
 import functools
 import collections
+import datetime
 
 import pandas
 
@@ -37,6 +39,16 @@ version = '.'.join([str(n) for n in version_num])
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 GALLERY_SIZE = 80
 
+import logging
+
+log = logging.getLogger(__name__)
+ch = logging.StreamHandler(sys.stdout)
+ch.setLevel(logging.DEBUG)
+log.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+log.addHandler(ch)
+
 
 def hex2rgb(color, mpl=False):
     """Return the rgb color as python int in the range 0-255."""
@@ -46,7 +58,7 @@ def hex2rgb(color, mpl=False):
     else:
         fac = 255.0
 
-    rgb = [int(i*fac) for i in hex2color(color)]
+    rgb = [int(i * fac) for i in hex2color(color)]
     return tuple(rgb)
 
 def to_index_array(value):
@@ -153,7 +165,7 @@ class CH5Position(object):
         self.definitions = parent
 
     def __getitem__(self, key):
-        path = "%s/%s" %(self.grp_pos_path, key)
+        path = "%s/%s" % (self.grp_pos_path, key)
         return self.definitions.get_file_handle()[path]
 
     def channel_color_by_region(self, region):
@@ -162,7 +174,7 @@ class CH5Position(object):
         path = '/definition/image/region'
         rdef = self.definitions.get_file_handle()[path].value
 
-        i = rdef['channel_idx'][rdef['region_name'] == 'region___%s' %region][0]
+        i = rdef['channel_idx'][rdef['region_name'] == 'region___%s' % region][0]
         path = '/definition/image/channel'
         return self.definitions.get_file_handle()[path]['color'][i]
 
@@ -177,12 +189,12 @@ class CH5Position(object):
         return tracking_lookup_idx1
 
     def get_class_prediction(self, object_='primary__primary'):
-        path = 'feature/%s/object_classification/prediction' %object_
+        path = 'feature/%s/object_classification/prediction' % object_
         return self[path]
 
     def get_prediction_probabilities(self, indices=None,
                                      object_="primary__primary"):
-        path = 'feature/%s/object_classification/probability' %object_
+        path = 'feature/%s/object_classification/probability' % object_
 
         if indices is None:
             return self[path].value
@@ -191,18 +203,18 @@ class CH5Position(object):
             ishape = indices.shape
             indices = indices.flatten()
             indices2 = numpy.unique(indices)
-            _, nclasses  = self[path].shape
+            _, nclasses = self[path].shape
             probs = numpy.empty((indices.size, nclasses))
 
             for i, j in enumerate(indices2):
                 k = numpy.where(indices == j)[0]
                 probs[k, :] = self[path][j, :]
 
-            return probs.reshape(ishape+(nclasses, ))
+            return probs.reshape(ishape + (nclasses,))
 
     def has_classification(self, object_):
         fh = self.definitions.get_file_handle()
-        path = 'definition/feature/%s/object_classification' %object_
+        path = 'definition/feature/%s/object_classification' % object_
         return path in fh
 
     def get_crack_contour(self, index, object_='primary__primary',
@@ -211,14 +223,14 @@ class CH5Position(object):
         crack_list = []
         for ind in index:
             crack_str = self['feature'][object_]['crack_contour'][ind]
-            crack = numpy.asarray(zlib.decompress( \
+            crack = numpy.asarray(zlib.decompress(\
                              base64.b64decode(crack_str)).split(','), \
-                             dtype=numpy.float32).reshape(-1,2)
+                             dtype=numpy.float32).reshape(-1, 2)
 
             if bb_corrected:
                 bb = self['feature'][object_]['center'][ind]
-                crack[:,0] -= bb['x'] - size/2
-                crack[:,1] -= bb['y'] - size/2
+                crack[:, 0] -= bb['x'] - size / 2
+                crack[:, 1] -= bb['y'] - size / 2
                 crack = crack.clip(0, size)
 
             crack_list.append(crack)
@@ -239,7 +251,7 @@ class CH5Position(object):
             else:
                 return self['feature'] \
                        [object_] \
-                       ['object_features'][index,:]
+                       ['object_features'][index, :]
                 
         else:
             return []           
@@ -284,19 +296,19 @@ class CH5Position(object):
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
         centers = self['feature'][object_]['center'][index.tolist()]
-        size_2 = size/2
+        size_2 = size / 2
         for i, cen in izip(index, centers):
             time_idx = self['object'][object_][i]['time_idx']
             
             
-            tmp_img = self['image']['channel'][channel_idx, time_idx, 0, 
-                                               max(0, cen[1]-size_2):min(image_width,  cen[1]+size_2),
-                                               max(0, cen[0]-size_2):min(image_height, cen[0]+size_2)]
+            tmp_img = self['image']['channel'][channel_idx, time_idx, 0,
+                                               max(0, cen[1] - size_2):min(image_width, cen[1] + size_2),
+                                               max(0, cen[0] - size_2):min(image_height, cen[0] + size_2)]
             
 
             if tmp_img.shape != (size, size):
                 image = numpy.zeros((size, size), dtype=numpy.uint8)
-                image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
+                image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
                 images.append(image)
             else:
                 images.append(tmp_img)
@@ -310,7 +322,7 @@ class CH5Position(object):
             img_ = self.get_gallery_image(index, object_[0])
             rgb_shape = img_.shape + (3,)
             img = numpy.zeros(rgb_shape, img_.dtype)
-            for c in range(3): img[:,:,c] = img_
+            for c in range(3): img[:, :, c] = img_
         else:
 
             for c in range(3):
@@ -318,9 +330,9 @@ class CH5Position(object):
                     img_ = self.get_gallery_image(index, object_[c])
                     rgb_shape = img_.shape + (3,)
                     img = numpy.zeros(rgb_shape, img_.dtype)
-                    img[:,:, 0] = img_
+                    img[:, :, 0] = img_
                 if 0 < c < len(object_):
-                    img[:,:,c] = self.get_gallery_image(index, object_[c])
+                    img[:, :, c] = self.get_gallery_image(index, object_[c])
         
         if color is None:
             class_color = self.get_class_color(index)
@@ -339,7 +351,7 @@ class CH5Position(object):
             img_ = self.get_gallery_image(index, object_[0])
             rgb_shape = img_.shape + (3,)
             img = numpy.zeros(rgb_shape, img_.dtype)
-            for c in range(3): img[:,:,c] = img_
+            for c in range(3): img[:, :, c] = img_
             return img
 
         for c in range(3):
@@ -347,9 +359,9 @@ class CH5Position(object):
                 img_ = self.get_gallery_image(index, object_[c])
                 rgb_shape = img_.shape + (3,)
                 img = numpy.zeros(rgb_shape, img_.dtype)
-                img[:,:, 0] = img_
+                img[:, :, 0] = img_
             if 0 < c < len(object_):
-                img[:,:,c] = self.get_gallery_image(index, object_[c])
+                img[:, :, c] = self.get_gallery_image(index, object_[c])
 
         return img
 
@@ -366,13 +378,13 @@ class CH5Position(object):
         for k in xrange(len(index)):
             time_idx = time_idxs[k]
             cen1 = center_idxs[k]
-            image = numpy.zeros((GALLERY_SIZE,GALLERY_SIZE), dtype=numpy.uint8)
+            image = numpy.zeros((GALLERY_SIZE, GALLERY_SIZE), dtype=numpy.uint8)
 
             tmp_img = self['image/channel'][channel_idx, time_idx, 0,
-                                 max(0, cen1[1]-GALLERY_SIZE/2):min(image_width,  cen1[1]+GALLERY_SIZE/2),
-                                 max(0, cen1[0]-GALLERY_SIZE/2):min(image_height, cen1[0]+GALLERY_SIZE/2)]
+                                 max(0, cen1[1] - GALLERY_SIZE / 2):min(image_width, cen1[1] + GALLERY_SIZE / 2),
+                                 max(0, cen1[0] - GALLERY_SIZE / 2):min(image_height, cen1[0] + GALLERY_SIZE / 2)]
 
-            image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
+            image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
             image_list.append(image)
 
         return image_list
@@ -390,19 +402,19 @@ class CH5Position(object):
         for ind in index:
             time_idx = self['object'][object_][ind]['time_idx']
             cen1 = self['feature'][object_]['center'][ind]
-            image = numpy.zeros((GALLERY_SIZE,GALLERY_SIZE), dtype=numpy.uint8)
+            image = numpy.zeros((GALLERY_SIZE, GALLERY_SIZE), dtype=numpy.uint8)
 
             tmp_img = self['image/channel'][channel_idx, time_idx, 0,
-                                 max(0, cen1[1]-GALLERY_SIZE/2):min(image_width,  cen1[1]+GALLERY_SIZE/2),
-                                 max(0, cen1[0]-GALLERY_SIZE/2):min(image_height, cen1[0]+GALLERY_SIZE/2)]
+                                 max(0, cen1[1] - GALLERY_SIZE / 2):min(image_width, cen1[1] + GALLERY_SIZE / 2),
+                                 max(0, cen1[0] - GALLERY_SIZE / 2):min(image_height, cen1[0] + GALLERY_SIZE / 2)]
 
-            image[(image.shape[0]-tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
+            image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
             yield image
 
     def get_gallery_image_matrix(self, index, shape, object_='primary__primary'):
         image = numpy.zeros((GALLERY_SIZE * shape[0],
                              GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
-        i,j = 0, 0
+        i, j = 0, 0
         img_gen = self.get_gallery_image_generator(index, object_)
 
         for i in range(shape[0]):
@@ -416,7 +428,7 @@ class CH5Position(object):
                 c = a + GALLERY_SIZE
                 d = b + GALLERY_SIZE
 
-                if (c,d) > image.shape:
+                if (c, d) > image.shape:
                     break
                 image[a:c, b:d] = img
 
@@ -425,7 +437,7 @@ class CH5Position(object):
     def get_gallery_image_matrix_with_classification(self, index, shape, object_='primary__primary'):
         image = numpy.zeros((GALLERY_SIZE * shape[0],
                              GALLERY_SIZE * shape[1], 3), dtype=numpy.uint8)
-        i,j = 0, 0
+        i, j = 0, 0
         img_gen = self.get_gallery_image_generator(index, object_)
         class_colors = self.get_class_color(index)
         cnt = 0
@@ -434,7 +446,7 @@ class CH5Position(object):
                 try:
                     img = img_gen.next()
                     color = class_colors[cnt]
-                    cnt+=1
+                    cnt += 1
                 except StopIteration:
                     break
                 a = i * GALLERY_SIZE
@@ -442,37 +454,37 @@ class CH5Position(object):
                 c = a + GALLERY_SIZE
                 d = b + GALLERY_SIZE
 
-                if (c,d) > image.shape:
+                if (c, d) > image.shape:
                     break
                 for c in range(3): image[a:c, b:d, c] = img
                 
                 col_rgb = hex2rgb(color)
-                for c in range(3): image[a:a+10, b:b+10, c] = col_rgb[c]
+                for c in range(3): image[a:a + 10, b:b + 10, c] = col_rgb[c]
 
         return image
 
     def get_gallery_image_contour(self, index, object_=('primary__primary',), color=None, scale=None):
         img = self.get_gallery_image_rgb(index, object_)
         if scale is not None:
-            img = numpy.clip(img.astype(numpy.float32)*scale, 0, 255).astype(numpy.uint8)
+            img = numpy.clip(img.astype(numpy.float32) * scale, 0, 255).astype(numpy.uint8)
         for obj_id in object_:
             crack = self.get_crack_contour(index, obj_id)
 
             if color is None:
                 class_color = self.get_class_color(index, obj_id)
                 if class_color is None:
-                    class_color = ['#FFFFFF']*len(crack)
+                    class_color = ['#FFFFFF'] * len(crack)
 
                 if not isinstance(class_color, (list, tuple)):
                     class_color = [class_color]
             else:
-                class_color = [color]*len(crack)
+                class_color = [color] * len(crack)
 
             for i, (cr, col) in enumerate(zip(crack, class_color)):
                 col_tmp = hex2rgb(col)
                 for x, y in cr:
                     for c in range(3):
-                        img[y, x + i* GALLERY_SIZE, c] = col_tmp[c]
+                        img[y, x + i * GALLERY_SIZE, c] = col_tmp[c]
         return img
 
     def get_class_label(self, index, object_='primary__primary'):
@@ -482,7 +494,7 @@ class CH5Position(object):
 
         index2label = self.definitions.class_definition(object_)["label"]
         predidx = self.get_class_prediction(object_)['label_idx']
-        labels = numpy.ones(index.size, dtype=int)*CH5Const.UNPREDICTED_LABEL
+        labels = numpy.ones(index.size, dtype=int) * CH5Const.UNPREDICTED_LABEL
 
         for i, j in enumerate(index.flatten()):
             try:
@@ -528,7 +540,7 @@ class CH5Position(object):
     def get_time_indecies(self, index, object_='primary__primary'):
         inv_sort = numpy.argsort(numpy.argsort(numpy.array(index)))
         index.sort()
-        tmp =  self['object'][object_][index]['time_idx']
+        tmp = self['object'][object_][index]['time_idx']
         return tmp[inv_sort]
 
     def get_class_name(self, index, object_='primary__primary'):
@@ -539,11 +551,11 @@ class CH5Position(object):
 
     def class_color_def(self, class_labels, object_):
         class_mapping = self.definitions.class_definition(object_)
-        return [class_mapping['color'][col-1] for col in class_labels]
+        return [class_mapping['color'][col - 1] for col in class_labels]
 
     def class_name_def(self, class_labels, object_):
         class_mapping = self.definitions.class_definition(object_)
-        return [class_mapping['name'][col-1] for col in class_labels]
+        return [class_mapping['name'][col - 1] for col in class_labels]
 
     def object_feature_def(self, object_='primary__primary'):
         return map(lambda x: str(x[0]),
@@ -592,10 +604,10 @@ class CH5Position(object):
                 tracks.append(track)
             elif occurence == 2:
                 i1, i2 = numpy.where(idx1 == mc)[0]
-                track = numpy.hstack((idx1[:i2], idx2[i2-1]))
+                track = numpy.hstack((idx1[:i2], idx2[i2 - 1]))
                 tracks.append(track)
                 if output_second_branch:
-                    track = numpy.hstack((idx1[:(i1+1)], idx2[i2:]))
+                    track = numpy.hstack((idx1[:(i1 + 1)], idx2[i2:]))
                     tracks.append(track)
             else:
                 raise RuntimeError(("Split events with more than 2 childs are "
@@ -659,7 +671,7 @@ class CH5Position(object):
                 sel = numpy.argmax(track_feature[next_p_idx])
             idx = dset_tracking_idx2[next_p_idx[sel]]
             idx_list.append(idx)
-            if max_length is not None and len(idx_list) > max_length -1:
+            if max_length is not None and len(idx_list) > max_length - 1:
                 break
 
         return idx_list
@@ -710,12 +722,12 @@ class CH5Position(object):
 
     def track_all(self, start_idx):
         dset_tracking = self.get_tracking()
-        next_p_idx = (dset_tracking['obj_idx1']==start_idx).nonzero()[0]
+        next_p_idx = (dset_tracking['obj_idx1'] == start_idx).nonzero()[0]
         if len(next_p_idx) == 0:
             return [None]
         else:
             def all_paths_of_tree(id_):
-                found_ids = dset_tracking['obj_idx2'][(dset_tracking['obj_idx1']==id_).nonzero()[0]]
+                found_ids = dset_tracking['obj_idx2'][(dset_tracking['obj_idx1'] == id_).nonzero()[0]]
 
                 if len(found_ids) == 0:
                     return [[id_]]
@@ -727,10 +739,10 @@ class CH5Position(object):
 
                     return all_paths_
 
-            head_ids = dset_tracking['obj_idx2'][(dset_tracking['obj_idx1']==start_idx).nonzero()[0]]
+            head_ids = dset_tracking['obj_idx2'][(dset_tracking['obj_idx1'] == start_idx).nonzero()[0]]
             res = []
             for head_id in head_ids:
-                res.extend(all_paths_of_tree(head_id)   )
+                res.extend(all_paths_of_tree(head_id))
             return res
 
 
@@ -829,7 +841,7 @@ class CH5File(object):
 
     def _open_position(self, plate, well, position):
         path = ("/sample/0/plate/%s/experiment/%s/position/%s"
-                %(plate, well, position))
+                % (plate, well, position))
 
         try:
             if self._cached:
@@ -838,10 +850,13 @@ class CH5File(object):
                 return CH5Position(plate, well, position, path, self)
         except KeyError:
             warnings.warn(("Warning: cellh5 - well, position (%s, %s)"
-                           "could not be loaded ") %(well, position))
+                           "could not be loaded ") % (well, position))
 
     def get_position(self, well, pos):
         return self._position_group[(well, str(pos))]
+    
+    def has_position(self, well, pos):
+        return (well, str(pos)) in self._position_group
 
     def get_file_handle(self):
         return self._file_handle
@@ -904,7 +919,7 @@ class CH5File(object):
     @staticmethod
     def gallery_image_matrix_layouter(img_gen, shape):
         image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
-        i,j = 0, 0    
+        i, j = 0, 0    
         for i in range(shape[0]):
             for j in range(shape[1]):
                 try:
@@ -916,7 +931,7 @@ class CH5File(object):
                 c = a + GALLERY_SIZE
                 d = b + GALLERY_SIZE
                 
-                if (c,d) > image.shape:
+                if (c, d) > image.shape:
                     break
                 image[a:c, b:d] = img  
         return image 
@@ -956,6 +971,14 @@ class CH5MappedFile(CH5File):
                                                 for c, r in locations])]
 
         self.mapping.reset_index(inplace=True)
+        
+        
+    def check_mapping(self, remove=False):
+        self.mapping["CellH5"] = self.mapping.apply(lambda x: self.has_position(x["Well"], x["Site"]), axis=1)
+        if remove:
+            self.mapping = self.mapping[self.mapping["CellH5"]]
+            self.mapping.reset_index(inplace=True)
+        
 
     def _get_mapping_field_of_pos(self, well, pos, field):
         return self.mapping[(self.mapping['Well'] == str(well)) & \
@@ -968,6 +991,66 @@ class CH5MappedFile(CH5File):
         if treatment_column is None:
             treatment_column = ['siRNA ID', 'Gene Symbol']
         return self._get_mapping_field_of_pos(well, pos, treatment_column)
+    
+class CH5MappedFileCollection(object):
+    def __init__(self, name="default", mapping_files=None, cellh5_files=None, output_dir=None,
+                       sites=None, rows=None, cols=None, locations=None, init=True):
+        self.name = name
+        self.mapping_files = mapping_files
+        self.cellh5_files = cellh5_files
+        self.output_dir = output_dir
+        self.time_lapse = {}
+        self.cellh5_handles = {}
+        self.set_output_dir(output_dir)
+        
+        self.mapping = None
+        if init:
+            mappings = []
+            for plate_name, mapping_file in mapping_files.items():
+                if plate_name not in cellh5_files.keys():
+                    raise RuntimeError("Plate name %s not found" % plate_name)
+                cellh5_file = cellh5_files[plate_name] 
+                
+                mapped_ch5 = CH5MappedFile(cellh5_file)
+                mapped_ch5.read_mapping(mapping_file, sites=sites, rows=rows, cols=cols, locations=locations, plate_name=plate_name)
+
+                time_lapse = mapped_ch5.current_pos.get_time_lapse()
+                if time_lapse is not None:
+                    self.time_lapse[plate_name] = time_lapse / 60.0
+                    log.info("Found time lapse of plate '%s' = %5.3f min" % (plate_name, self.time_lapse[plate_name]))
+                self.cellh5_handles[plate_name] = mapped_ch5
+                mappings.append(mapped_ch5.mapping)
+                
+            self.mapping = pandas.concat(mappings, ignore_index=True)
+            del mappings
+            
+    def set_output_dir(self, output_dir):
+        if self.output_dir is None:
+            self.output_dir = self.name + "/" + datetime.datetime.now().strftime("%y-%m-%d-%H-%M")
+            try:
+                os.makedirs(self.output_dir)
+            except:
+                pass
+        log.info("Output Directory: " + self.output_dir)
+        
+
+    def output(self, file_):
+        file_ = self._str_sanatize(file_)
+        return os.path.join(self.output_dir, file_) 
+        
+    @staticmethod    
+    def _str_sanatize(input_str):
+        input_str = input_str.replace(" ", "_")
+        input_str = input_str.replace("/", "_")
+        input_str = input_str.replace("#", "_")
+        input_str = input_str.replace(")", "_")
+        input_str = input_str.replace("(", "_")
+        return input_str
+    
+    def close(self):
+        if self.cellh5_handles is not None:
+            for v in self.cellh5_handles.values():
+                v.close()
 
 
 class CH5TestBase(unittest.TestCase):
@@ -1009,12 +1092,12 @@ class TestCH5Basic(CH5TestBase):
     def testGallery3(self):
         event = self.pos.get_events()[42][0]
         tracks = self.pos.track_all(event)
-        w = numpy.array(map(len, tracks)).max()*GALLERY_SIZE
+        w = numpy.array(map(len, tracks)).max() * GALLERY_SIZE
         img = numpy.zeros((GALLERY_SIZE * len(tracks), w), dtype=numpy.uint8)
 
         for k, t in enumerate(tracks):
             a = self.pos.get_gallery_image(tuple(t))
-            img[k*GALLERY_SIZE:(k+1)*GALLERY_SIZE, 0:a.shape[1]] = a
+            img[k * GALLERY_SIZE:(k + 1) * GALLERY_SIZE, 0:a.shape[1]] = a
 
     def testGallery4(self):
         event = self.pos.get_events()[42]
@@ -1022,15 +1105,15 @@ class TestCH5Basic(CH5TestBase):
 
     def testClassNames(self):
         for x in ['inter', 'pro', 'earlyana']:
-            self.assertTrue(x in self.pos.class_name_def((1,2,5)))
+            self.assertTrue(x in self.pos.class_name_def((1, 2, 5)))
 
     def testClassColors(self):
         for x in ['#FF8000', '#D28DCE', '#FF0000']:
-            self.assertTrue(x in self.pos.class_color_def((3,4,8)))
+            self.assertTrue(x in self.pos.class_color_def((3, 4, 8)))
 
     def testClassColors2(self):
-        self.pos.get_class_color((1,221,3233,44244))
-        self.pos.get_class_name((1,221,3233,44244))
+        self.pos.get_class_color((1, 221, 3233, 44244))
+        self.pos.get_class_name((1, 221, 3233, 44244))
 
     def testEvents(self):
         self.assertTrue(len(self.pos.get_events()) > 0)
@@ -1053,7 +1136,7 @@ class TestCH5Basic(CH5TestBase):
         
 class TestCH5Write(CH5TestBase):
     def testSimpleWrite(self):
-        data = numpy.random.rand(10,20)
+        data = numpy.random.rand(10, 20)
         self.pos.set_object_feature_data('_test', data)
         data_ = self.pos.get_object_feature_by_name('_test')
         self.pos.del_object_feature_data('_test')
@@ -1063,9 +1146,9 @@ class TestCH5Write(CH5TestBase):
 class TestCH5Examples(CH5TestBase):
 
     def testGalleryMatrix(self):
-        image = self.pos.get_gallery_image_matrix(range(20), (5,6))
+        image = self.pos.get_gallery_image_matrix(range(20), (5, 6))
         import vigra
-        vigra.impex.writeImage(image.swapaxes(1,0), 'img_matrix.png')
+        vigra.impex.writeImage(image.swapaxes(1, 0), 'img_matrix.png')
 
     def testReadAnImage(self):
         """Read an raw image an write a sub image to disk"""
@@ -1104,17 +1187,17 @@ class TestCH5Examples(CH5TestBase):
         # center of nucleus.
         I = numpy.nonzero(nucleus[tracking['obj_idx1']]['time_idx'] == 0)[0]
         for x, y in center[I]:
-            ax.plot(x,y,'w.', markersize=7.0, scaley=False, scalex=False)
+            ax.plot(x, y, 'w.', markersize=7.0, scaley=False, scalex=False)
 
         ax.axis([0, h2b.shape[1], h2b.shape[0], 0])
 
         # a line is plotted between nucleus center of each pair of
-        #connected nuclei. The color is the mitotic phase
+        # connected nuclei. The color is the mitotic phase
         for idx1, idx2 in zip(tracking['obj_idx1'],
                               tracking['obj_idx2']):
             color = self.pos.get_class_color(idx1)
             (x0, y0), (x1, y1) = center[idx1], center[idx2]
-            ax.plot([x0, x1],[y0, y1], color=color)
+            ax.plot([x0, x1], [y0, y1], color=color)
 
         fig.savefig('tracking.png', format='png')
 
@@ -1132,8 +1215,8 @@ class TestCH5Examples(CH5TestBase):
         time_max = nucleus['time_idx'].max()
 
         # compute mitotic index by counting the number cell per
-        #class label over all times
-        mitotic_index =  numpy.array(map(lambda x: [len(numpy.nonzero(x==class_idx)[0]) for class_idx in range(n_classes)],
+        # class label over all times
+        mitotic_index = numpy.array(map(lambda x: [len(numpy.nonzero(x == class_idx)[0]) for class_idx in range(n_classes)],
             [predictions[nucleus['time_idx'] == time_idx]['label_idx'] for time_idx in range(time_max)]))
 
         # plot it
@@ -1141,7 +1224,7 @@ class TestCH5Examples(CH5TestBase):
         ax = fig.add_subplot(111)
 
         for i in range(1, n_classes):
-            ax.plot(mitotic_index[:,i], color=colors[i], label=names[i])
+            ax.plot(mitotic_index[:, i], color=colors[i], label=names[i])
 
         ax.set_xlabel('time')
         ax.set_ylabel('number of cells')
@@ -1162,7 +1245,7 @@ class TestCH5Examples(CH5TestBase):
 def repack_cellh5(cellh5_folder, output_file=None):
     """copies a cellh5 folder wellbased into one single postition file"""
     if output_file is None:
-        output_file='%s/_all_positions_with_data.ch5' % cellh5_folder
+        output_file = '%s/_all_positions_with_data.ch5' % cellh5_folder
   
     import glob, re
     PLATE_PREFIX = '/sample/0/plate/'
@@ -1192,8 +1275,8 @@ def repack_cellh5(cellh5_folder, output_file=None):
             # copy suff
             fh = h5py.File(fname, 'r')
             fplate, fwell, fpos = get_plate_and_postion(fh)
-            #print (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
-            f.copy( fh[(POSITION_PREFIX + '%s') % (fplate, fwell, fpos)], (POSITION_PREFIX + '%s') % (fplate, fwell, fpos))
+            # print (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
+            f.copy(fh[(POSITION_PREFIX + '%s') % (fplate, fwell, fpos)], (POSITION_PREFIX + '%s') % (fplate, fwell, fpos))
             fh.close()
             cnt += 1
     f.close()
@@ -1229,7 +1312,7 @@ def repack_cellh5_and_combine(cellh5_folder, cellh5_folder_2, rel_path_src, rel_
                 fh_2 = h5py.File(os.path.join(cellh5_folder_2, os.path.split(fname)[1]), 'r')
                 f.copy(fh['/definition'], 'definition')
                 for rps, rpd in zip(rel_path_src, rel_path_dest):
-                    f.copy(fh_2['/definition/%s'% rps], 'definition/%s' % rpd)
+                    f.copy(fh_2['/definition/%s' % rps], 'definition/%s' % rpd)
 
                 fh.close()
                 fh_2.close()
@@ -1237,7 +1320,7 @@ def repack_cellh5_and_combine(cellh5_folder, cellh5_folder_2, rel_path_src, rel_
             fh = h5py.File(fname, 'r')
             fh_2 = h5py.File(os.path.join(cellh5_folder_2, os.path.split(fname)[1]), 'r')
             fplate, fwell, fpos = get_plate_and_postion(fh)
-            #print (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
+            # print (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
             pos_path_in_ch5 = (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
             f.copy(fh[pos_path_in_ch5], pos_path_in_ch5)
             for rps, rpd in zip(rel_path_src, rel_path_dest):
@@ -1251,9 +1334,9 @@ def repack_cellh5_and_combine(cellh5_folder, cellh5_folder_2, rel_path_src, rel_
     
 def run_single_test(cls, func):
     writing = unittest.TestSuite()
-    writing.addTest( cls(func) )
+    writing.addTest(cls(func))
     unittest.TextTestRunner().run(writing)
 
 if __name__ == '__main__':
-    #run_single_test(TestCH5Write, 'testSimpleWrite')
+    # run_single_test(TestCH5Write, 'testSimpleWrite')
     unittest.main()
