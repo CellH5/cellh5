@@ -49,6 +49,21 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 ch.setFormatter(formatter)
 log.addHandler(ch)
 
+def pandas_apply(df, func):
+    """Helper function for pandas DataFrame, when dealing with entries, which are numpy multi-dim arrays.
+       Note, pandas integrated apply fun will drive you nuts...
+       
+       df: pandas DataFrame
+       func: function expecting a row aa Series over the columns of df
+       
+       returns list of row results
+    """
+    res = []
+    for i, row in df.iterrows():
+        res.append(func(row))
+    return zip(*res)
+        
+    
 
 def hex2rgb(color, mpl=False):
     """Return the rgb color as python int in the range 0-255."""
@@ -231,7 +246,7 @@ class CH5Position(object):
                 bb = self['feature'][object_]['center'][ind]
                 crack[:, 0] -= bb['x'] - size / 2
                 crack[:, 1] -= bb['y'] - size / 2
-                crack = crack.clip(0, size)
+                crack = crack.clip(0, size-1)
 
             crack_list.append(crack)
 
@@ -245,13 +260,9 @@ class CH5Position(object):
             return []
         if len(self['feature'][object_]['object_features']) > 0:
             if index is None:
-                return self['feature'] \
-                       [object_] \
-                       ['object_features'].value
+                return self['feature'][object_]['object_features'].value
             else:
-                return self['feature'] \
-                       [object_] \
-                       ['object_features'][index, :]
+                return self['feature'][object_]['object_features'][index, :]
                 
         else:
             return []           
@@ -299,13 +310,10 @@ class CH5Position(object):
         size_2 = size / 2
         for i, cen in izip(index, centers):
             time_idx = self['object'][object_][i]['time_idx']
-            
-            
             tmp_img = self['image']['channel'][channel_idx, time_idx, 0,
                                                max(0, cen[1] - size_2):min(image_width, cen[1] + size_2),
                                                max(0, cen[0] - size_2):min(image_height, cen[0] + size_2)]
             
-
             if tmp_img.shape != (size, size):
                 image = numpy.zeros((size, size), dtype=numpy.uint8)
                 image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
@@ -402,18 +410,31 @@ class CH5Position(object):
         for ind in index:
             time_idx = self['object'][object_][ind]['time_idx']
             cen1 = self['feature'][object_]['center'][ind]
-            image = numpy.zeros((GALLERY_SIZE, GALLERY_SIZE), dtype=numpy.uint8)
+            image = numpy.zeros((GALLERY_SIZE, GALLERY_SIZE, 3), dtype=numpy.uint8)
 
             tmp_img = self['image/channel'][channel_idx, time_idx, 0,
                                  max(0, cen1[1] - GALLERY_SIZE / 2):min(image_width, cen1[1] + GALLERY_SIZE / 2),
                                  max(0, cen1[0] - GALLERY_SIZE / 2):min(image_height, cen1[0] + GALLERY_SIZE / 2)]
 
-            image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
+            for c in range(3):
+                image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1], c] = tmp_img
+            
+            crack = self.get_crack_contour(ind, object_)
+            class_color = ['#FFFF00'] * len(crack)
+            for i, (cr, col) in enumerate(zip(crack, class_color)):
+                col_tmp = hex2rgb(col)
+                for x, y in cr:
+                    for c in range(3):
+                        y = min(y, GALLERY_SIZE-1)
+                        x = min(x, GALLERY_SIZE-1)
+                        image[y, x + i * GALLERY_SIZE, c] = col_tmp[c]
+            
+            
             yield image
 
     def get_gallery_image_matrix(self, index, shape, object_='primary__primary'):
         image = numpy.zeros((GALLERY_SIZE * shape[0],
-                             GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
+                             GALLERY_SIZE * shape[1], 3), dtype=numpy.uint8)
         i, j = 0, 0
         img_gen = self.get_gallery_image_generator(index, object_)
 
@@ -430,7 +451,7 @@ class CH5Position(object):
 
                 if (c, d) > image.shape:
                     break
-                image[a:c, b:d] = img
+                image[a:c, b:d, :] = img
 
         return image
 
@@ -560,7 +581,7 @@ class CH5Position(object):
     def object_feature_def(self, object_='primary__primary'):
         return map(lambda x: str(x[0]),
                    self.definitions.feature_definition['%s/object_features' % object_].value)
-
+        
     def get_object_table(self, object_):
         if len(self['object'][object_]) > 0:
             return self['object'][object_].value
@@ -936,6 +957,26 @@ class CH5File(object):
                 image[a:c, b:d] = img  
         return image 
     
+    @staticmethod
+    def gallery_image_matrix_layouter_rgb(img_gen, shape):
+        image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1], 3), dtype=numpy.uint8)
+        i, j = 0, 0    
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                try:
+                    img = img_gen.next()
+                except StopIteration:
+                    break
+                a = i * GALLERY_SIZE
+                b = j * GALLERY_SIZE
+                c = a + GALLERY_SIZE
+                d = b + GALLERY_SIZE
+                
+                if (c, d) > image.shape:
+                    break
+                image[a:c, b:d,:] = img  
+        return image 
+    
     def get_gallery_image_matrix(self, index_tpl, shape, object_='primary__primary'):
         img_gen = self.gallery_image_matrix_gen(index_tpl=index_tpl, object_=object_)
         return CH5File.gallery_image_matrix_layouter(img_gen, shape)
@@ -993,15 +1034,13 @@ class CH5MappedFile(CH5File):
         return self._get_mapping_field_of_pos(well, pos, treatment_column)
     
 class CH5MappedFileCollection(object):
-    def __init__(self, name="default", mapping_files=None, cellh5_files=None, output_dir=None,
+    def __init__(self, name="CH5MappedFileCollection", mapping_files=None, cellh5_files=None,
                        sites=None, rows=None, cols=None, locations=None, init=True):
         self.name = name
         self.mapping_files = mapping_files
         self.cellh5_files = cellh5_files
-        self.output_dir = output_dir
         self.time_lapse = {}
         self.cellh5_handles = {}
-        self.set_output_dir(output_dir)
         
         self.mapping = None
         if init:
@@ -1018,12 +1057,58 @@ class CH5MappedFileCollection(object):
                 if time_lapse is not None:
                     self.time_lapse[plate_name] = time_lapse / 60.0
                     log.info("Found time lapse of plate '%s' = %5.3f min" % (plate_name, self.time_lapse[plate_name]))
+                else:
+                    self.time_lapse[plate_name] = 0
+                    
                 self.cellh5_handles[plate_name] = mapped_ch5
                 mappings.append(mapped_ch5.mapping)
                 
             self.mapping = pandas.concat(mappings, ignore_index=True)
             del mappings
             
+    def close(self):
+        if self.cellh5_handles is not None:
+            for v in self.cellh5_handles.values():
+                v.close()
+            
+    def get_treatment(self, plate, well, site):
+        return list(self.mapping[
+                                (self.mapping['Plate'] == plate) & 
+                                (self.mapping['Well'] == well) & 
+                                (self.mapping['Site'] == site)
+                                ][['siRNA ID', 'Gene Symbol']].iloc[0])
+        
+    def get_ch5_position(self, plate, well, site):
+        return self.cellh5_handles[plate].get_position(well, site)
+    
+    def get_object_classificaiton_dict(self, prop="name", object_='primary__primary'):
+        res = {}
+        data = self.cellh5_handles.values()[0].class_definition(object_)
+        for i in range(len(data)):
+            res[i] = data[prop][i]
+        return res
+        
+class CH5Analysis(CH5MappedFileCollection):
+    def __init__(self, name="CH5Analysis", mapping_files=None, cellh5_files=None,
+                       sites=None, rows=None, cols=None, locations=None, output_dir=None, init=True):
+        CH5MappedFileCollection.__init__(self, name=name, mapping_files=mapping_files, cellh5_files=cellh5_files,
+                       sites=sites, rows=rows, cols=cols, locations=locations, init=True)
+        
+        self.output_dir = output_dir
+        self.set_output_dir(output_dir)
+        
+        self._init_loger()
+        
+    def _init_loger(self):
+        log = logging.getLogger(str(self.__class__.__name__))
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setLevel(logging.DEBUG)
+        log.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setFormatter(formatter)
+        log.addHandler(ch)
+        self.log = log
+        
     def set_output_dir(self, output_dir):
         if self.output_dir is None:
             self.output_dir = self.name + "/" + datetime.datetime.now().strftime("%y-%m-%d-%H-%M")
@@ -1033,7 +1118,6 @@ class CH5MappedFileCollection(object):
                 pass
         log.info("Output Directory: " + self.output_dir)
         
-
     def output(self, file_):
         file_ = self._str_sanatize(file_)
         return os.path.join(self.output_dir, file_) 
@@ -1047,10 +1131,152 @@ class CH5MappedFileCollection(object):
         input_str = input_str.replace("(", "_")
         return input_str
     
-    def close(self):
-        if self.cellh5_handles is not None:
-            for v in self.cellh5_handles.values():
-                v.close()
+    def get_treatment(self, plate, w, p):
+        return list(self.ch5map.mapping[
+                                (self.mapping['Plate'] == plate) & 
+                                (self.mapping['Well'] == w) & 
+                                (self.mapping['Site'] == p)
+                                ][['siRNA ID', 'Gene Symbol']].iloc[0])
+        
+    def pca(self, pca_dims=None, train_on=('neg', 'target', 'pos'), pca_cls=None, **pca_args):
+        training_matrix = self.get_data(train_on)
+        if pca_cls is None:
+            from sklearn.decomposition import PCA
+            pca_cls = PCA
+        
+        log.info('Compute PCA (%s): on matrix shape %r' % (str(pca_cls), training_matrix.shape))
+        if pca_dims is None:
+            pca_dims = 0.99
+        self.pca = pca_cls(pca_dims, pca_args)
+        self.pca.fit(training_matrix)
+        log.info('Compute PCA (%s): %d dimensions used' % (str(pca_cls), self.pca.n_components_))
+        
+        def _project_on_pca_(xxx):
+            return self.pca.transform(xxx)
+        res = pandas.Series(self.mapping['Object features'][self.mapping['Object count'] > 0].map(_project_on_pca_))
+        self.mapping['PCA'] = res
+         
+    def read_feature(self, object_="primary__primary", time_frames=None, remove_feature=(18, 62, 92, 122, 152), 
+                           read_classification=True, idx_selector_functor=None):
+
+        # TODO
+        all_features = self.cellh5_handles.values()[0].object_feature_def()
+        features_keep = [na for na in range(len(all_features)) if na not in remove_feature]
+        self.all_features = [all_features[na] for na in range(len(all_features)) if na not in remove_feature]
+        
+        features = []
+        classification = []
+        counts = []
+        c5_object_index = []
+        c5_object_index2 = []
+        c5_object_index_not = []
+        
+        for i, row in self.mapping.iterrows():
+            plate = row['Plate']
+            well = row['Well']
+            site = str(row['Site'])
+            treatment = "%s %s" % (row['Gene Symbol'], row['siRNA ID'])
+            
+            ch5_pos = self.get_ch5_position(plate, well, site)            
+            all_times = ch5_pos.get_all_time_idx(object_)
+            self.log.info('Reading %s %s %s %s for object %s using time %r' % (plate,well,site,treatment,object_,time_frames))
+
+            # there are data points
+            if len(all_times) > 0:
+                if time_frames is not None:
+                    time_idx = numpy.in1d(all_times, time_frames)
+                else:
+                    time_idx = numpy.ones(len(all_times), dtype=numpy.bool)
+                idx_bool = time_idx
+                
+                # TODO
+                if idx_selector_functor is not None:
+                    idx_bool = idx_selector_functor(ch5_pos, plate, treatment, self.output_dir)
+                
+                idx = numpy.nonzero(idx_bool)[0]
+                if len(idx) > 0:
+                    feature_matrix = ch5_pos.get_object_features(object_=object_, index=tuple(idx))
+                    feature_matrix = feature_matrix[:, features_keep]
+                    
+                    classification_labels = ch5_pos.get_class_prediction(object_=object_)[idx_bool]['label_idx']              
+                    object_count = len(feature_matrix)
+                else:
+                    object_count = 0
+            else:
+                object_count = 0
+                
+            counts.append(object_count)
+            if object_count > 0:
+                features.append(feature_matrix)
+                classification.append(classification_labels)
+            else:
+                features.append(numpy.zeros((0,)))
+                classification.append(numpy.zeros((0,)))
+            c5_object_index.append(idx_bool)
+            c5_object_index2.append(idx)
+            c5_object_index_not.append(numpy.logical_not(idx_bool))
+            
+        self.mapping['Object features'] = features
+        self.mapping['Object count'] = counts
+        self.mapping['CellH5 object index'] = c5_object_index
+        self.mapping['CellH5 object index 2'] = c5_object_index2
+        self.mapping['CellH5 object index excluded'] = c5_object_index_not
+        self.mapping['Object classification label'] = classification
+
+        self.check_standardaize_features()
+        
+    def check_standardaize_features(self):
+        all_data = self.get_data(('neg', 'target', 'pos'))
+        
+        nans = numpy.isnan(all_data)
+        if nans.any():
+            print "Axes 1"
+            print nans.any(1)
+            print "Axes 0"
+            print nans.any(0)
+            raise RuntimeError("NaNs in data")
+        
+        self.norm_mean = all_data.mean(0)
+        self.norm_stds = all_data.std(0)
+        
+        if (self.norm_stds < 10e-9).any():
+            raise RuntimeError("stds get low")
+        
+        for matrix_i in  self.mapping[self.mapping["Object count"] > 0]["Object features"]:
+            matrix_i -= self.norm_mean
+            matrix_i /= self.norm_stds    
+            
+            
+    def get_column_as_matrix(self, column_name, get_index=False):
+        sel = self.mapping["Object count"] > 0
+        data = self.mapping[sel][column_name]
+        res = numpy.concatenate(list(data))
+        if get_index: 
+            lens = data.map(len)
+            index = [[i]*l for i, l in zip(data.index, lens)]
+            return res, numpy.array(list(chain.from_iterable(index)))
+        return res
+    
+    def get_data(self, in_group, type_='Object features', in_classes=None):
+        # Row selection
+        object_count_sel = self.mapping['Object count'] > 0
+        in_group_sel = self.mapping['Group'].isin(in_group)
+        
+        selection = numpy.logical_and(object_count_sel, in_group_sel)
+        selected = self.mapping[selection].reset_index()
+        res = numpy.concatenate(list(selected[type_]))
+        
+        # Single cell seleciton
+        
+        if in_classes is not None:
+            class_labels = numpy.concatenate(selected['Object classification label'])
+            single_selection = numpy.in1d(class_labels, in_classes)
+            res = res[single_selection, :]
+
+        log.info('get_data for %r positions' % len(selected))
+        log.info('get_data for treatment %r with training matrix shape %r' % (list(selected['siRNA ID'].unique()), res.shape))
+
+        return res
 
 
 class CH5TestBase(unittest.TestCase):
