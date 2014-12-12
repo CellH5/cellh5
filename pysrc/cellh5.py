@@ -196,8 +196,8 @@ class CH5Position(object):
     def get_tracking(self):
         return self['object']['tracking'].value
 
-    def _get_tracking_lookup(self, obj_idx='obj_idx1'):
-        dset_tracking_idx1 = self.get_tracking()[obj_idx]
+    def _get_tracking_lookup(self, tracking_table, obj_idx='obj_idx1', ):
+        dset_tracking_idx1 = tracking_table[obj_idx]
         tracking_lookup_idx1 = collections.defaultdict()
         for i, o in enumerate(dset_tracking_idx1):
             tracking_lookup_idx1.setdefault(o, []).append(i)
@@ -671,7 +671,7 @@ class CH5Position(object):
             sel = -1
         elif type_ == 'biggest':
             track_on_feature = True
-            roisize_ind = [str(feature_name[0]) for feature_name in self.definitions.feature_definition['primary__primary']['object_features']].index('circularity')
+            roisize_ind = [str(feature_name[0]) for feature_name in self.definitions.feature_definition['primary__primary']['object_features']].index('roisize')
             track_feature = self.get_feature_table('primary__primary', 'object_features')[:, roisize_ind]
 
         else:
@@ -679,7 +679,7 @@ class CH5Position(object):
 
         dset_tracking = self.get_tracking()
         dset_tracking_idx2 = dset_tracking['obj_idx2']
-        tracking_lookup_idx1 = self._get_tracking_lookup()
+        tracking_lookup_idx1 = self._get_tracking_lookup(dset_tracking)
 
         idx_list = []
         idx = start_idx
@@ -694,6 +694,42 @@ class CH5Position(object):
             idx_list.append(idx)
             if max_length is not None and len(idx_list) > max_length - 1:
                 break
+
+        return idx_list
+    
+    def _track_backwards_single(self, end_idx, type_, max_length=None):
+        track_on_feature = False
+        if type_ == 'first':
+            sel = 0
+        elif type_ == 'last':
+            sel = -1
+        elif type_ == 'biggest':
+            track_on_feature = True
+            roisize_ind = [str(feature_name[0]) for feature_name in self.definitions.feature_definition['primary__primary']['object_features']].index('roisize')
+            track_feature = self.get_feature_table('primary__primary', 'object_features')[:, roisize_ind]
+
+        else:
+            raise NotImplementedError('type not supported')
+
+        dset_tracking = self.get_tracking()
+        dset_tracking_idx2 = dset_tracking['obj_idx1']
+        tracking_lookup_idx1 = self._get_tracking_lookup(dset_tracking, 'obj_idx2')
+
+        idx_list = []
+        idx = end_idx
+        while True:
+            if idx in tracking_lookup_idx1:
+                next_p_idx = tracking_lookup_idx1[idx]
+            else:
+                break
+            if track_on_feature:
+                sel = numpy.argmax(track_feature[next_p_idx])
+            idx = dset_tracking_idx2[next_p_idx[sel]]
+            idx_list.append(idx)
+            if max_length is not None and len(idx_list) > max_length - 1:
+                break
+        
+        idx_list.reverse()
 
         return idx_list
     
@@ -740,6 +776,9 @@ class CH5Position(object):
 
     def track_biggest(self, start_idx, max_length=None):
         return self._track_single(start_idx, 'biggest', max_length=max_length)
+    
+    def track_backwards(self, end_idx, max_length=None):
+        return self._track_backwards_single(end_idx, 'first', max_length=max_length)
 
     def track_all(self, start_idx):
         dset_tracking = self.get_tracking()
@@ -1315,6 +1354,7 @@ class TestCH5Basic(CH5TestBase):
         a1 = self.pos.get_gallery_image(tuple(event))
         a2 = self.pos.get_gallery_image(tuple(event), 'secondary__expanded')
 
+    
     def testGallery3(self):
         event = self.pos.get_events()[42][0]
         tracks = self.pos.track_all(event)
@@ -1368,6 +1408,13 @@ class TestCH5Write(CH5TestBase):
         self.pos.del_object_feature_data('_test')
         assert (data == data_).all()
         
+    def testBackwardTracking(self):
+        events = self.pos.get_events()
+        ev = events[1]
+        ev2 = self.pos.track_backwards(ev[1])[-len(ev):]
+        assert (ev2 == ev).all()
+        
+    
 
 class TestCH5Examples(CH5TestBase):
 
@@ -1564,5 +1611,5 @@ def run_single_test(cls, func):
     unittest.TextTestRunner().run(writing)
 
 if __name__ == '__main__':
-    # run_single_test(TestCH5Write, 'testSimpleWrite')
-    unittest.main()
+    run_single_test(TestCH5Write, 'testBackwardTracking')
+#     unittest.main()
