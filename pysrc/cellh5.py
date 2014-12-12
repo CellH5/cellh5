@@ -1407,17 +1407,16 @@ class TestCH5Write(CH5TestBase):
         data_ = self.pos.get_object_feature_by_name('_test')
         self.pos.del_object_feature_data('_test')
         assert (data == data_).all()
-        
+
+
+class TestCH5Examples(CH5TestBase):
     def testBackwardTracking(self):
         events = self.pos.get_events()
         ev = events[1]
-        ev2 = self.pos.track_backwards(ev[1])[-len(ev):]
-        assert (ev2 == ev).all()
+        ev2 = self.pos.track_backwards(ev[-1])[-len(ev)+1:] + [ev[-1]] 
+        for a,b in zip(ev,ev2):
+            self.assertTrue(a==b)
         
-    
-
-class TestCH5Examples(CH5TestBase):
-
     def testGalleryMatrix(self):
         image = self.pos.get_gallery_image_matrix(range(20), (5, 6))
         import vigra
@@ -1611,5 +1610,6 @@ def run_single_test(cls, func):
     unittest.TextTestRunner().run(writing)
 
 if __name__ == '__main__':
-    run_single_test(TestCH5Write, 'testBackwardTracking')
-#     unittest.main()
+#     run_single_test(TestCH5Write, 'testBackwardTracking')
+    unittest.main()
+
