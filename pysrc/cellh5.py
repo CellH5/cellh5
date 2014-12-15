@@ -22,15 +22,20 @@ from itertools import chain, izip
 import functools
 import collections
 import datetime
+from collections import OrderedDict
 
 import pandas
 
 # import matplotlib
 # matplotlib.use('Qt4Agg', warn=False)
 import matplotlib.pyplot as mpl
+plt = mpl
 
 from matplotlib.colors import hex2color
 from contextlib import contextmanager
+from collections import OrderedDict
+
+from hmm_wrapper import HMMConstraint, HMMAgnosticEstimator, normalize, hmm
 
 
 version_num = (1, 1, 0)
@@ -344,8 +349,8 @@ class CH5Position(object):
         
         if color is None:
             class_color = self.get_class_color(index)
-            if class_color is None:
-                class_color = '#FFFFFF'
+        else:
+            class_color = color
 
         col_tmp = hex2rgb(class_color)
         for c in range(3):
@@ -525,6 +530,13 @@ class CH5Position(object):
                 pass
 
         return labels.reshape(index.shape)
+    
+    def get_class_label_index(self, index, object_='primary__primary'):
+        """return prediction indices """
+        index = to_index_array(index)
+        predidx = self.get_class_prediction(object_)['label_idx'][index]
+
+        return predidx
 
     def get_center(self, index, object_='primary__primary'):
         index = to_index_array(index)
@@ -540,8 +552,7 @@ class CH5Position(object):
         if not self.has_classification(object_):
             return
 
-        res = map(str, self.class_color_def(
-                tuple(self.get_class_label(index, object_)), object_))
+        res = map(str, self.class_color_def(tuple(self.get_class_label(index, object_)), object_))
         if len(res) == 1:
             return res[0]
         return res
@@ -570,13 +581,19 @@ class CH5Position(object):
             return res[0]
         return res
 
-    def class_color_def(self, class_labels, object_):
+    def class_color_def(self, class_labels, object_='primary__primary'):
+        label2color = OrderedDict()
         class_mapping = self.definitions.class_definition(object_)
-        return [class_mapping['color'][col - 1] for col in class_labels]
+        for cm in range(len(class_mapping)):
+            label2color[class_mapping["label"][cm]] = class_mapping["color"][cm] 
+        return [label2color[cl] for cl in class_labels]
 
     def class_name_def(self, class_labels, object_):
+        label2name = OrderedDict()
         class_mapping = self.definitions.class_definition(object_)
-        return [class_mapping['name'][col - 1] for col in class_labels]
+        for cm in range(len(class_mapping)):
+            label2name[class_mapping["label"][cm]] = class_mapping["name"][cm] 
+        return [label2name[cl] for cl in class_labels]
 
     def object_feature_def(self, object_='primary__primary'):
         return map(lambda x: str(x[0]),
@@ -931,7 +948,7 @@ class CH5File(object):
         return map(str, self._file_handle[path].keys())
 
     @memoize
-    def class_definition(self, object_):
+    def class_definition(self, object_="primary__primary"):
         return self._file_handle['/definition/feature/%s/object_classification/class_labels' % object_].value
 
     @property
@@ -1118,7 +1135,7 @@ class CH5MappedFileCollection(object):
         return self.cellh5_handles[plate].get_position(well, site)
     
     def get_object_classificaiton_dict(self, prop="name", object_='primary__primary'):
-        res = {}
+        res = OrderedDict()
         data = self.cellh5_handles.values()[0].class_definition(object_)
         for i in range(len(data)):
             res[i] = data[prop][i]
@@ -1342,7 +1359,28 @@ class CH5FateAnalysis(CH5Analysis):
             event_labels_all.append(event_labels)
             
         self.mapping["Event IDs"] = event_ids_all
-        self.mapping["Event labels"] = event_labels_all      
+        self.mapping["Event labels"] = event_labels_all
+        
+    
+    def __str__(self):
+        str_ =  "\nFound events"
+        if "Event IDs" in self.mapping:
+            str_+= " True\n"
+        else:
+            str_+= " False\n"    
+        str_+= "Found tracks (full trajectories from events)"
+        if "Track IDs" in self.mapping:
+            str_+= " True\n"
+        else:
+            str_+= " False\n"
+        str_+= "Class description\n"
+        str_+= "index\tlabel\tname\n"
+        class_dict = self.get_object_classificaiton_dict()
+        class_dict_label = self.get_object_classificaiton_dict("label")
+        for class_i in class_dict:
+            str_+= "%d\t%d\t%s\n" % (class_i, class_dict_label[class_i], class_dict[class_i])
+        str_+= "Caution: Class index will be used for all processing\n\n"
+        return str_
                       
     def track_events(self):
         
@@ -1359,7 +1397,7 @@ class CH5FateAnalysis(CH5Analysis):
             for _, event_idx in enumerate(event_ids):   
                 start_idx = event_idx[-1]
                 track = list(event_idx) + ch5_pos.track_first(start_idx)
-                class_labels = ch5_pos.get_class_label(track)
+                class_labels = ch5_pos.get_class_label_index(track)
                 track_labels.append(class_labels)
                 track_ids.append(track)
                 
@@ -1369,44 +1407,78 @@ class CH5FateAnalysis(CH5Analysis):
         
         self.mapping["Track IDs"] = pandas.Series(track_ids)
         self.mapping["Track Labels"] = pandas.Series(track_labels)
-               
-    def predict_hmm(self, class_selector, class_out_name):
-        print 'Predict hmm',
-        for w, p in self.tracks:
-            print w, 
-            cell5pos = self.mcellh5.get_position(w, p)
-            
-            hmm_labels_list = []
-            for k, t in enumerate(self.tracks[(w,p)][class_selector]):   
-                class_labels = t
-                if not isinstance(t, (list,)):
-                    class_labels = list(t)
-                    class_labels = numpy.array(map(int, t))
-                
-                hmm_class_labels = self.hmm.predict(numpy.array(class_labels-1)) + 1
-                hmm_labels_list.append(hmm_class_labels)
-
-                
-            #self.tracks[(w,p)]['class_labels'] = class_labels_list
-            self.tracks[(w,p)][class_out_name] = hmm_labels_list
-        print ' ... done'
-                              
-    def setup_hmm(self, k_classes, constraint_xml):
+                                    
+    def setup_hmm(self, transmat, constraint_xml, eps=0.001):
+        k_classes = transmat.shape[0]
         constraints = HMMConstraint(constraint_xml)
-        
-        transmat = numpy.array([
-                                [10 ,  0.1,  0.0,  0.0,  0.1],
-                                [0.1,  10 ,  0.1,  0.0,  0.1],
-                                [0.1,  0.0,  10 ,  0.1,  0.1],
-                                [0.1,  0.0,  0.0,  10 ,  0.1],
-                                [0.0,  0.0,  0.0,  0.0,  10 ],
-                                ])
-        transmat = normalize(transmat, axis=1, eps=0.001)
-        
+        transmat = normalize(transmat, axis=1, eps=eps)
         est = HMMAgnosticEstimator(k_classes, transmat, numpy.ones((k_classes, k_classes)), numpy.ones((k_classes, )) )
         est.constrain(constraints)
         self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
         self.hmm._set_emissionprob(est.emis) 
+        
+    def predict_hmm(self):
+
+        def _hmm_predict_(xxx):
+            plate = xxx["Plate"]
+            well = xxx["Well"]
+            site = xxx["Site"]
+            self.log.info('HMM prediction %s %s %s' % (plate, well, site))
+            
+            track_ids = xxx["Track IDs"]
+            track_labels = xxx["Track Labels"]
+            
+            hmm_labels_list = []
+
+            
+            for _, track_labels in enumerate(track_labels):               
+            
+                class_labels = track_labels
+                if not isinstance(track_labels, (list,)):
+                    class_labels = list(track_labels)  
+                hmm_class_labels = self.hmm.predict(class_labels)
+                hmm_labels_list.append(hmm_class_labels)
+
+            return hmm_labels_list, track_ids
+
+        hmm_track_labels, hmm_track_ids = pandas_apply(self.mapping, _hmm_predict_)
+        
+        self.mapping["HMM Track IDs"] = pandas.Series(hmm_track_ids)
+        self.mapping["HMM Track Labels"] = pandas.Series(hmm_track_labels)
+        
+    def print_tracks(self, track_name="HMM Track Labels", pattern="%d", ident=" "):
+        if track_name not in self.mapping:
+            RuntimeError("Tracks have not predicted yet. Use setup_hmm() and predict_hmm() first!")
+        for i, xxx in self.mapping.iterrows():
+            plate = xxx["Plate"]
+            well = xxx["Well"]
+            site = xxx["Site"]
+            track_labels = xxx[track_name]
+            print "Plate '%s'\tWell '%s'\tSite '%s'" % (plate, well, site)
+            print "*"*50
+            for track_id, track in enumerate(track_labels):
+                print ident, "%03d:" % track_id, "".join(map(lambda xxx: pattern % xxx, track)) 
+                
+    def show_track(self, event_id):
+        ids_1 = self.mapping["Track IDs"][0]
+        hmm_labels = self.mapping["HMM Track Labels"][0]
+        
+        plate = self.mapping["Plate"][0]
+        well = self.mapping["Well"][0]
+        site = self.mapping["Site"][0]
+        
+        ch5_pos = self.get_ch5_position(plate, well, site)
+        
+        img_1 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(id) for id in ids_1[event_id]], 1)
+        
+        hmm_colors = [str(ch5_pos.definitions.class_definition()["color"][k]) for k in hmm_labels[event_id]]
+        img_2 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(id, color=hmm_colors[k]) for k, id in enumerate(ids_1[event_id])], 1)
+        
+        plt.imshow(numpy.concatenate((img_1, img_2)), interpolation='nearest')
+        plt.gca().set_aspect(1)
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
              
 
 ##################
