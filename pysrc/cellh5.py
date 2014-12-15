@@ -54,7 +54,7 @@ def pandas_apply(df, func):
        Note, pandas integrated apply fun will drive you nuts...
        
        df: pandas DataFrame
-       func: function expecting a row aa Series over the columns of df
+       func: function expecting a row a Series over the columns of df
        
        returns list of row results
     """
@@ -805,7 +805,6 @@ class CH5Position(object):
                 res.extend(all_paths_of_tree(head_id))
             return res
 
-
 class CH5CachedPosition(CH5Position):
     def __init__(self, *args, **kwargs):
         super(CH5CachedPosition, self).__init__(*args, **kwargs)
@@ -873,7 +872,6 @@ class CH5CachedPosition(CH5Position):
     def clear_cache(self):
         if hasattr(self, '_memoize__cache'):
             self._memoize__cache = {}
-
 
 class CH5File(object):
     def __init__(self, filename, mode='a', cached=True):
@@ -1030,7 +1028,6 @@ class CH5File(object):
         except:
             pass
 
-
 class CH5MappedFile(CH5File):
     def read_mapping(self, mapping_file, sites=None, rows=None, cols=None, locations=None, plate_name=''):
         self.mapping_file = mapping_file
@@ -1127,6 +1124,10 @@ class CH5MappedFileCollection(object):
             res[i] = data[prop][i]
         return res
         
+####################
+### CH5 Analysis ###
+####################        
+
 class CH5Analysis(CH5MappedFileCollection):
     def __init__(self, name="CH5Analysis", mapping_files=None, cellh5_files=None,
                        sites=None, rows=None, cols=None, locations=None, output_dir=None, init=True):
@@ -1318,6 +1319,101 @@ class CH5Analysis(CH5MappedFileCollection):
         return res
 
 
+
+class CH5FateAnalysis(CH5Analysis):
+    """
+    Implementation of Hidden Markov Model Smoothing of class transitions in detected events
+    This class is used to pre-process temporal data to foster more precise mitotic timings,
+    fate categories (e.g. death in mitosis), and correlations to kinetics in a additional 
+    channel / color
+    """
+    def read_events(self, onset_frame=0, time_limits=(0, numpy.Inf)):    
+        event_ids_all = []
+        event_labels_all = []
+        for _, (plate, well, site) in self.mapping[['Plate', 'Well', 'Site']].iterrows(): 
+            self.log.info('Reading %s %s %s for object' % (plate, well, site))
+            ch5_pos = self.get_ch5_position(plate, well, site)    
+
+            event_ids = ch5_pos.get_events()            
+            event_ids = [e for e in event_ids if ch5_pos.get_time_idx(time_limits[0] <= e[onset_frame]) <= time_limits[1]]
+            event_ids_all.append(event_ids)
+            
+            event_labels = [ch5_pos.get_class_label(e) for e in event_ids]
+            event_labels_all.append(event_labels)
+            
+        self.mapping["Event IDs"] = event_ids_all
+        self.mapping["Event labels"] = event_labels_all      
+                      
+    def track_events(self):
+        
+        def _track_events_(xxx):
+            plate = xxx["Plate"]
+            well = xxx["Well"]
+            site = xxx["Site"]
+            ch5_pos = self.get_ch5_position(plate, well, site)
+            self.log.info('Tracking events  %s %s %s' % (plate, well, site))
+            
+            event_ids = xxx["Event IDs"]
+            track_ids = []
+            track_labels = []
+            for _, event_idx in enumerate(event_ids):   
+                start_idx = event_idx[-1]
+                track = list(event_idx) + ch5_pos.track_first(start_idx)
+                class_labels = ch5_pos.get_class_label(track)
+                track_labels.append(class_labels)
+                track_ids.append(track)
+                
+            return track_ids, track_labels
+
+        track_ids, track_labels = pandas_apply(self.mapping, _track_events_)
+        
+        self.mapping["Track IDs"] = pandas.Series(track_ids)
+        self.mapping["Track Labels"] = pandas.Series(track_labels)
+               
+    def predict_hmm(self, class_selector, class_out_name):
+        print 'Predict hmm',
+        for w, p in self.tracks:
+            print w, 
+            cell5pos = self.mcellh5.get_position(w, p)
+            
+            hmm_labels_list = []
+            for k, t in enumerate(self.tracks[(w,p)][class_selector]):   
+                class_labels = t
+                if not isinstance(t, (list,)):
+                    class_labels = list(t)
+                    class_labels = numpy.array(map(int, t))
+                
+                hmm_class_labels = self.hmm.predict(numpy.array(class_labels-1)) + 1
+                hmm_labels_list.append(hmm_class_labels)
+
+                
+            #self.tracks[(w,p)]['class_labels'] = class_labels_list
+            self.tracks[(w,p)][class_out_name] = hmm_labels_list
+        print ' ... done'
+                              
+    def setup_hmm(self, k_classes, constraint_xml):
+        constraints = HMMConstraint(constraint_xml)
+        
+        transmat = numpy.array([
+                                [10 ,  0.1,  0.0,  0.0,  0.1],
+                                [0.1,  10 ,  0.1,  0.0,  0.1],
+                                [0.1,  0.0,  10 ,  0.1,  0.1],
+                                [0.1,  0.0,  0.0,  10 ,  0.1],
+                                [0.0,  0.0,  0.0,  0.0,  10 ],
+                                ])
+        transmat = normalize(transmat, axis=1, eps=0.001)
+        
+        est = HMMAgnosticEstimator(k_classes, transmat, numpy.ones((k_classes, k_classes)), numpy.ones((k_classes, )) )
+        est.constrain(constraints)
+        self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
+        self.hmm._set_emissionprob(est.emis) 
+             
+
+##################
+### Unit tests ###
+##################
+
+
 class CH5TestBase(unittest.TestCase):
 
     def setUp(self):
@@ -1407,7 +1503,6 @@ class TestCH5Write(CH5TestBase):
         data_ = self.pos.get_object_feature_by_name('_test')
         self.pos.del_object_feature_data('_test')
         assert (data == data_).all()
-
 
 class TestCH5Examples(CH5TestBase):
     def testBackwardTracking(self):
