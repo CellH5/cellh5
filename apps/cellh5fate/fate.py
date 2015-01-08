@@ -1,4 +1,7 @@
 import numpy
+import faulthandler
+faulthandler.enable()
+
 import pylab as plt
 import cellh5
 import cPickle as pickle
@@ -1646,6 +1649,45 @@ EXP_LOOKUP = {
              'onset_frame': 4, # in frames
              },
               
+          '002760':
+            {
+             'ch5_file': "M:/experiments/Experiments_002700/002760/_meta/Analysis/time lapse half plate/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002700/002760/_meta/Mapping/002760.txt",
+             'time_lapse': 4.6, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002700/002760/_meta/fate',
+             'events_before_frame': 156, # in frames
+             'onset_frame': 4, # in frames
+             },
+              
+          '002773':
+            {
+             'ch5_file': "M:/experiments/Experiments_002700/002773/_meta/Analysis/time lapse half plate/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002700/002773/_meta/Mapping/002773.txt",
+             'time_lapse': 4.8, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002700/002773/_meta/fate',
+             'events_before_frame': 150, # in frames
+             'onset_frame': 4, # in frames
+             },
+              
+          '002787':
+            {
+             'ch5_file': "M:/experiments/Experiments_002700/002787/_meta/Analysis/time lapse half plate/hdf5/_all_positions.ch5",
+             'mapping_file': "M:/experiments/Experiments_002700/002787/_meta/Mapping/002787.txt",
+             'time_lapse': 4.5, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002700/002787/_meta/fate',
+             'events_before_frame': 160, # in frames
+             'onset_frame': 4, # in frames
+             },
+              
           '002614_1' :
             {
              'ch5_file': "M:/experiments/Experiments_002600/002614/_meta/Analysis_classifie_anaphase_corrected/hdf5/_all_positions.ch5",
@@ -1851,7 +1893,7 @@ if __name__ == "__main__":
 #     fate_mutli_bi('002614_1')
 #     fate_mutli_bi('002614_2')
     
-    fate_mutli_bi('002666_1')
+#     fate_mutli_bi('002666_1')
 #     fate_mutli_bi('002666_2')
 
 #     fate_mutli_bi('002587')
@@ -1863,5 +1905,7 @@ if __name__ == "__main__":
 #     fate_mitotic_time('002415')
 #     fate_mitotic_time('002411')
 #     fate_mitotic_time('002587')
+    fate_mitotic_time('002760')
+    
     print 'FINISH'
 

@@ -10,6 +10,8 @@
 *.pkl
 *.egg
 *.egg-info
+*.png
+*.jpg
 dist
 build
 eggs

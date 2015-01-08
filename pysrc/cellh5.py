@@ -66,7 +66,32 @@ def pandas_apply(df, func):
     res = []
     for i, row in df.iterrows():
         res.append(func(row))
-    return zip(*res)
+    if isinstance(res[0], (tuple,)):
+        return zip(*res)
+    else:
+        return res
+    
+def pandas_ms_apply(df, func, n_cores=10):
+    from multiprocessing import Pool
+    """Helper function for pandas DataFrame, when dealing with entries, which are numpy multi-dim arrays.
+       Note, pandas integrated apply fun will drive you nuts...
+       
+       df: pandas DataFrame
+       func: function expecting a row a Series over the columns of df
+       
+       returns list of row results
+    """
+    data = []
+    for _, row in df.iterrows():
+        data.append(row)
+    
+    pool = Pool(processes=9)
+    res = pool.map(func, data)
+    if isinstance(res[0], (tuple,)):
+        return zip(*res)
+    else:
+        return res
+
         
     
 
@@ -1168,7 +1193,13 @@ class CH5Analysis(CH5MappedFileCollection):
         
     def set_output_dir(self, output_dir):
         if self.output_dir is None:
-            self.output_dir = self.name + "/" + datetime.datetime.now().strftime("%y-%m-%d-%H-%M")
+            debug = ""
+            try:
+                import pydevd
+                debug = "d_"
+            except:
+                pass
+            self.output_dir = self.name + "/" + debug + datetime.datetime.now().strftime("%y-%m-%d-%H-%M")
             try:
                 os.makedirs(self.output_dir)
             except:
@@ -1194,8 +1225,34 @@ class CH5Analysis(CH5MappedFileCollection):
                                 (self.mapping['Well'] == w) & 
                                 (self.mapping['Site'] == p)
                                 ][['siRNA ID', 'Gene Symbol']].iloc[0])
+    
+    def cluster_run(self, cluster_class, cluster_on=('neg', 'target', 'pos'), feature_set="PCA", max_samples=1000, data=None, **clusterargs):
+        if data is None:
+            data = self.get_data(cluster_on, feature_set)
+            
+        self.cluster_class_on_all = cluster_class(**clusterargs)
+        if data.shape[0] > max_samples:
+            idx = range(data.shape[0])
+            numpy.random.seed(43)
+            numpy.random.shuffle(idx)
+            idx = idx[:max_samples]
+            data = data[idx, :]
         
-    def pca(self, pca_dims=None, train_on=('neg', 'target', 'pos'), pca_cls=None, **pca_args):
+        self.cluster_class_on_all.fit(data)
+
+        
+        def _cluster_(xxx):
+            if xxx["Object count"] > 0:
+                data = xxx[feature_set]
+                cluster = self.cluster_class_on_all.predict(data)
+                return cluster 
+            else:
+                return []
+        
+        cluster = pandas_apply(self.mapping, _cluster_)
+        self.mapping['Simple clustering'] = pandas.Series(cluster)
+        
+    def pca_run(self, pca_dims=None, train_on=('neg', 'target', 'pos'), pca_cls=None, **pca_args):
         training_matrix = self.get_data(train_on)
         if pca_cls is None:
             from sklearn.decomposition import PCA
@@ -1213,7 +1270,7 @@ class CH5Analysis(CH5MappedFileCollection):
         res = pandas.Series(self.mapping['Object features'][self.mapping['Object count'] > 0].map(_project_on_pca_))
         self.mapping['PCA'] = res
          
-    def read_feature(self, object_="primary__primary", time_frames=None, remove_feature=(18, 62, 92, 122, 152), 
+    def read_feature(self, object_="primary__primary", time_frames=None, remove_feature=(), 
                            read_classification=True, idx_selector_functor=None):
 
         # TODO
@@ -1287,10 +1344,10 @@ class CH5Analysis(CH5MappedFileCollection):
         
         nans = numpy.isnan(all_data)
         if nans.any():
-            print "Axes 1"
-            print nans.any(1)
-            print "Axes 0"
-            print nans.any(0)
+            print "Axes 1 features"
+            print numpy.nonzero(nans.any(1))
+            print "Axes 0 samples"
+            print numpy.nonzero(nans.any(0))
             raise RuntimeError("NaNs in data")
         
         self.norm_mean = all_data.mean(0)
@@ -1314,7 +1371,36 @@ class CH5Analysis(CH5MappedFileCollection):
             return res, numpy.array(list(chain.from_iterable(index)))
         return res
     
-    def get_data(self, in_group, type_='Object features', in_classes=None):
+    def get_data_sampled(self, in_group, in_classes, n_sample=10000, in_class_type = 'Object classification label', type_='Object features'):
+        # Row selection
+        
+        assert sum(in_classes.values()) - 1 < 0.000001
+        object_count_sel = self.mapping['Object count'] > 0
+        in_group_sel = self.mapping['Group'].isin(in_group)
+        
+        selection = numpy.logical_and(object_count_sel, in_group_sel)
+        selected = self.mapping[selection].reset_index()
+        res = numpy.concatenate(list(selected[type_]))
+        
+        # Single cell selection
+        
+        indicies = []
+        
+        class_labels = numpy.concatenate(selected[in_class_type])
+        for in_class, in_class_ratio in in_classes.items():
+            i_samples = int(in_class_ratio * n_sample)
+            samples = numpy.nonzero(numpy.in1d(class_labels, in_class))[0]
+            numpy.random.shuffle(samples)
+            if i_samples > len(samples):
+                raise RuntimeError("Not enough classes '%r' for sampled selection (want %d, available %d)" % (in_class, i_samples, len(samples)))
+            indicies.append(samples[:i_samples])
+            
+        indicies = numpy.concatenate(indicies)
+            
+        return res[indicies, :]
+    
+    
+    def get_data(self, in_group, type_='Object features', in_classes=None, in_class_type='Object classification label'):
         # Row selection
         object_count_sel = self.mapping['Object count'] > 0
         in_group_sel = self.mapping['Group'].isin(in_group)
@@ -1326,7 +1412,7 @@ class CH5Analysis(CH5MappedFileCollection):
         # Single cell seleciton
         
         if in_classes is not None:
-            class_labels = numpy.concatenate(selected['Object classification label'])
+            class_labels = numpy.concatenate(selected[in_class_type])
             single_selection = numpy.in1d(class_labels, in_classes)
             res = res[single_selection, :]
 
@@ -1474,7 +1560,9 @@ class CH5FateAnalysis(CH5Analysis):
         hmm_colors = [str(ch5_pos.definitions.class_definition()["color"][k]) for k in hmm_labels[event_id]]
         img_2 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(id, color=hmm_colors[k]) for k, id in enumerate(ids_1[event_id])], 1)
         
+        
         plt.imshow(numpy.concatenate((img_1, img_2)), interpolation='nearest')
+        plt.title("Uncorrected and corrected class labels for event with id %d" % event_id)
         plt.gca().set_aspect(1)
         plt.axis("off")
         plt.tight_layout()

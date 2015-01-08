@@ -56,37 +56,55 @@ def hex_to_rgb(hex_string):
 
 class CellH5Analysis(object):
     output_formats = ('png',)
-    def __init__(self, name, mapping_files, cellh5_files, output_dir=None, 
-                       sites=None, rows=None, cols=None, locations=None):
+    def __init__(self, name="", mapping_files=None, cellh5_files=None, output_dir=None, 
+                       sites=None, rows=None, cols=None, locations=None, init=True):
         self.name = name
         self.mapping_files = mapping_files
         self.cellh5_files = cellh5_files
         self.output_dir = output_dir
         self.time_lapse = {}
         self.cellh5_handles = {}
-        self.pca_dims = 239
-        
-        # read mappings for all plates
-        mappings = []
-        for plate_name, mapping_file in mapping_files.items():
-            assert plate_name in cellh5_files.keys()
-            cellh5_file = cellh5_files[plate_name]
-            plate_cellh5  = cellh5.CH5MappedFile(cellh5_file)
-            plate_cellh5.read_mapping(mapping_file, sites=sites, rows=rows, cols=cols, locations=locations, plate_name=plate_name)
-            plate_mappings = plate_cellh5.mapping
-            time_lapse = plate_cellh5.current_pos.get_time_lapse()
-            if time_lapse is not None:
-                self.time_lapse[plate_name] = time_lapse / 60.0
-                log.info("Found time lapse of plate '%s' = %5.3f min" % (plate_name, self.time_lapse[plate_name]))
-#             plate_cellh5.close()
-            self.cellh5_handles[plate_name] = plate_cellh5
-            
-            
-            mappings.append(plate_mappings)
-        self.mapping = pandas.concat(mappings, ignore_index=True)
-        del mappings
-
         self.set_output_dir(output_dir)
+        
+        if init:
+            # read mappings for all plates
+            mappings = []
+            for plate_name, mapping_file in mapping_files.items():
+                assert plate_name in cellh5_files.keys()
+                cellh5_file = cellh5_files[plate_name]
+                plate_cellh5  = cellh5.CH5MappedFile(cellh5_file)
+                plate_cellh5.read_mapping(mapping_file, sites=sites, rows=rows, cols=cols, locations=locations, plate_name=plate_name)
+                plate_mappings = plate_cellh5.mapping
+                time_lapse = plate_cellh5.current_pos.get_time_lapse()
+                if time_lapse is not None:
+                    self.time_lapse[plate_name] = time_lapse / 60.0
+                    log.info("Found time lapse of plate '%s' = %5.3f min" % (plate_name, self.time_lapse[plate_name]))
+    #             plate_cellh5.close()
+                self.cellh5_handles[plate_name] = plate_cellh5
+                
+                
+                mappings.append(plate_mappings)
+            self.mapping = pandas.concat(mappings, ignore_index=True)
+            del mappings
+        
+    def save(self, filename):
+        import cPickle as pickle
+        export_dict = {}
+        for nn in ['name', 'mapping_files', 'cellh5_files', 'output_dir', 'time_lapse', 'pca_dims',]:
+            export_dict[nn] = getattr(self, nn)
+            
+        pickle.dump((export_dict, self.mapping), open(filename, 'wb'))
+        
+    @staticmethod
+    def load(filename):
+        import cPickle as pickle
+        (export_dic, mapping) = pickle.load(open(filename,'r'))
+        ca = CellH5Analysis(init=False)
+        for nn in ['name', 'mapping_files', 'cellh5_files', 'output_dir', 'time_lapse', 'pca_dims',]:
+            setattr(ca, nn, export_dic[nn])
+        ca.mapping = mapping
+        return ca
+            
         
     def close(self):
         for p, c in self.cellh5_handles.items():
@@ -128,7 +146,7 @@ class CellH5Analysis(object):
         event_id_list = []   
         for _, (plate, w, p) in self.mapping[['Plate', 'Well','Site']].iterrows(): 
             try:
-                cellh5file = cellh5.CH5File(self.cellh5_files[plate])
+                cellh5file = cellh5.CH5File(self.cellh5_files[plate], 'r')
                 cellh5pos = cellh5file.get_position(w, str(p))
             except:
                 print "Positon", (w, p), "is corrupt. Process again with CellCognition"
@@ -243,60 +261,43 @@ class CellH5Analysis(object):
                 hmm_labels_list.append(hmm_class_labels)
             all_hmm_labels_list.append(hmm_labels_list)
         self.mapping['Event HMM track labels'] = pandas.Series(all_hmm_labels_list)
-        
-    def _remove_nan_rows(self, data):
-        data = data[:, self._non_nan_feature_idx]
-        if numpy.any(numpy.isnan(data)):
-            print 'Warning: Nan values in prediction found. Trying to delete examples:'
-            nan_rows = numpy.unique(numpy.where(numpy.isnan(data))[0])
-            self._non_nan_sample_idx = [x for x in xrange(data.shape[0]) if x not in nan_rows]
-            print 'deleting %d of %d' % (data.shape[0] - len(self._non_nan_sample_idx), data.shape[0])
-            
-            # get rid of nan samples (still)
-            data = data[self._non_nan_sample_idx, :]
-        data = (data - self._normalization_means) / self._normalization_stds
-        return data
     
-    def train_pca(self, train_on=('neg', 'pos', 'target' ), pca_type=PCA):
+    def pca(self, pca_dims=None, train_on=('neg', 'target', 'pos'), pca_type=PCA, whiten=False):
         training_matrix = self.get_data(train_on)
-        training_matrix = self.normalize_training_data(training_matrix)
-        log.info('Compute PCA (%s): found NaNss in features after normalization? %r' % (str(pca_type), numpy.any(numpy.isnan(training_matrix))))
-        self.pca = pca_type(self.pca_dims)
-        #self.pca = KernelPCA(self.pca_dims, kernel='rbf', gamma=self.gamma, fit_inverse_transform=False,)
+        log.info('Compute PCA (%s): on matrix shape %r' % (str(pca_type), training_matrix.shape))
+        if pca_dims is None:
+            pca_dims=0.99
+        self.pca = pca_type(pca_dims, whiten=whiten)
         self.pca.fit(training_matrix)
+        log.info('Compute PCA (%s): %d dimensions used' % (str(pca_type), self.pca.n_components_))
         
-        #print "PCA dimension:", ", ".join(["%d for %4.2f" % (numpy.nonzero(self.pca.fracs.cumsum() >= fr)[0][0], fr) for fr in [0.8, 0.9, 0.95, 0.99]])
-        
-    def predict_pca(self):
-        log.info('Project onto PC')
-        def _project_on_pca(ma):
-            if len(ma) == 0:
-                return numpy.NAN
-            else:
-                ma = self._remove_nan_rows(ma)
-                return self.pca.transform(ma)[:, :self.pca_dims]
-        res = pandas.Series(self.mapping['Object features'][self.mapping['Object count'] > 0].map(_project_on_pca))
-        stds = numpy.concatenate(list(res)).std(0)
-        res2 = res.apply(lambda x: x / stds)
+        def _project_on_pca_(xxx):
+            return self.pca.transform(xxx)
+        res = pandas.Series(self.mapping['Object features'][self.mapping['Object count'] > 0].map(_project_on_pca_))
         self.mapping['PCA'] = res
     
     def set_read_feature_time_predicate(self, cmp, value):
         self._rf_time_predicate_cmp = cmp
         self._rf_time_predicate_value = value
             
-    def read_feature(self, idx_selector_functor=None, object_="primary__primary"):
+    def read_feature(self, idx_selector_functor=None, object_="primary__primary", remove_feature=(18, 62, 92, 122, 152)):
         # init new columns
         self.mapping['Object features'] = 0
         self.mapping['Object count'] = 0
         self.mapping['CellH5 object index'] = 0
-        
+        self.mapping['Object classification label'] = 0
         # read features from each plate
         selector_output_file = open(self.output('_read_feature_selection.txt'), 'wb')
         
-        
         for plate_name, cellh5_file in self.cellh5_files.items(): 
             ch5_file = cellh5.CH5File(cellh5_file)
+            
+#             feat_names = map(str, ch5_file.feature_definition[object_]['object_features']['name'])
+            features_keep = [na for na in range(239) if na not in remove_feature]
+#             self.feature_names = [feat_names[na] for na in features_keep]
+            
             features = []
+            labels = []
             object_counts = []
             c5_object_index = []
             c5_object_index_not = []
@@ -309,6 +310,7 @@ class CellH5Analysis(object):
                 ch5_pos = ch5_file.get_position(well, site)
                 
                 feature_matrix = ch5_pos.get_object_features(object_=object_)
+                classi_labels = ch5_pos.get_class_prediction(object_=object_)['label_idx']
                 time_idx = ch5_pos['object']["primary__primary"]['time_idx']
                 log.info('Reading %s %s %s %d %s for object %s using time %r %r' % (plate_name, 
                                                                      well, 
@@ -329,12 +331,16 @@ class CellH5Analysis(object):
                     if idx_selector_functor is not None:
                         idx = idx_selector_functor(ch5_pos, plate_name, treatment, self.output_dir)
                     
+                    feature_matrix = feature_matrix[:, features_keep]
                     feature_matrix = feature_matrix[idx, :]
+                    
+                    label_vector = classi_labels[idx]
                     object_count = len(feature_matrix)
                     selector_output_file.write("%s\t%s\t%s\t%d\t%d\n" % (plate_name, well, treatment, idx.sum(), len(idx)))
                     
                 else:
                     feature_matrix = []
+                    label_vector = []
                     object_count = 0
                     idx =[]
                 
@@ -342,8 +348,10 @@ class CellH5Analysis(object):
                 
                 if object_count > 0:
                     features.append(feature_matrix)
+                    labels.append(label_vector)
                 else:
                     features.append(numpy.zeros((0, )))
+                    labels.append(numpy.zeros((0, )))
                 c5_object_index.append(numpy.where(idx)[0])
                 c5_object_index_not.append(numpy.where(numpy.logical_not(idx))[0])
                 
@@ -354,31 +362,57 @@ class CellH5Analysis(object):
             self.mapping.loc[plate_idx, 'Object count'] = object_counts
             self.mapping.loc[plate_idx, 'CellH5 object index'] = c5_object_index
             self.mapping.loc[plate_idx, 'CellH5 object index excluded'] = c5_object_index_not
+            self.mapping.loc[plate_idx, 'Object classification label'] = labels
         selector_output_file.close()
+        self.check_standardaize_features()
+        
+    def check_standardaize_features(self):
+        all_data = self.get_data(('neg', 'target', 'pos'))
+        
+        nans = numpy.isnan(all_data)
+        if nans.any():
+            raise RuntimeError("NaNs in data")
+        
+        self.norm_mean = all_data.mean(0)
+        self.norm_stds = all_data.std(0)
+        
+        if (self.norm_stds < 10e-9).any():
+            raise RuntimeError("stds get low")
+        
+        for matrix_i in  self.mapping[self.mapping["Object count"] > 0]["Object features"]:
+            matrix_i -= self.norm_mean
+            matrix_i /= self.norm_stds    
             
-    def get_data(self, target, type_='Object features'):
-        tmp = self.mapping[self.mapping['Group'].isin(target) & (self.mapping['Object count'] > 0)].reset_index()
-        res = numpy.concatenate(list(tmp[type_]))
-        log.info('get_data for %r positions' % len(tmp['siRNA ID']))
-        log.info('get_data for treatment %r with training matrix shape %r' % (list(tmp['siRNA ID'].unique()), res.shape))
-
-        return res
+            
+    def get_column_as_matrix(self, column_name):
+        sel = self.mapping["Object count"] > 0
+        return numpy.concatenate(list(self.mapping[sel][column_name]))
     
-    def normalize_training_data(self, data):
-        self._normalization_means = data.mean(axis=0)
-        self._normalization_stds = data.std(axis=0)
+    def get_data(self, in_group, type_='Object features', in_classes=None):
+        # Row selection
+        object_count_sel = self.mapping['Object count'] > 0
+        in_group_sel = self.mapping['Group'].isin(in_group)
         
-        data = (data - self._normalization_means) / self._normalization_stds
+        selection = numpy.logical_and(object_count_sel, in_group_sel)
+        selected = self.mapping[selection].reset_index()
+        res = numpy.concatenate(list(selected[type_]))
         
-        nan_cols = numpy.unique(numpy.where(numpy.isnan(data))[1])
-        self._non_nan_feature_idx = [x for x in range(data.shape[1]) if x not in nan_cols]
-        data = data[:, self._non_nan_feature_idx]
-         
-        self._normalization_means = self._normalization_means[self._non_nan_feature_idx]
-        self._normalization_stds = self._normalization_stds[self._non_nan_feature_idx]
-        log.info(' normalize: found nans? %r' % numpy.any(numpy.isnan(data)))
+        # Single cell seleciton
         
-        return data                        
+        if in_classes is not None:
+            class_labels = numpy.concatenate(selected['Object classification label'])
+            single_selection = numpy.in1d(class_labels, in_classes)
+            res = res[single_selection, :]
+            
+        
+        
+        log.info('get_data for %r positions' % len(selected))
+        log.info('get_data for treatment %r with training matrix shape %r' % (list(selected['siRNA ID'].unique()), res.shape))
+
+        if self.fs is not None:
+            res = res[:,self.fs]
+        return res
+                        
         
     def event_curves(self, event_selector, 
                            region_name,
