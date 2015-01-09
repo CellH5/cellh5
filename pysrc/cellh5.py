@@ -28,17 +28,17 @@ import pandas
 
 # import matplotlib
 # matplotlib.use('Qt4Agg', warn=False)
-import matplotlib.pyplot as mpl
-plt = mpl
+import matplotlib.pyplot as plt
 
 from matplotlib.colors import hex2color
 from contextlib import contextmanager
 from collections import OrderedDict
 
-from hmm_wrapper import HMMConstraint, HMMAgnosticEstimator, normalize, hmm
+from hmm_wrapper import HMMConstraint, HMMAgnosticEstimator, normalize, hmm 
 
 
-version_num = (1, 1, 0)
+
+version_num = (1, 2, 0)
 version = '.'.join([str(n) for n in version_num])
 
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
@@ -1195,7 +1195,7 @@ class CH5Analysis(CH5MappedFileCollection):
         if self.output_dir is None:
             debug = ""
             try:
-                import pydevd
+                import pydevd  # @UnresolvedImport
                 debug = "d_"
             except:
                 pass
@@ -1684,8 +1684,8 @@ class TestCH5Examples(CH5TestBase):
         tub = self.pos.get_image(0, 1)
 
         # Print part of the images prepare image plot
-        fig = mpl.figure(frameon=False)
-        ax = mpl.Axes(fig, [0., 0., 1., 1.])
+        fig = plt.figure(frameon=False)
+        ax = plt.Axes(fig, [0., 0., 1., 1.])
         ax.set_axis_off()
         fig.add_axes(ax)
         ax.imshow(h2b[400:600, 400:600], cmap='gray')
@@ -1704,8 +1704,8 @@ class TestCH5Examples(CH5TestBase):
         center = self.pos.get_feature_table('primary__primary', 'center')
 
         # prepare image plot
-        fig = mpl.figure(frameon=False)
-        ax = mpl.Axes(fig, [0., 0., 1., 1.])
+        fig = plt.figure(frameon=False)
+        ax = plt.Axes(fig, [0., 0., 1., 1.])
         ax.set_axis_off()
         fig.add_axes(ax)
         ax.imshow(h2b, cmap='gray')
@@ -1747,7 +1747,7 @@ class TestCH5Examples(CH5TestBase):
             [predictions[nucleus['time_idx'] == time_idx]['label_idx'] for time_idx in range(time_max)]))
 
         # plot it
-        fig = mpl.figure()
+        fig = plt.figure()
         ax = fig.add_subplot(111)
 
         for i in range(1, n_classes):
