@@ -1604,15 +1604,68 @@ class CH5FateAnalysis(CH5Analysis):
             print "Plate '%s'\tWell '%s'\tSite '%s'" % (plate, well, site)
             print "*"*50
             for track_id, track in enumerate(track_labels):
-                print ident, "%03d:" % track_id, "".join(map(lambda xxx: pattern % xxx, track)) 
+                print ident, "%03d:" % track_id, "".join(map(lambda xxx: pattern % xxx, track))
                 
-    def show_track(self, event_id):
-        ids_1 = self.mapping["Track IDs"][0]
-        hmm_labels = self.mapping["HMM Track Labels"][0]
+    def report_to_csv(self, output_filename="report.txt", export_images=True):
+        import csv
+        header = ['Plate', 'Well', 'Site', 'Type', 'Event_id', 'Length', 'Frame_first_appearance', 'Class_first_appearance', 
+                  'Frames', 'Raw_classification', 'Hmm_classification']
         
-        plate = self.mapping["Plate"][0]
-        well = self.mapping["Well"][0]
-        site = self.mapping["Site"][0]
+        with open(output_filename, 'wb') as fh:
+            writer = csv.DictWriter(fh, header, delimiter="\t", lineterminator='\n')
+            writer.writeheader()
+            for i, xxx in self.mapping.iterrows():
+                plate = xxx["Plate"]
+                well = xxx["Well"]
+                site = xxx["Site"]
+                ch5_pos = self.get_ch5_position(plate, well, site)
+                
+                index_data = xxx["Track IDs"]
+                raw_data = xxx["Track Labels"]
+                hmm_data = xxx["HMM Track Labels"]
+                
+                assert len(index_data) == len(raw_data) == len(hmm_data)
+                
+                line_dict = {}
+                for id, (index, raw_class, hmm_class) in enumerate(zip(index_data, raw_data, hmm_data)):
+                    if id == 21:
+                        print 'debug'
+                    frames = ch5_pos.get_time_idx2(index)
+                    assert len(frames) == len(hmm_class) == len(raw_class)
+                    back_track =  ch5_pos.track_backwards(index[0])
+                    if len(back_track) > 0:
+                        start_index = back_track[0]
+                    else:
+                        start_index = index[0]
+                        
+                    start_frame = ch5_pos.get_time_idx(start_index)
+                    start_class = ch5_pos.get_class_name(start_index)
+                    
+                    line_dict['Event_id'] = id
+                    line_dict['Event_id'] = id
+                    line_dict['Plate'] = plate
+                    line_dict['Well'] = well
+                    line_dict['Site'] = site
+                    line_dict['Type'] = "event"
+                    line_dict['Length'] = len(index)
+                    line_dict['Frame_first_appearance'] = start_frame
+                    line_dict['Class_first_appearance'] = start_class
+                    line_dict['Frames'] =  " ".join(map(str,frames))
+                    line_dict['Raw_classification'] = " ".join(map(str,raw_class))
+                    line_dict['Hmm_classification'] = " ".join(map(str,hmm_class))
+                    
+                    writer.writerow(line_dict)
+                    
+                    if export_images:
+                        import vigra
+                        img = self.get_track_image(plate, well, site, id)
+                        vigra.impex.writeImage(img.swapaxes(1,0), "%s_%s_%s_%d.png" % (plate, well, site, id))
+                    
+    def get_track_image(self, plate, well, site, event_id):
+        row = self.mapping[(self.mapping["Plate"] == plate) & (self.mapping["Well"] == well) & (self.mapping["Site"] == site)]
+        
+        ids_1 = row["Track IDs"][0]
+        hmm_labels = row["HMM Track Labels"][0]
         
         ch5_pos = self.get_ch5_position(plate, well, site)
         
@@ -1621,13 +1674,7 @@ class CH5FateAnalysis(CH5Analysis):
         hmm_colors = [str(ch5_pos.definitions.class_definition()["color"][k]) for k in hmm_labels[event_id]]
         img_2 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(id, color=hmm_colors[k]) for k, id in enumerate(ids_1[event_id])], 1)
         
-        
-        plt.imshow(numpy.concatenate((img_1, img_2)), interpolation='nearest')
-        plt.title("Uncorrected and corrected class labels for event with id %d" % event_id)
-        plt.gca().set_aspect(1)
-        plt.axis("off")
-        plt.tight_layout()
-        plt.show()
+        return numpy.concatenate((img_1, img_2))
              
 
 ##################
