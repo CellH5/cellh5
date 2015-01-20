@@ -1740,6 +1740,33 @@ EXP_LOOKUP = {
              'onset_frame': 2, # in frames
              },  
               
+            '002798' :
+            {
+             'ch5_file': "M:/experiments/Experiments_002700/002798/_meta/Analysis/cell line 83/hdf5/_all_positions.ch5",
+             'mapping_file': r"M:/experiments/Experiments_002700/002798/_meta/Mapping/cell line 83/002798.txt",
+             'time_lapse': 4.5, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002700/002798/_meta/fate',
+             'events_before_frame': 160, # in frames
+             'onset_frame': 4, # in frames
+             },  
+           
+           '002855' :
+            {
+             'ch5_file': "M:/experiments/Experiments_002800/002855/_meta/Analysis/hdf5/_all_positions.ch5",
+             'mapping_file': r"M:\experiments\Experiments_002800\002855\_meta\Mapping\002855.txt",
+             'time_lapse': 4.6, 
+             'hmm_constraint_file':'hmm_constraints/graph_5_to_17_ms_special.xml',
+             'hmm_n_classes': 17,
+             'hmm_n_obs': 5,
+             'output_dir' : 'M:/experiments/Experiments_002800/002855/_meta/fate',
+             'events_before_frame': 160, # in frames
+             'onset_frame': 4, # in frames
+             },  
+              
+              
       }
        
        
@@ -1905,7 +1932,11 @@ if __name__ == "__main__":
 #     fate_mitotic_time('002415')
 #     fate_mitotic_time('002411')
 #     fate_mitotic_time('002587')
-    fate_mitotic_time('002760')
+
+#     fate_mitotic_time('002760')
+#     fate_mitotic_time('002798')
+    fate_mitotic_time('002855')
+#     fate_mutli_bi('002798')
     
     print 'FINISH'
 
