@@ -73,6 +73,10 @@ def pandas_ms_apply(df, func, n_cores=10):
     """Helper function for pandas DataFrame, when dealing with entries, which are numpy multi-dim arrays.
        Note, pandas integrated apply fun will drive you nuts...
        
+       IMPORTANT: differences to single core: pandas_apply
+          1) func must live at the module level
+          2) all extra args to func (e.g. used with partial) must be pickable
+       
        df: pandas DataFrame
        func: function expecting a row a Series over the columns of df
        
@@ -82,8 +86,9 @@ def pandas_ms_apply(df, func, n_cores=10):
     for _, row in df.iterrows():
         data.append(row)
     
-    pool = Pool(processes=9)
+    pool = Pool(processes=n_cores)
     res = pool.map(func, data)
+    pool.close()
     if isinstance(res[0], (tuple,)):
         return zip(*res)
     else:
@@ -368,7 +373,10 @@ class CH5Position(object):
                    [object_] \
                    [name].value
         else:
-            return []      
+            return []     
+        
+    def get_time_of_frame(self, frame):
+        return self['image/time_lapse']['timestamp_rel'][frame]
                    
     def get_time_lapse(self):
         if 'time_lapse' in self['image']:
@@ -1464,7 +1472,6 @@ class CH5Analysis(CH5MappedFileCollection):
             
         return res[indicies, :]
     
-    
     def get_data(self, in_group, type_='Object features', in_classes=None, in_class_type='Object classification label'):
         # Row selection
         object_count_sel = self.mapping['Object count'] > 0
@@ -1627,9 +1634,7 @@ class CH5FateAnalysis(CH5Analysis):
                 assert len(index_data) == len(raw_data) == len(hmm_data)
                 
                 line_dict = {}
-                for id, (index, raw_class, hmm_class) in enumerate(zip(index_data, raw_data, hmm_data)):
-                    if id == 21:
-                        print 'debug'
+                for e_id, (index, raw_class, hmm_class) in enumerate(zip(index_data, raw_data, hmm_data)):
                     frames = ch5_pos.get_time_idx2(index)
                     assert len(frames) == len(hmm_class) == len(raw_class)
                     back_track =  ch5_pos.track_backwards(index[0])
@@ -1641,8 +1646,7 @@ class CH5FateAnalysis(CH5Analysis):
                     start_frame = ch5_pos.get_time_idx(start_index)
                     start_class = ch5_pos.get_class_name(start_index)
                     
-                    line_dict['Event_id'] = id
-                    line_dict['Event_id'] = id
+                    line_dict['Event_id'] = e_id
                     line_dict['Plate'] = plate
                     line_dict['Well'] = well
                     line_dict['Site'] = site
@@ -1658,8 +1662,8 @@ class CH5FateAnalysis(CH5Analysis):
                     
                     if export_images:
                         import vigra
-                        img = self.get_track_image(plate, well, site, id)
-                        vigra.impex.writeImage(img.swapaxes(1,0), "%s_%s_%s_%d.png" % (plate, well, site, id))
+                        img = self.get_track_image(plate, well, site, e_id)
+                        vigra.impex.writeImage(img.swapaxes(1,0), "%s_%s_%s_%d.png" % (plate, well, site, e_id))
                     
     def get_track_image(self, plate, well, site, event_id):
         row = self.mapping[(self.mapping["Plate"] == plate) & (self.mapping["Well"] == well) & (self.mapping["Site"] == site)]
@@ -1669,10 +1673,10 @@ class CH5FateAnalysis(CH5Analysis):
         
         ch5_pos = self.get_ch5_position(plate, well, site)
         
-        img_1 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(id) for id in ids_1[event_id]], 1)
+        img_1 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(e_id) for e_id in ids_1[event_id]], 1)
         
         hmm_colors = [str(ch5_pos.definitions.class_definition()["color"][k]) for k in hmm_labels[event_id]]
-        img_2 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(id, color=hmm_colors[k]) for k, id in enumerate(ids_1[event_id])], 1)
+        img_2 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(e_id, color=hmm_colors[k]) for k, e_id in enumerate(ids_1[event_id])], 1)
         
         return numpy.concatenate((img_1, img_2))
              
