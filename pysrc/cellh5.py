@@ -303,7 +303,7 @@ class CH5Position(object):
             tracking_lookup_idx1.setdefault(o, []).append(i)
         return tracking_lookup_idx1
 
-    def get_class_prediction(self, object_='primary__primary'):
+    def get_class_prediction(self, object_='primary__primary', label_type=''):
         path = 'feature/%s/object_classification/prediction' % object_
         return self[path]
 
@@ -1051,6 +1051,9 @@ class CH5File(object):
     def class_definition(self, object_="primary__primary"):
         return self._file_handle['/definition/feature/%s/object_classification/class_labels' % object_].value
 
+    def classification_info(self, object_="primary__primary"):
+        return pandas.DataFrame(self._file_handle['/definition/feature/%s/object_classification/class_labels' % object_].value)
+
     @property
     def feature_definition(self):
         return self._file_handle['/definition/feature']
@@ -1081,7 +1084,6 @@ class CH5File(object):
     def get_object_feature_idx_by_name(self, object_, feature_name):
         object_feature_names = self.object_feature_def(object_)
         return list(object_feature_names).index(feature_name)
-
     
     def gallery_image_matrix_gen(self, index_tpl, object_='primary__primary'):
         gen_list = []      
@@ -1150,6 +1152,8 @@ class CH5MappedFile(CH5File):
     def read_mapping(self, mapping_file, sites=None, rows=None, cols=None, locations=None, plate_name=''):
         self.mapping_file = mapping_file
         self.mapping = pandas.read_csv(self.mapping_file, sep='\t', dtype={'Well': str})
+        if plate_name == "":
+            plate_name = self.plate
         self.mapping['Plate'] = plate_name
 
         if sites is not None:
@@ -1344,14 +1348,59 @@ class CH5Analysis(CH5MappedFileCollection):
             return self.pca.transform(xxx)
         res = pandas.Series(self.mapping['Object features'][self.mapping['Object count'] > 0].map(_project_on_pca_))
         self.mapping['PCA'] = res
+        
+    def lasso_run(self, split, train_on=('neg', 'target', 'pos'), sample_size=20000):
+        from sklearn.linear_model import LassoCV
+        classi = self.get_column_as_matrix("Object classification label")
+        data   = self.get_column_as_matrix("Object features")
+        
+        a = data[classi < split, :]
+        b = data[classi >= split, :]
+        
+        x = numpy.r_[a[numpy.random.randint(0, len(a) , sample_size / 2), :],
+                    b[numpy.random.randint(0, len(b) , sample_size / 2), :]]
+        
+        y = numpy.ones((sample_size,))
+        y[:sample_size/2] = 0
+        
+        las = LassoCV(max_iter=10000)
+        las.fit(x,y)
+        plt.plot(self.all_features_idx, las.coef_, 'r')
+        fs = numpy.abs(las.coef_)
+        plt.savefig(self.output("lasso.png"))
+        
+        fs_idx = numpy.argsort(fs, )
+        fs_idx = fs_idx[::-1]
+        feat_list = numpy.array(self.all_features)[fs_idx]
+        fs = fs[fs_idx]
+        feat_idx_list = numpy.array(self.all_features_idx)[fs_idx]
+#         for i, a,b in zip(feat_idx_list, fs, feat_list):
+#             print i, a, b
+            
+        f_res =  ", ".join(map(lambda xxx: "'%s'" % xxx, list(feat_list[fs>0])))
+        with open(self.output("lasso_features.txt"), 'wb') as ff:
+            ff.write(f_res)
+        
+        
+        
+
+        
+        
+        
+        
+        
          
-    def read_feature(self, object_="primary__primary", time_frames=None, remove_feature=(), 
+    def read_feature(self, object_="primary__primary", time_frames=None, remove_feature=(), use_features=None,
                            read_classification=True, idx_selector_functor=None):
 
         # TODO
         all_features = self.cellh5_handles.values()[0].object_feature_def()
         features_keep = [na for na in range(len(all_features)) if na not in remove_feature]
         self.all_features = [all_features[na] for na in range(len(all_features)) if na not in remove_feature]
+        self.all_features_idx = [na for na in range(len(all_features)) if na not in remove_feature]
+        
+        if use_features is not None:
+            features_keep = [f for f in features_keep if f in [self.all_features.index(name) for name in use_features]]
         
         features = []
         classification = []
@@ -1472,7 +1521,7 @@ class CH5Analysis(CH5MappedFileCollection):
             
         return res[indicies, :]
     
-    def get_data(self, in_group, type_='Object features', in_classes=None, in_class_type='Object classification label'):
+    def get_data(self, in_group, type_='Object features', in_classes=None, in_class_type='Object classification label', export_galleries=False):
         # Row selection
         object_count_sel = self.mapping['Object count'] > 0
         in_group_sel = self.mapping['Group'].isin(in_group)
@@ -1481,17 +1530,56 @@ class CH5Analysis(CH5MappedFileCollection):
         selected = self.mapping[selection].reset_index()
         res = numpy.concatenate(list(selected[type_]))
         
-        # Single cell seleciton
+        # Single cell selection
+        
+        if export_galleries:
+            import vigra
+            sl = numpy.concatenate(list(self.mapping[selection]['Object classification label']))
+            plate   = self.mapping[selection][["Plate", "Well", "Site"]].as_matrix()
+            oc   = list(self.mapping[selection]["Object count"])
+            plate = numpy.concatenate([[plate[ii]]*oc[ii] for ii in xrange(len(plate))])
+        
+            ch5_ind = numpy.concatenate(list(self.mapping[selection]['CellH5 object index 2']))
+            
+            img = []
+            bc = numpy.bincount(sl)
+            bcf = (bc / float(bc.sum()) * 5000)
+            
+            for sl_class in numpy.unique(sl):
+                entries = numpy.nonzero(sl==sl_class)[0]
+                numpy.random.shuffle(entries)
+                for e in entries[:int(bcf[sl_class])]:
+                    pl = plate[e][0]
+                    we = plate[e][1]
+                    si = plate[e][2]
+                    ch5pos = self.cellh5_handles[pl].get_position(we, str(si))
+                    img.append(ch5pos.get_gallery_image_contour(ch5_ind[e]))
+            img = CH5File.gallery_image_matrix_layouter_rgb(iter(img), (50,100))
+            vigra.impex.writeImage(img.swapaxes(1,0), self.output("__training_set.png"))
         
         if in_classes is not None:
             class_labels = numpy.concatenate(selected[in_class_type])
             single_selection = numpy.in1d(class_labels, in_classes)
             res = res[single_selection, :]
 
-        log.info('get_data for %r positions' % len(selected))
-        log.info('get_data for treatment %r with training matrix shape %r' % (list(selected['siRNA ID'].unique()), res.shape))
+        log.info('get_data for %r positions' % len(selected) + 'for treatment %r with training matrix shape %r' % (list(selected['siRNA ID'].unique()), res.shape))
 
         return res
+    
+    def get_data_preclustered(self, in_group, type_='Object features', in_classes=None, in_class_type='Object classification label', k=2):
+        from sklearn.mixture import GMM as GMM_SKL
+        data = self.get_data(in_group, type_='Object features', in_classes=None, in_class_type='Object classification label')
+        cluster_gmm = GMM_SKL(n_components=k, covariance_type="full")
+        cluster_gmm.fit(data)
+        c_pred = cluster_gmm.predict(data)
+        tmp = numpy.bincount(c_pred)
+        maj_label = numpy.argmax(tmp)
+        log.info("Preclustering data: majority class: %3.2f" % (float(tmp[maj_label]) / len(data)))
+        return data[c_pred==maj_label, :]
+        
+        
+    
+    
 
 class CH5FateAnalysis(CH5Analysis):
     """
