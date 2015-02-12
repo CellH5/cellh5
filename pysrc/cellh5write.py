@@ -84,11 +84,15 @@ class CH5ImageRegionDefinition(CH5PositionDescription):
         
 
 class CH5FileWriter(cellh5.CH5File):
-    def __init__(self, filename, sister_file=None):
+    def __init__(self, filename, sister_file=None, plate_layout=None):
         self.filename = filename
         self._f = h5py.File(filename, "w")
         self._init_basic_structure()
         self._file_handle = self._f
+        
+    @staticmethod
+    def init_from_plate_layout(plate_layout_file):
+        pass
         
     def _init_basic_structure(self):
         # create basic definition
@@ -258,6 +262,10 @@ class CH5FeatureWriter(CH5PositionWriterBase):
         feat_obj_grp = feat_grp.require_group(self.object_name) 
         def_dset = feat_obj_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(len(self.dtype),), dtype=numpy.dtype([('name', '|S512')]))
         def_dset[:] = numpy.array(zip(*self.dtype.descr)[0])
+        
+    def finalize(self):
+        self.dset.resize((self.offset,))
+        super(CH5FeatureWriter, self).finalize()  
 
 class CH5Validator(cellh5.CH5File):
     pass
@@ -265,6 +273,7 @@ class CH5Validator(cellh5.CH5File):
 
 if __name__ == "__main__":
     filename = "test.ch5"
+    
     raw = (numpy.random.rand(2,10,1, 200, 300) * 255).astype(numpy.uint8)
     seg = (numpy.random.rand(3,10,1, 200, 300) * 4065).astype(numpy.uint16)
     meta = {}
@@ -282,6 +291,7 @@ if __name__ == "__main__":
     ciw.finalize()
     
     c_def = CH5ImageChannelDefinition()
+    
     c_def.add_row(channel_name='1', description='rfp', is_physical=True, voxel_size=(1,1,1), color="#aabbcc")
     c_def.add_row(channel_name='2', description='gfp', is_physical=True, voxel_size=(1,1,1), color="#aabbcc")
 
@@ -305,6 +315,7 @@ if __name__ == "__main__":
     object_labels2 = numpy.random.randint(0,1256, 6000)
     
     cow = cpw.add_region_object('seg c 1')
+    
     cow.write(t=0, object_labels=object_labels)
     cow.write(t=1, object_labels=object_labels)
     cow.write(t=2, object_labels=object_labels2)
@@ -312,13 +323,13 @@ if __name__ == "__main__":
     cow.write_definition()
     cow.finalize()
     
-    cfew = cpw.add_object_feature(object_name='seg c 1', feature_name="bounding_box", dtype = numpy.dtype([('left', 'int32'),('right', 'int32'),('top', 'int32'),('bottom', 'int32'),]))
+    cfew = cpw.add_object_feature(object_name='seg c 1', feature_name="bounding_box", dtype=numpy.dtype([('left', 'int32'),('right', 'int32'),('top', 'int32'),('bottom', 'int32'),]))
     
     bb = numpy.random.randint(0,256, 100).reshape((-1,4))
     
     cfew.write(bb)
     cfew.write_definition()
-    
+    cfew.finalize()
     
     cfw.close()
     print "the fin"

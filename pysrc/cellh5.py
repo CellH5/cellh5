@@ -229,7 +229,9 @@ class CH5Const(object):
     RELATION = 'relation'
     
     DEFINITION = "definition"
+    
     PREFIX = "sample/0"
+    
     PLATE = "plate"
     WELL = "experiment"
     SITE = "position"
@@ -241,9 +243,6 @@ class CH5Const(object):
     DEFAULT_IMAGE_ORDER = "ctzyx"
     RAW_IMAGE = "channel"
     LABEL_IMAGE = "region"
-    
-    
-    
     
     
 class CH5PositionCoordinate(object):
