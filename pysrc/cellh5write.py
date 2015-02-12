@@ -1,6 +1,6 @@
 """
     The CellH5 Project
-    Copyright (c) 2012 - 2015 Christoph Sommer, Michael Held, Bernd Fischer
+    Copyright (c) 2012 - 2015 Christoph Sommer
     Gerlich Lab, IMBA Vienna, Huber Lab, EMBL Heidelberg
     www.cellh5.org
 
@@ -37,9 +37,6 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 ch.setFormatter(formatter)
 log.addHandler(ch)
 
-#####################
-### Helper functions
-#####################
 
 class CH5PositionDescription(object):
     def __init__(self):
@@ -146,6 +143,13 @@ class CH5PositionWriter(cellh5.CH5Position):
         # check if region name exists
         obj_grp = self.get_group(CH5Const.OBJECT)
         return CH5RegionWriter(name, obj_grp, self)
+    
+    def add_object_feature(self, object_name, feature_name, dtype=None):
+        # check if region name exists
+        feat_grp = self.get_group(CH5Const.FEATURE)
+        obj_feat_grp = feat_grp.require_group(object_name)
+        return CH5FeatureWriter(feature_name, object_name, obj_feat_grp, dtype, self)
+        
         
         
 
@@ -196,7 +200,7 @@ class CH5ObjectWriter(CH5PositionWriterBase):
 
 class CH5RegionWriter(CH5ObjectWriter):
     dtype = numpy.dtype([('time_idx', 'int32'),('obj_label_id', 'int32'),])
-    init_size = 5000
+    init_size = 500
     def __init__(self, name, obj_grp, parent_pos):
         super(CH5RegionWriter, self).__init__(parent_pos)
         self.name = name
@@ -219,14 +223,41 @@ class CH5RegionWriter(CH5ObjectWriter):
         
         self.offset+=len(object_labels)
         
+    def write_definition(self):
+        img_def_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.OBJECT)
+        def_dset = img_def_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(1,), dtype=numpy.dtype([('name', '|S512'), ('type', '|S512'), ('source1', '|S512'), ('source2', '|S512')]))
+        def_dset[0] = [(self.name, 'region', '', '')]
+        
     def finalize(self):
         self.dset.resize((self.offset,))
         super(CH5RegionWriter, self).finalize()    
-            
-        
 
-class CH5FeatureWriter():
-    pass
+class CH5FeatureWriter(CH5PositionWriterBase):
+    init_size = 500
+    def __init__(self, feature_name, object_name, obj_grp, dtype, parent_pos):
+        super(CH5FeatureWriter, self).__init__(parent_pos)
+        self.name = feature_name
+        self.obj_grp = obj_grp
+        self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=dtype, maxshape=(None,))
+        self.offset = 0 
+        self.dtype = dtype
+        self.object_name = object_name
+        
+    def write(self, data):
+        if len(data) + self.offset > len(self.dset) :
+            # resize
+            self.dset.resize((len(data) + self.offset,))
+            
+
+        self.dset[self.offset:self.offset+len(data)] = data.view(dtype=self.dtype)[:,0]
+        
+        self.offset+=len(data)
+        
+    def write_definition(self):
+        feat_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.FEATURE)
+        feat_obj_grp = feat_grp.require_group(self.object_name) 
+        def_dset = feat_obj_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(len(self.dtype),), dtype=numpy.dtype([('name', '|S512')]))
+        def_dset[:] = numpy.array(zip(*self.dtype.descr)[0])
 
 class CH5Validator(cellh5.CH5File):
     pass
@@ -277,7 +308,16 @@ if __name__ == "__main__":
     cow.write(t=0, object_labels=object_labels)
     cow.write(t=1, object_labels=object_labels)
     cow.write(t=2, object_labels=object_labels2)
+    
+    cow.write_definition()
     cow.finalize()
+    
+    cfew = cpw.add_object_feature(object_name='seg c 1', feature_name="bounding_box", dtype = numpy.dtype([('left', 'int32'),('right', 'int32'),('top', 'int32'),('bottom', 'int32'),]))
+    
+    bb = numpy.random.randint(0,256, 100).reshape((-1,4))
+    
+    cfew.write(bb)
+    cfew.write_definition()
     
     
     cfw.close()
