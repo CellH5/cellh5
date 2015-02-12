@@ -152,7 +152,13 @@ class CH5PositionWriter(cellh5.CH5Position):
         # check if region name exists
         feat_grp = self.get_group(CH5Const.FEATURE)
         obj_feat_grp = feat_grp.require_group(object_name)
-        return CH5FeatureWriter(feature_name, object_name, obj_feat_grp, dtype, self)
+        return CH5FeatureCompoundWriter(feature_name, object_name, obj_feat_grp, dtype, self)
+    
+    def add_object_feature_matrix(self, object_name, feature_name, n_features, dtype=None):
+        # check if region name exists
+        feat_grp = self.get_group(CH5Const.FEATURE)
+        obj_feat_grp = feat_grp.require_group(object_name)
+        return CH5FeatureMatrixWriter(feature_name, object_name, obj_feat_grp, n_features, dtype, self)
         
         
         
@@ -236,10 +242,10 @@ class CH5RegionWriter(CH5ObjectWriter):
         self.dset.resize((self.offset,))
         super(CH5RegionWriter, self).finalize()    
 
-class CH5FeatureWriter(CH5PositionWriterBase):
+class CH5FeatureCompoundWriter(CH5PositionWriterBase):
     init_size = 500
     def __init__(self, feature_name, object_name, obj_grp, dtype, parent_pos):
-        super(CH5FeatureWriter, self).__init__(parent_pos)
+        super(CH5FeatureCompoundWriter, self).__init__(parent_pos)
         self.name = feature_name
         self.obj_grp = obj_grp
         self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=dtype, maxshape=(None,))
@@ -257,15 +263,58 @@ class CH5FeatureWriter(CH5PositionWriterBase):
         
         self.offset+=len(data)
         
-    def write_definition(self):
-        feat_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.FEATURE)
-        feat_obj_grp = feat_grp.require_group(self.object_name) 
-        def_dset = feat_obj_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(len(self.dtype),), dtype=numpy.dtype([('name', '|S512')]))
-        def_dset[:] = numpy.array(zip(*self.dtype.descr)[0])
-        
+    def write_definition(self, column_names=None):
+        if column_names is None:
+            feat_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.FEATURE)
+            feat_obj_grp = feat_grp.require_group(self.object_name) 
+            def_dset = feat_obj_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(len(self.dtype),), dtype=numpy.dtype([('name', '|S512')]))
+            def_dset[:] = numpy.array(zip(*self.dtype.descr)[0])
+        else:
+            feat_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.FEATURE)
+            feat_obj_grp = feat_grp.require_group(self.object_name)
+            def_dset = feat_obj_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(len(column_names),), dtype=numpy.dtype([('name', '|S512')]))
+            def_dset[:] = numpy.array(column_names) 
+            
     def finalize(self):
         self.dset.resize((self.offset,))
-        super(CH5FeatureWriter, self).finalize()  
+        super(CH5FeatureCompoundWriter, self).finalize()  
+        
+class CH5FeatureMatrixWriter(CH5PositionWriterBase):
+    init_size = 500
+    def __init__(self, feature_name, object_name, obj_grp, n_features, dtype, parent_pos):
+        super(CH5FeatureMatrixWriter, self).__init__(parent_pos)
+        self.name = feature_name
+        self.obj_grp = obj_grp
+        self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size, n_features), dtype=dtype, maxshape=(None, n_features))
+        self.offset = 0 
+        self.dtype = dtype
+        self.object_name = object_name
+        self.n_features = n_features
+    def write(self, data):
+        if data.shape[0] + self.offset > self.dset.shape[0]:
+            # resize
+            self.dset.resize(data.shape[0] + self.offset, axis=0)
+            
+
+        self.dset[self.offset:self.offset+len(data), :] = data
+        
+        self.offset+=len(data)
+        
+    def write_definition(self, column_names=None):
+        if column_names is None:
+            feat_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.FEATURE)
+            feat_obj_grp = feat_grp.require_group(self.object_name) 
+            def_dset = feat_obj_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(len(self.dtype),), dtype=numpy.dtype([('name', '|S512')]))
+            def_dset[:] = numpy.array(zip(*self.dtype.descr)[0])
+        else:
+            feat_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.FEATURE)
+            feat_obj_grp = feat_grp.require_group(self.object_name)
+            def_dset = feat_obj_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(len(column_names),), dtype=numpy.dtype([('name', '|S512')]))
+            def_dset[:] = numpy.array(column_names) 
+            
+    def finalize(self):
+        self.dset.resize(self.offset, axis=0)
+        super(CH5FeatureMatrixWriter, self).finalize()  
 
 class CH5Validator(cellh5.CH5File):
     pass
@@ -329,6 +378,14 @@ if __name__ == "__main__":
     
     cfew.write(bb)
     cfew.write_definition()
+    cfew.finalize()
+    
+    cfew = cpw.add_object_feature_matrix(object_name='seg c 2', feature_name="object_features", n_features=239, dtype=numpy.float32)
+    
+    of = numpy.random.randn(200, 239)
+    
+    cfew.write(of)
+    cfew.write_definition(["Feature %d" % d for d in range(239)])
     cfew.finalize()
     
     cfw.close()
