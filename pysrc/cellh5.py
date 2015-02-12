@@ -227,6 +227,32 @@ class CH5Const(object):
 
     REGION = 'region'
     RELATION = 'relation'
+    
+    DEFINITION = "definition"
+    PREFIX = "sample/0"
+    PLATE = "plate"
+    WELL = "experiment"
+    SITE = "position"
+    
+    OBJECT = "object"
+    FEATURE = "feature"
+    IMAGE = "image"
+    
+    DEFAULT_IMAGE_ORDER = "ctzyx"
+    RAW_IMAGE = "channel"
+    LABEL_IMAGE = "region"
+    
+    
+    
+    
+    
+class CH5PositionCoordinate(object):
+    """CH5 Position Coordinates, plate, well, site"""
+    def __init__(self, plate, well, site):
+        super(CH5PositionCoordinate, self).__init__()
+        self.site = site
+        self.well = well
+        self.plate = plate
 
 class CH5GroupCoordinate(object):
     """CH5 Coordinates, sample, plate, well, position, region"""
@@ -276,12 +302,20 @@ class CH5Position(object):
         self.plate = plate
         self.well = well
         self.pos = pos
+        self.coord = CH5PositionCoordinate(plate, well, pos)
         self.grp_pos_path = grp_pos
         self.definitions = parent
 
     def __getitem__(self, key):
         path = "%s/%s" % (self.grp_pos_path, key)
         return self.definitions.get_file_handle()[path]
+    
+    def get_group(self, sub_group=None):
+        if sub_group is None:
+            return self.definitions.get_file_handle()[self.grp_pos_path]
+        else:
+            return self.definitions.get_file_handle()[self.grp_pos_path + "/" + sub_group]
+        
 
     def channel_color_by_region(self, region):
         """Return the the channel information."""
@@ -1035,6 +1069,9 @@ class CH5File(object):
 
     def get_file_handle(self):
         return self._file_handle
+    
+    def get_definition_root(self):
+        return self._file_handle[CH5Const.DEFINITION]
 
     def iter_positions(self):
         for well, positions in self.positions.items():
