@@ -154,14 +154,17 @@ class CH5PositionWriter(cellh5.CH5Position):
         obj_feat_grp = feat_grp.require_group(object_name)
         return CH5FeatureCompoundWriter(feature_name, object_name, obj_feat_grp, dtype, self)
     
+    def add_object_bounding_box(self, object_name):
+        # check if region name exists
+        feat_grp = self.get_group(CH5Const.FEATURE)
+        obj_feat_grp = feat_grp.require_group(object_name)
+        return CH5BoundingBoxWriter(object_name, obj_feat_grp, self)
+    
     def add_object_feature_matrix(self, object_name, feature_name, n_features, dtype=None):
         # check if region name exists
         feat_grp = self.get_group(CH5Const.FEATURE)
         obj_feat_grp = feat_grp.require_group(object_name)
         return CH5FeatureMatrixWriter(feature_name, object_name, obj_feat_grp, n_features, dtype, self)
-        
-        
-        
 
 class CH5PositionWriterBase(object):
     def __init__(self, parent_pos):
@@ -243,16 +246,7 @@ class CH5RegionWriter(CH5ObjectWriter):
         super(CH5RegionWriter, self).finalize()    
 
 class CH5FeatureCompoundWriter(CH5PositionWriterBase):
-    init_size = 500
-    def __init__(self, feature_name, object_name, obj_grp, dtype, parent_pos):
-        super(CH5FeatureCompoundWriter, self).__init__(parent_pos)
-        self.name = feature_name
-        self.obj_grp = obj_grp
-        self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=dtype, maxshape=(None,))
-        self.offset = 0 
-        self.dtype = dtype
-        self.object_name = object_name
-        
+    init_size = 500    
     def write(self, data):
         if len(data) + self.offset > len(self.dset) :
             # resize
@@ -278,6 +272,17 @@ class CH5FeatureCompoundWriter(CH5PositionWriterBase):
     def finalize(self):
         self.dset.resize((self.offset,))
         super(CH5FeatureCompoundWriter, self).finalize()  
+        
+class CH5BoundingBoxWriter(CH5FeatureCompoundWriter):
+    dtype=numpy.dtype([('left', 'int32'),('right', 'int32'),('top', 'int32'),('bottom', 'int32'),])
+    def __init__(self, object_name, obj_grp, parent_pos):
+        super(CH5FeatureCompoundWriter, self).__init__(parent_pos)
+        self.name = "bounding_box"
+        self.obj_grp = obj_grp
+        self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
+        self.offset = 0 
+        self.object_name = object_name
+    
         
 class CH5FeatureMatrixWriter(CH5PositionWriterBase):
     init_size = 500
@@ -372,7 +377,7 @@ if __name__ == "__main__":
     cow.write_definition()
     cow.finalize()
     
-    cfew = cpw.add_object_feature(object_name='seg c 1', feature_name="bounding_box", dtype=numpy.dtype([('left', 'int32'),('right', 'int32'),('top', 'int32'),('bottom', 'int32'),]))
+    cfew = cpw.add_object_bounding_box(object_name='seg c 1')
     
     bb = numpy.random.randint(0,256, 100).reshape((-1,4))
     
@@ -386,6 +391,14 @@ if __name__ == "__main__":
     
     cfew.write(of)
     cfew.write_definition(["Feature %d" % d for d in range(239)])
+    cfew.finalize()
+    
+    cfew = cpw.add_object_feature_matrix(object_name='seg c 1', feature_name="object_features", n_features=123, dtype=numpy.float32)
+    
+    of = numpy.random.randn(1000, 123)
+    
+    cfew.write(of)
+    cfew.write_definition(["Feature %d" % d for d in range(123)])
     cfew.finalize()
     
     cfw.close()
