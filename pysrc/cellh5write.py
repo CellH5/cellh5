@@ -339,18 +339,18 @@ class CH5Validator(cellh5.CH5File):
 class CH5MasterFile(h5py.File):
     def add_link_to_coord(self, coord, subfile):
         path = coord.get_path()
-        self.require_group(path)
+        #self.require_group(path)
         try:
             self[path] = h5py.ExternalLink(subfile, path)
         except RuntimeError, e:
             print "Link to path '%s' already exists" % path
         
+        #self.require_group(CH5Const.DEFINITION)
         try:
-            self[path] = h5py.ExternalLink(subfile, CH5Const.DEFINITION)
-            self[CH5Const.DEFINITION]         
+            self[CH5Const.DEFINITION] = h5py.ExternalLink(subfile, CH5Const.DEFINITION)        
         except RuntimeError, e:
             # link to definition is already there
-            pass
+            print "Link to path '%s' already exists" % path
               
     def repack(self):
         # do repacking
