@@ -160,6 +160,12 @@ class CH5PositionWriter(cellh5.CH5Position):
         obj_feat_grp = feat_grp.require_group(object_name)
         return CH5BoundingBoxWriter(object_name, obj_feat_grp, self)
     
+    def add_object_center(self, object_name):
+        # check if region name exists
+        feat_grp = self.get_group(CH5Const.FEATURE)
+        obj_feat_grp = feat_grp.require_group(object_name)
+        return CH5CenterWriter(object_name, obj_feat_grp, self)
+    
     def add_object_feature_matrix(self, object_name, feature_name, n_features, dtype=None):
         # check if region name exists
         feat_grp = self.get_group(CH5Const.FEATURE)
@@ -230,8 +236,6 @@ class CH5RegionWriter(CH5ObjectWriter):
         object_labels = object_labels.astype(numpy.int32)
         times = numpy.repeat(t, len(object_labels))
         
-        
-            
         self.dset[self.offset:self.offset+len(object_labels)] = numpy.c_[times, object_labels].view(dtype=self.dtype).T
         
         self.offset+=len(object_labels)
@@ -246,13 +250,12 @@ class CH5RegionWriter(CH5ObjectWriter):
         super(CH5RegionWriter, self).finalize()    
 
 class CH5FeatureCompoundWriter(CH5PositionWriterBase):
-    init_size = 500    
+    init_size = 1000    
     def write(self, data):
         if len(data) + self.offset > len(self.dset) :
             # resize
             self.dset.resize((len(data) + self.offset,))
-            
-
+        
         self.dset[self.offset:self.offset+len(data)] = data.view(dtype=self.dtype)[:,0]
         
         self.offset+=len(data)
@@ -282,10 +285,19 @@ class CH5BoundingBoxWriter(CH5FeatureCompoundWriter):
         self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
         self.offset = 0 
         self.object_name = object_name
-    
         
+class CH5CenterWriter(CH5FeatureCompoundWriter):
+    dtype=numpy.dtype([('x', 'int32'),('y', 'int32')])
+    def __init__(self, object_name, obj_grp, parent_pos):
+        super(CH5FeatureCompoundWriter, self).__init__(parent_pos)
+        self.name = "center"
+        self.obj_grp = obj_grp
+        self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
+        self.offset = 0 
+        self.object_name = object_name
+    
 class CH5FeatureMatrixWriter(CH5PositionWriterBase):
-    init_size = 500
+    init_size = 1000
     def __init__(self, feature_name, object_name, obj_grp, n_features, dtype, parent_pos):
         super(CH5FeatureMatrixWriter, self).__init__(parent_pos)
         self.name = feature_name
