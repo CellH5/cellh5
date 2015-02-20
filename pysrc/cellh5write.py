@@ -236,8 +236,12 @@ class CH5ObjectWriter(CH5PositionWriterBase):
         super(CH5ObjectWriter, self).__init__(parent_pos)
         self.name = name
         self.obj_grp = obj_grp
-        self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
-        self.offset = 0 
+        if self.name in self.obj_grp.keys():
+            self.dset = self.obj_grp[self.name]
+            self.offset = len(self.dset)
+        else:
+            self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
+            self.offset = 0 
         
     def write(self, *args, **kwargs):
         raise NotImplementedError("Abstract method")
@@ -273,6 +277,12 @@ class CH5RegionWriter(CH5ObjectWriter):
 
 class CH5FeatureCompoundWriter(CH5PositionWriterBase):
     init_size = 1000    
+    def __init__(self, object_name, obj_grp, parent_pos):
+        super(CH5FeatureCompoundWriter, self).__init__(parent_pos)
+        self.obj_grp = obj_grp
+        self.offset = 0 
+        self.object_name = object_name
+        
     def write(self, data):
         if len(data) + self.offset > len(self.dset) :
             # resize
@@ -301,34 +311,37 @@ class CH5FeatureCompoundWriter(CH5PositionWriterBase):
 class CH5BoundingBoxWriter(CH5FeatureCompoundWriter):
     dtype=numpy.dtype([('left', 'int32'),('right', 'int32'),('top', 'int32'),('bottom', 'int32'),])
     def __init__(self, object_name, obj_grp, parent_pos):
-        super(CH5FeatureCompoundWriter, self).__init__(parent_pos)
+        super(CH5BoundingBoxWriter, self).__init__(object_name, obj_grp, parent_pos)
         self.name = "bounding_box"
-        self.obj_grp = obj_grp
         self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
-        self.offset = 0 
-        self.object_name = object_name
+        
         
 class CH5CenterWriter(CH5FeatureCompoundWriter):
     dtype=numpy.dtype([('x', 'int32'),('y', 'int32')])
     def __init__(self, object_name, obj_grp, parent_pos):
-        super(CH5FeatureCompoundWriter, self).__init__(parent_pos)
+        super(CH5CenterWriter, self).__init__(object_name, obj_grp, parent_pos)
         self.name = "center"
-        self.obj_grp = obj_grp
         self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
-        self.offset = 0 
-        self.object_name = object_name
-    
+
 class CH5FeatureMatrixWriter(CH5PositionWriterBase):
     init_size = 1000
     def __init__(self, feature_name, object_name, obj_grp, n_features, dtype, parent_pos):
         super(CH5FeatureMatrixWriter, self).__init__(parent_pos)
         self.name = feature_name
         self.obj_grp = obj_grp
-        self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size, n_features), dtype=dtype, maxshape=(None, n_features))
-        self.offset = 0 
+        
+        
+        if self.name in self.obj_grp.keys():
+            self.dset = self.obj_grp[self.name]
+            self.offset = self.dset.shape[0]
+        else:
+            self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size, n_features), dtype=dtype, maxshape=(None, n_features))
+            self.offset = 0 
+        
         self.dtype = dtype
         self.object_name = object_name
         self.n_features = n_features
+        
     def write(self, data):
         if data.shape[0] + self.offset > self.dset.shape[0]:
             # resize
