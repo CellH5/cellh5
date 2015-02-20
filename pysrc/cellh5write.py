@@ -192,6 +192,9 @@ class CH5ImageWriter(CH5PositionWriterBase):
         self.order = order
         self.dset = dset
         
+        obj_root_grp = self.parent_pos.get_group(CH5Const.OBJECT)
+        self.image_wide_object_writer = CH5ImageWideObjectWriter(os.path.split(self.dset.name)[1], obj_root_grp, self.parent_pos)
+        
     def insert_image(self, img, c, z, t):
         slices = []
         for d in self.order:
@@ -205,6 +208,9 @@ class CH5ImageWriter(CH5PositionWriterBase):
                 slices.append(slice(None))
                 
         self.dset[tuple(slices)] = img
+        
+        # write object information
+        self.image_wide_object_writer.write(t, c, z)
         log.debug("CH5ImageWriter: inserted image c=%d t=%d z=%d..." % (c,t,z))
         
     def write(self, *args, **kwargs):
@@ -214,18 +220,25 @@ class CH5ImageWriter(CH5PositionWriterBase):
         img_def_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.IMAGE)
         img_def_grp.create_dataset(os.path.split(self.dset.name)[1], data=channel_description.ro_recarray())
         
+        self.image_wide_object_writer.write_definition()
+
 class CH5ObjectWriter(CH5PositionWriterBase):
-    pass
+    def __init__(self, name, obj_grp, parent_pos):
+        super(CH5ObjectWriter, self).__init__(parent_pos)
+        self.name = name
+        self.obj_grp = obj_grp
+        self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
+        self.offset = 0 
+        
+    def write(self, *args, **kwargs):
+        raise NotImplementedError("Abstract method")
 
 class CH5RegionWriter(CH5ObjectWriter):
     dtype = numpy.dtype([('time_idx', 'int32'),('obj_label_id', 'int32'),])
     init_size = 500
     def __init__(self, name, obj_grp, parent_pos):
-        super(CH5RegionWriter, self).__init__(parent_pos)
-        self.name = name
-        self.obj_grp = obj_grp
-        self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
-        self.offset = 0 
+        super(CH5RegionWriter, self).__init__(name, obj_grp, parent_pos)
+        
         
     def write(self, t, object_labels):
         if len(object_labels) + self.offset > len(self.dset) :
@@ -355,7 +368,30 @@ class CH5MasterFile(h5py.File):
     def repack(self):
         # do repacking
         pass
+    
+class CH5ImageWideObjectWriter(CH5ObjectWriter):
+    dtype = numpy.dtype([('object_idx', 'int32'),('time_idx', 'int32'),('channel_idx', 'int32'),('zsclice_idx', 'int32'),])
+    init_size = 5
+    def __init__(self, name, obj_grp, parent_pos):
+        super(CH5ImageWideObjectWriter, self).__init__(name, obj_grp, parent_pos)
         
+    def write(self, t, c, z):
+        if 1 + self.offset > len(self.dset) :
+            # resize
+            self.dset.resize((1 + self.offset,))
+                    
+        self.dset[self.offset:self.offset+1] = numpy.array([self.offset, t,c,z]).view(dtype=self.dtype).T
+        
+        self.offset+=1
+    
+    def write_definition(self):
+        img_def_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.OBJECT)
+        def_dset = img_def_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(1,), dtype=numpy.dtype([('name', '|S512'), ('type', '|S512'), ('source1', '|S512'), ('source2', '|S512')]))
+        def_dset[0] = [(self.name, 'image_xy', '', '')]
+        
+    def finalize(self):
+        self.dset.resize((self.offset,))
+        super(CH5ImageWideObjectWriter, self).finalize() 
         
 
 
@@ -375,7 +411,7 @@ if __name__ == "__main__":
     for c in range(2):
         for t in range(10):
             for z in range(1):
-                ciw.write(raw[c,t,z,:,:], c=c, t=t, z=z)            
+                ciw.write(raw[c,t,z,:,:], c=c, t=t, z=z)         
     ciw.finalize()
     
     c_def = CH5ImageChannelDefinition()
