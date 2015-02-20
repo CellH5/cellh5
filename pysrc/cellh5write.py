@@ -84,11 +84,20 @@ class CH5ImageRegionDefinition(CH5PositionDescription):
         
 
 class CH5FileWriter(cellh5.CH5File):
-    def __init__(self, filename, sister_file=None, plate_layout=None):
+    def __init__(self, filename, sister_file=None, plate_layout=None, mode="w"):
         self.filename = filename
-        self._f = h5py.File(filename, "w")
+        self._f = h5py.File(filename, mode)
         self._init_basic_structure()
         self._file_handle = self._f
+        
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, type, value, traceback):
+        self.close()
+        
+    def close(self):
+        self._f.close()
         
     @staticmethod
     def init_from_plate_layout(plate_layout_file):
@@ -96,11 +105,11 @@ class CH5FileWriter(cellh5.CH5File):
         
     def _init_basic_structure(self):
         # create basic definition
-        def_grp = self._f.create_group(CH5Const.DEFINITION)
+        def_grp = self._f.require_group(CH5Const.DEFINITION)
         for grp in [CH5Const.IMAGE, CH5Const.OBJECT, CH5Const.FEATURE]:
-            def_grp.create_group(grp)
+            def_grp.require_group(grp)
             
-        self._f.create_group(CH5Const.PREFIX)
+        self._f.require_group(CH5Const.PREFIX)
         
     def add_position(self, coord):    
         path_to_grp = "/%s/%s/%s/%s/%s/%s/%s" % (CH5Const.PREFIX, CH5Const.PLATE, "%s", CH5Const.WELL, "%s", CH5Const.SITE, "%s")
