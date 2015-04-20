@@ -36,7 +36,7 @@ version_num = (1, 2, 0)
 version = '.'.join([str(n) for n in version_num])
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 
-GALLERY_SIZE = 80
+GALLERY_SIZE = 150
 
 import logging
 log = logging.getLogger(__name__)
@@ -244,6 +244,8 @@ class CH5Const(object):
     DEFAULT_IMAGE_ORDER = "ctzyx"
     RAW_IMAGE = "channel"
     LABEL_IMAGE = "region"
+    
+    NOT_DEFINED = 'none'
     
     
 class CH5PositionCoordinate(object):
@@ -1157,7 +1159,7 @@ class CH5File(object):
     
     @staticmethod
     def gallery_image_matrix_layouter_rgb(img_gen, shape):
-        image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1], 3), dtype=numpy.uint8)
+        image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
         i, j = 0, 0    
         for i in range(shape[0]):
             for j in range(shape[1]):
@@ -1172,7 +1174,7 @@ class CH5File(object):
                 
                 if (c, d) > image.shape:
                     break
-                image[a:c, b:d,:] = img  
+                image[a:c, b:d] = img  
         return image 
     
     def get_gallery_image_matrix(self, index_tpl, shape, object_='primary__primary'):
@@ -1373,8 +1375,16 @@ class CH5Analysis(CH5MappedFileCollection):
         cluster = pandas_apply(self.mapping, _cluster_)
         self.mapping['Simple clustering'] = pandas.Series(cluster)
         
-    def pca_run(self, pca_dims=None, train_on=('neg', 'target', 'pos'), pca_cls=None, **pca_args):
+    def pca_run(self, pca_dims=None, train_on=('neg',), max_samples=10000, pca_cls=None, **pca_args):
         training_matrix = self.get_data(train_on)
+        if training_matrix.shape[0] > max_samples:
+            idx = range(training_matrix.shape[0])
+            numpy.random.seed(43)
+            numpy.random.shuffle(idx)
+            idx = idx[:max_samples]
+            training_matrix = training_matrix[idx, :]
+        
+        
         if pca_cls is None:
             from sklearn.decomposition import PCA
             pca_cls = PCA
@@ -1382,7 +1392,7 @@ class CH5Analysis(CH5MappedFileCollection):
         log.info('Compute PCA (%s): on matrix shape %r' % (str(pca_cls), training_matrix.shape))
         if pca_dims is None:
             pca_dims = 0.99
-        self.pca = pca_cls(pca_dims, pca_args)
+        self.pca = pca_cls(pca_dims, **pca_args)
         self.pca.fit(training_matrix)
         log.info('Compute PCA (%s): %d dimensions used' % (str(pca_cls), self.pca.n_components_))
         
@@ -1478,7 +1488,10 @@ class CH5Analysis(CH5MappedFileCollection):
                     feature_matrix = ch5_pos.get_object_features(object_=object_, index=tuple(idx))
                     feature_matrix = feature_matrix[:, features_keep]
                     
-                    classification_labels = ch5_pos.get_class_prediction(object_=object_)[idx_bool]['label_idx']              
+                    if read_classification:
+                        classification_labels = ch5_pos.get_class_prediction(object_=object_)[idx_bool]['label_idx']   
+                    else:
+                        classification_labels = []           
                     object_count = len(feature_matrix)
                 else:
                     object_count = 0
@@ -1489,12 +1502,16 @@ class CH5Analysis(CH5MappedFileCollection):
             if object_count > 0:
                 features.append(feature_matrix)
                 classification.append(classification_labels)
+                c5_object_index.append(idx_bool)
+                c5_object_index2.append(idx)
+                c5_object_index_not.append(numpy.logical_not(idx_bool))
             else:
                 features.append(numpy.zeros((0,)))
                 classification.append(numpy.zeros((0,)))
-            c5_object_index.append(idx_bool)
-            c5_object_index2.append(idx)
-            c5_object_index_not.append(numpy.logical_not(idx_bool))
+                c5_object_index.append(numpy.zeros((0,)))
+                c5_object_index2.append(numpy.zeros((0,)))
+                c5_object_index_not.append(numpy.zeros((0,)))
+            
             
         self.mapping['Object features'] = features
         self.mapping['Object count'] = counts
@@ -1516,7 +1533,7 @@ class CH5Analysis(CH5MappedFileCollection):
             print numpy.nonzero(nans.any(0))
             raise RuntimeError("NaNs in data")
         
-        self.norm_mean = all_data.mean(0)
+        self.norm_mean = numpy.median(all_data, 0)
         self.norm_stds = all_data.std(0)
         
         if (self.norm_stds < 10e-9).any():
