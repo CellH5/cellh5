@@ -95,7 +95,7 @@ def pandas_ms_apply(df, func, n_cores=10):
     else:
         return res
 
-def repack_cellh5(cellh5_folder, output_file=None):
+def repack_cellh5(cellh5_folder, output_file=None, check_reg=r'^[A-Z]\d{2}_\d{2}'):
     """Copies a cellh5 folder well-based into one single postition file"""
     if output_file is None:
         output_file = '%s/_all_positions_with_data.ch5' % cellh5_folder
@@ -115,20 +115,27 @@ def repack_cellh5(cellh5_folder, output_file=None):
 
     f = h5py.File(output_file, 'w')
 
-    reg = re.compile('^[A-Z]\d{2}_\d{2}')
+    if check_reg is not None:
+        reg = re.compile(check_reg)
+    else:
+        reg = None
     cnt = 0
     for fname in flist:
-        if reg.search(os.path.split(fname)[1]) is not None:
-            print cnt, fname
+        if reg is None or reg.search(os.path.split(fname)[1]) is not None:
+            #print cnt, fname
             if cnt == 0:
                 # write definition
                 fh = h5py.File(fname, 'r')
                 f.copy(fh['/definition'], 'definition')
                 fh.close()
             # copy suff
-            fh = h5py.File(fname, 'r')
+            try:
+                fh = h5py.File(fname, 'r')
+            except IOError, e:
+                print fname
+                raise
             fplate, fwell, fpos = get_plate_and_postion(fh)
-            # print (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
+            print (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
             f.copy(fh[(POSITION_PREFIX + '%s') % (fplate, fwell, fpos)], (POSITION_PREFIX + '%s') % (fplate, fwell, fpos))
             fh.close()
             cnt += 1
@@ -374,7 +381,9 @@ class CH5Position(object):
         return path in fh
 
     def get_crack_contour(self, index, object_='primary__primary',
-                          bb_corrected=True, size=GALLERY_SIZE):
+                          bb_corrected=True, size=None):
+        if size is None:
+            size = GALLERY_SIZE
         index = to_index_array(index)
         crack_list = []
         for ind in index:
@@ -563,15 +572,15 @@ class CH5Position(object):
             for c in range(3):
                 image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1], c] = tmp_img
             
-            crack = self.get_crack_contour(ind, object_)
-            class_color = ['#FFFF00'] * len(crack)
-            for i, (cr, col) in enumerate(zip(crack, class_color)):
-                col_tmp = hex2rgb(col)
-                for x, y in cr:
-                    for c in range(3):
-                        y = min(y, GALLERY_SIZE-1)
-                        x = min(x, GALLERY_SIZE-1)
-                        image[y, x + i * GALLERY_SIZE, c] = col_tmp[c]
+#             crack = self.get_crack_contour(ind, object_)
+#             class_color = ['#FFFF00'] * len(crack)
+#             for i, (cr, col) in enumerate(zip(crack, class_color)):
+#                 col_tmp = hex2rgb(col)
+#                 for x, y in cr:
+#                     for c in range(3):
+#                         y = min(y, GALLERY_SIZE-1)
+#                         x = min(x, GALLERY_SIZE-1)
+#                         image[y, x + i * GALLERY_SIZE, c] = col_tmp[c]
             
             
             yield image
@@ -796,7 +805,7 @@ class CH5Position(object):
     def get_event_items(self, output_second_branch=False):
         dset_event = self.get_object_table('event')
         events = []
-        for event_id in range(dset_event['obj_id'].max()):
+        for event_id in xrange(dset_event['obj_id'].max()):
             idx = numpy.where(dset_event['obj_id'] == event_id)
             idx1 = dset_event[idx]['idx1']
             idx2 = dset_event[idx]['idx2']
@@ -1048,12 +1057,17 @@ class CH5File(object):
             self.positions[w] = self._get_group_members('/sample/0/plate/%s/experiment/%s/position/' % (self.plate, w))
 
         self._position_group = {}
+        self._coordinates = []
         for well, positions in self.positions.iteritems():
             for pos in positions:
+                self._coordinates.append(CH5PositionCoordinate(self.plate, well, pos))
                 self._position_group[(well, pos)] = self._open_position(
                     self.plate, well, pos)
 
         self.current_pos = self._position_group.values()[0]
+
+    def get_coordinates(self):
+        return self._coordinates
 
     def _open_position(self, plate, well, position):
         path = ("/sample/0/plate/%s/experiment/%s/position/%s"
@@ -1067,6 +1081,9 @@ class CH5File(object):
         except KeyError:
             warnings.warn(("Warning: cellh5 - well, position (%s, %s)"
                            "could not be loaded ") % (well, position))
+
+    def get_position_from_coord(self, coord):
+        return self.get_position(coord.well, coord.site)
 
     def get_position(self, well, pos):
         return self._position_group[(well, str(pos))]
@@ -1159,7 +1176,7 @@ class CH5File(object):
     
     @staticmethod
     def gallery_image_matrix_layouter_rgb(img_gen, shape):
-        image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
+        image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1],3), dtype=numpy.uint8)
         i, j = 0, 0    
         for i in range(shape[0]):
             for j in range(shape[1]):
@@ -1174,7 +1191,7 @@ class CH5File(object):
                 
                 if (c, d) > image.shape:
                     break
-                image[a:c, b:d] = img  
+                image[a:c, b:d,:] = img  
         return image 
     
     def get_gallery_image_matrix(self, index_tpl, shape, object_='primary__primary'):
@@ -1375,7 +1392,7 @@ class CH5Analysis(CH5MappedFileCollection):
         cluster = pandas_apply(self.mapping, _cluster_)
         self.mapping['Simple clustering'] = pandas.Series(cluster)
         
-    def pca_run(self, pca_dims=None, train_on=('neg',), max_samples=10000, pca_cls=None, **pca_args):
+    def pca_run(self, pca_dims=None, train_on=('neg', 'target', 'pos'), max_samples=10000, pca_cls=None, **pca_args):
         training_matrix = self.get_data(train_on)
         if training_matrix.shape[0] > max_samples:
             idx = range(training_matrix.shape[0])
@@ -1533,7 +1550,7 @@ class CH5Analysis(CH5MappedFileCollection):
             print numpy.nonzero(nans.any(0))
             raise RuntimeError("NaNs in data")
         
-        self.norm_mean = numpy.median(all_data, 0)
+        self.norm_mean = numpy.mean(all_data, 0)
         self.norm_stds = all_data.std(0)
         
         if (self.norm_stds < 10e-9).any():

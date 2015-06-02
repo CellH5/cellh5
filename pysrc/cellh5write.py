@@ -232,7 +232,7 @@ class CH5ImageWriter(CH5PositionWriterBase):
         self.image_wide_object_writer.write_definition()
 
 class CH5ObjectWriter(CH5PositionWriterBase):
-    def __init__(self, name, obj_grp, parent_pos):
+    def __init__(self, name, obj_grp, parent_pos, compression="gzip"):
         super(CH5ObjectWriter, self).__init__(parent_pos)
         self.name = name
         self.obj_grp = obj_grp
@@ -240,7 +240,7 @@ class CH5ObjectWriter(CH5PositionWriterBase):
             self.dset = self.obj_grp[self.name]
             self.offset = len(self.dset)
         else:
-            self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
+            self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,), chunks=(self.init_size,), compression=compression)
             self.offset = 0 
         
     def write(self, *args, **kwargs):
@@ -248,7 +248,7 @@ class CH5ObjectWriter(CH5PositionWriterBase):
 
 class CH5RegionWriter(CH5ObjectWriter):
     dtype = numpy.dtype([('time_idx', 'int32'),('obj_label_id', 'int32'),])
-    init_size = 500
+    init_size = 10000
     def __init__(self, name, obj_grp, parent_pos):
         super(CH5RegionWriter, self).__init__(name, obj_grp, parent_pos)
         
@@ -324,8 +324,8 @@ class CH5CenterWriter(CH5FeatureCompoundWriter):
         self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size,), dtype=self.dtype, maxshape=(None,))
 
 class CH5FeatureMatrixWriter(CH5PositionWriterBase):
-    init_size = 1000
-    def __init__(self, feature_name, object_name, obj_grp, n_features, dtype, parent_pos):
+    init_size = 10000
+    def __init__(self, feature_name, object_name, obj_grp, n_features, dtype, parent_pos, compression='gzip'):
         super(CH5FeatureMatrixWriter, self).__init__(parent_pos)
         self.name = feature_name
         self.obj_grp = obj_grp
@@ -335,7 +335,7 @@ class CH5FeatureMatrixWriter(CH5PositionWriterBase):
             self.dset = self.obj_grp[self.name]
             self.offset = self.dset.shape[0]
         else:
-            self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size, n_features), dtype=dtype, maxshape=(None, n_features))
+            self.dset = self.obj_grp.create_dataset(self.name, shape=(self.init_size, n_features), chunks=(self.init_size, n_features), dtype=dtype, maxshape=(None, n_features), compression=compression)
             self.offset = 0 
         
         self.dtype = dtype
