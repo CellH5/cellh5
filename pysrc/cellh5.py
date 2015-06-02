@@ -1550,6 +1550,14 @@ class CH5Analysis(CH5MappedFileCollection):
             print numpy.nonzero(nans.any(0))
             raise RuntimeError("NaNs in data")
         
+        infs = numpy.isinf(all_data)
+        if infs.any():
+            print "Axes 1 features"
+            print numpy.nonzero(nans.any(1))
+            print "Axes 0 samples"
+            print numpy.nonzero(nans.any(0))
+            raise RuntimeError("NaNs in data")
+        
         self.norm_mean = numpy.mean(all_data, 0)
         self.norm_stds = all_data.std(0)
         
