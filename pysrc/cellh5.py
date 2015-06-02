@@ -1463,7 +1463,7 @@ class CH5Analysis(CH5MappedFileCollection):
                            read_classification=True, idx_selector_functor=None):
 
         # TODO
-        all_features = self.cellh5_handles.values()[0].object_feature_def()
+        all_features = self.cellh5_handles.values()[0].object_feature_def(object_)
         features_keep = [na for na in range(len(all_features)) if na not in remove_feature]
         self.all_features = [all_features[na] for na in range(len(all_features)) if na not in remove_feature]
         self.all_features_idx = [na for na in range(len(all_features)) if na not in remove_feature]
