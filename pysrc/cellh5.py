@@ -1411,7 +1411,11 @@ class CH5Analysis(CH5MappedFileCollection):
             pca_dims = 0.99
         self.pca = pca_cls(pca_dims, **pca_args)
         self.pca.fit(training_matrix)
-        log.info('Compute PCA (%s): %d dimensions used' % (str(pca_cls), self.pca.n_components_))
+        if hasattr(self.pca, "n_components_"):
+            log.info('Compute PCA (%s): %d dimensions used' % (str(pca_cls), self.pca.n_components_))
+        else:
+            # older sklearn version
+            log.info('Compute PCA (%s): %d dimensions used' % (str(pca_cls), self.pca.n_components))
         
         def _project_on_pca_(xxx):
             return self.pca.transform(xxx)
