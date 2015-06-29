@@ -437,6 +437,14 @@ class CH5Position(object):
             time_lapse = None
         return time_lapse
     
+    def get_time_lapse_per_frame(self):
+        if 'time_lapse' in self['image']:
+            time_stamps = self['image/time_lapse']['timestamp_rel']
+            time_lapse = list(numpy.diff(time_stamps))
+        else:
+            time_lapse = None
+        return time_lapse
+    
     def get_object_idx(self, object_='primary__primary', frame=None):
         ot = self.get_object_table(object_)
         if frame is None:
@@ -1034,6 +1042,9 @@ class CH5CachedPosition(CH5Position):
     @memoize
     def get_class_color(self, class_labels, object_='primary__primary'):
         return super(CH5CachedPosition, self).get_class_color(class_labels, object_)
+    
+    def get_time_lapse_per_frame(self, *args, **kwargs):
+        return super(CH5CachedPosition, self).get_time_lapse_per_frame(*args, **kwargs)
 
     def clear_cache(self):
         if hasattr(self, '_memoize__cache'):
@@ -1797,7 +1808,7 @@ class CH5FateAnalysis(CH5Analysis):
     def report_to_csv(self, output_filename="report.txt", export_images=True):
         import csv
         header = ['Plate', 'Well', 'Site', 'Type', 'Event_id', 'Length', 'Frame_first_appearance', 'Class_first_appearance', 
-                  'Frames', 'Raw_classification', 'Hmm_classification']
+                  'Frames', 'Time Lapse sec', 'Raw_classification', 'Hmm_classification']
         
         with open(output_filename, 'wb') as fh:
             writer = csv.DictWriter(fh, header, delimiter="\t", lineterminator='\n')
@@ -1817,6 +1828,7 @@ class CH5FateAnalysis(CH5Analysis):
                 line_dict = {}
                 for e_id, (index, raw_class, hmm_class) in enumerate(zip(index_data, raw_data, hmm_data)):
                     frames = ch5_pos.get_time_idx2(index)
+                    time_lapse = ch5_pos.get_time_lapse_per_frame()
                     assert len(frames) == len(hmm_class) == len(raw_class)
                     back_track =  ch5_pos.track_backwards(index[0])
                     if len(back_track) > 0:
@@ -1836,6 +1848,7 @@ class CH5FateAnalysis(CH5Analysis):
                     line_dict['Frame_first_appearance'] = start_frame
                     line_dict['Class_first_appearance'] = start_class
                     line_dict['Frames'] =  " ".join(map(str,frames))
+                    line_dict['Time Lapse sec'] =  " ".join(map(str, time_lapse))
                     line_dict['Raw_classification'] = " ".join(map(str,raw_class))
                     line_dict['Hmm_classification'] = " ".join(map(str,hmm_class))
                     
