@@ -836,7 +836,7 @@ class CH5Position(object):
         return events
 
 
-    def _track_single(self, start_idx, type_, max_length=None):
+    def _track_single(self, start_idx, type_, max_length=None, object_="primary__primary"):
         track_on_feature = False
         if type_ == 'first':
             sel = 0
@@ -844,8 +844,8 @@ class CH5Position(object):
             sel = -1
         elif type_ == 'biggest':
             track_on_feature = True
-            roisize_ind = [str(feature_name[0]) for feature_name in self.definitions.feature_definition['primary__primary']['object_features']].index('roisize')
-            track_feature = self.get_feature_table('primary__primary', 'object_features')[:, roisize_ind]
+            roisize_ind = [str(feature_name[0]) for feature_name in self.definitions.feature_definition[object_]['object_features']].index('roisize')
+            track_feature = self.get_feature_table(object_, 'object_features')[:, roisize_ind]
 
         else:
             raise NotImplementedError('type not supported')
@@ -870,7 +870,7 @@ class CH5Position(object):
 
         return idx_list
     
-    def _track_backwards_single(self, end_idx, type_, max_length=None):
+    def _track_backwards_single(self, end_idx, type_, max_length=None, object_="primary__primary"):
         track_on_feature = False
         if type_ == 'first':
             sel = 0
@@ -878,8 +878,8 @@ class CH5Position(object):
             sel = -1
         elif type_ == 'biggest':
             track_on_feature = True
-            roisize_ind = [str(feature_name[0]) for feature_name in self.definitions.feature_definition['primary__primary']['object_features']].index('roisize')
-            track_feature = self.get_feature_table('primary__primary', 'object_features')[:, roisize_ind]
+            roisize_ind = [str(feature_name[0]) for feature_name in self.definitions.feature_definition[object_]['object_features']].index('roisize')
+            track_feature = self.get_feature_table(object_, 'object_features')[:, roisize_ind]
 
         else:
             raise NotImplementedError('type not supported')
@@ -937,10 +937,10 @@ class CH5Position(object):
             print "Error: Creation of %s in %s failed " % (feature_name, path)
             raise
 
-    def track_first(self, start_idx, max_length=None):
+    def track_first(self, start_idx, max_length=None, object_='primary__primary'):
         """Track an object based on the tracking information to the end. 
            In case of spits, take the first element randomly"""
-        return self._track_single(start_idx, 'first', max_length=max_length)
+        return self._track_single(start_idx, 'first', max_length=max_length, object_=object_)
 
     def track_last(self, start_idx, max_length=None):
         return self._track_single(start_idx, 'last', max_length=max_length)
@@ -1692,7 +1692,7 @@ class CH5FateAnalysis(CH5Analysis):
     fate categories (e.g. death in mitosis), and correlations to kinetics in a additional 
     channel / color
     """
-    def read_events(self, onset_frame=0, time_limits=(0, numpy.Inf)):    
+    def read_events(self, onset_frame=0, time_limits=(0, numpy.Inf), object_="primary__primary"):    
         event_ids_all = []
         event_labels_all = []
         for _, (plate, well, site) in self.mapping[['Plate', 'Well', 'Site']].iterrows(): 
@@ -1703,7 +1703,7 @@ class CH5FateAnalysis(CH5Analysis):
             event_ids = [e for e in event_ids if ch5_pos.get_time_idx(time_limits[0] <= e[onset_frame]) <= time_limits[1]]
             event_ids_all.append(event_ids)
             
-            event_labels = [ch5_pos.get_class_label(e) for e in event_ids]
+            event_labels = [ch5_pos.get_class_label(e, object_=object_) for e in event_ids]
             event_labels_all.append(event_labels)
             
         self.mapping["Event IDs"] = event_ids_all
@@ -1730,7 +1730,7 @@ class CH5FateAnalysis(CH5Analysis):
         str_+= "Caution: Class index will be used for all processing\n\n"
         return str_
                       
-    def track_events(self):        
+    def track_events(self, object_="primary__primary"):        
         def _track_events_(xxx):
             plate = xxx["Plate"]
             well = xxx["Well"]
@@ -1743,8 +1743,8 @@ class CH5FateAnalysis(CH5Analysis):
             track_labels = []
             for _, event_idx in enumerate(event_ids):   
                 start_idx = event_idx[-1]
-                track = list(event_idx) + ch5_pos.track_first(start_idx)
-                class_labels = ch5_pos.get_class_label_index(track)
+                track = list(event_idx) + ch5_pos.track_first(start_idx, object_=object_)
+                class_labels = ch5_pos.get_class_label_index(track, object_=object_)
                 track_labels.append(class_labels)
                 track_ids.append(track)
                 
@@ -1805,7 +1805,7 @@ class CH5FateAnalysis(CH5Analysis):
             for track_id, track in enumerate(track_labels):
                 print ident, "%03d:" % track_id, "".join(map(lambda xxx: pattern % xxx, track))
                 
-    def report_to_csv(self, output_filename="report.txt", export_images=True):
+    def report_to_csv(self, output_filename="report.txt", export_images=True, object_="primary__primary"):
         import csv
         header = ['Plate', 'Well', 'Site', 'Type', 'Event_id', 'Length', 'Frame_first_appearance', 'Class_first_appearance', 
                   'Frames', 'Time Lapse sec', 'Raw_classification', 'Hmm_classification']
@@ -1856,10 +1856,10 @@ class CH5FateAnalysis(CH5Analysis):
                     
                     if export_images:
                         import vigra
-                        img = self.get_track_image(plate, well, site, e_id)
+                        img = self.get_track_image(plate, well, site, e_id, object_=object_)
                         vigra.impex.writeImage(img.swapaxes(1,0), "%s_%s_%s_%d.png" % (plate, well, site, e_id))
                     
-    def get_track_image(self, plate, well, site, event_id):
+    def get_track_image(self, plate, well, site, event_id, object_="primary__primary"):
         row = self.mapping[(self.mapping["Plate"] == plate) & (self.mapping["Well"] == well) & (self.mapping["Site"] == site)]
         
         ids_1 = row["Track IDs"][0]
@@ -1867,10 +1867,10 @@ class CH5FateAnalysis(CH5Analysis):
         
         ch5_pos = self.get_ch5_position(plate, well, site)
         
-        img_1 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(e_id) for e_id in ids_1[event_id]], 1)
+        img_1 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(e_id, object_=(object_,)) for e_id in ids_1[event_id]], 1)
         
         hmm_colors = [str(ch5_pos.definitions.class_definition()["color"][k]) for k in hmm_labels[event_id]]
-        img_2 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(e_id, color=hmm_colors[k]) for k, e_id in enumerate(ids_1[event_id])], 1)
+        img_2 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(e_id, object_=(object_,), color=hmm_colors[k]) for k, e_id in enumerate(ids_1[event_id])], 1)
         
         return numpy.concatenate((img_1, img_2))
              
