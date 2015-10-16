@@ -39,13 +39,13 @@ ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 GALLERY_SIZE = 150
 
 import logging
-log = logging.getLogger(__name__)
+MODULE_LOGGER = logging.getLogger(__name__)
 ch = logging.StreamHandler(sys.stdout)
 ch.setLevel(logging.DEBUG)
-log.setLevel(logging.DEBUG)
+MODULE_LOGGER.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 ch.setFormatter(formatter)
-log.addHandler(ch)
+MODULE_LOGGER.addHandler(ch)
 
 
 #####################
