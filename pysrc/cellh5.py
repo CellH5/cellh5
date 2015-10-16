@@ -1338,17 +1338,7 @@ class CH5Analysis(CH5MappedFileCollection):
         self.output_dir = output_dir
         self.set_output_dir(output_dir)
         
-        self._init_loger()
-        
-    def _init_loger(self):
-        log = logging.getLogger(str(self.__class__.__name__))
-        ch = logging.StreamHandler(sys.stdout)
-        ch.setLevel(logging.DEBUG)
-        log.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        ch.setFormatter(formatter)
-        log.addHandler(ch)
-        self.log = log
+        self.log = MODULE_LOGGER
         
     def set_output_dir(self, output_dir):
         if self.output_dir is None:
@@ -1363,7 +1353,7 @@ class CH5Analysis(CH5MappedFileCollection):
                 os.makedirs(self.output_dir)
             except:
                 pass
-        log.info("Output Directory: " + self.output_dir)
+        self.log.info("Output Directory: " + self.output_dir)
         
     def output(self, file_):
         file_ = self._str_sanatize(file_)
@@ -1424,16 +1414,16 @@ class CH5Analysis(CH5MappedFileCollection):
             from sklearn.decomposition import PCA
             pca_cls = PCA
         
-        log.info('Compute PCA (%s): on matrix shape %r' % (str(pca_cls), training_matrix.shape))
+        self.log.info('Compute PCA (%s): on matrix shape %r' % (str(pca_cls), training_matrix.shape))
         if pca_dims is None:
             pca_dims = 0.99
         self.pca = pca_cls(pca_dims, **pca_args)
         self.pca.fit(training_matrix)
         if hasattr(self.pca, "n_components_"):
-            log.info('Compute PCA (%s): %d dimensions used' % (str(pca_cls), self.pca.n_components_))
+            self.log.info('Compute PCA (%s): %d dimensions used' % (str(pca_cls), self.pca.n_components_))
         else:
             # older sklearn version
-            log.info('Compute PCA (%s): %d dimensions used' % (str(pca_cls), self.pca.n_components))
+            self.log.info('Compute PCA (%s): %d dimensions used' % (str(pca_cls), self.pca.n_components))
         
         def _project_on_pca_(xxx):
             return self.pca.transform(xxx)
@@ -1673,7 +1663,7 @@ class CH5Analysis(CH5MappedFileCollection):
             single_selection = numpy.in1d(class_labels, in_classes)
             res = res[single_selection, :]
 
-        log.info('get_data for %r positions' % len(selected) + 'for treatment %r with training matrix shape %r' % (list(selected['siRNA ID'].unique()), res.shape))
+        self.log.info('get_data for %r positions' % len(selected) + 'for treatment %r with training matrix shape %r' % (list(selected['siRNA ID'].unique()), res.shape))
 
         return res
     
@@ -1685,7 +1675,7 @@ class CH5Analysis(CH5MappedFileCollection):
         c_pred = cluster_gmm.predict(data)
         tmp = numpy.bincount(c_pred)
         maj_label = numpy.argmax(tmp)
-        log.info("Preclustering data: majority class: %3.2f" % (float(tmp[maj_label]) / len(data)))
+        self.log.info("Preclustering data: majority class: %3.2f" % (float(tmp[maj_label]) / len(data)))
         return data[c_pred==maj_label, :]
         
         
