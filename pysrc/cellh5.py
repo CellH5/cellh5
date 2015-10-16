@@ -95,7 +95,7 @@ def pandas_ms_apply(df, func, n_cores=10):
     else:
         return res
 
-def repack_cellh5(cellh5_folder, output_file=None, check_reg=r'^[A-Z]\d{2}_\d{2}'):
+def repack_cellh5(cellh5_folder, output_file=None, check_reg=r'^[A-Z]\d{2}_\d{2}', new_plate_name=None):
     """Copies a cellh5 folder well-based into one single postition file"""
     if output_file is None:
         output_file = '%s/_all_positions_with_data.ch5' % cellh5_folder
@@ -135,8 +135,14 @@ def repack_cellh5(cellh5_folder, output_file=None, check_reg=r'^[A-Z]\d{2}_\d{2}
                 print fname
                 raise
             fplate, fwell, fpos = get_plate_and_postion(fh)
-            print (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
-            f.copy(fh[(POSITION_PREFIX + '%s') % (fplate, fwell, fpos)], (POSITION_PREFIX + '%s') % (fplate, fwell, fpos))
+            
+            
+            if new_plate_name is not None:
+                fplate_out = new_plate_name
+            else:
+                fplate_out = fplate
+            print " copying", fplate_out, (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)    
+            f.copy(fh[(POSITION_PREFIX + '%s') % (fplate, fwell, fpos)], (POSITION_PREFIX + '%s') % (fplate_out, fwell, fpos))
             fh.close()
             cnt += 1
     f.close()
