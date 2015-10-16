@@ -1276,6 +1276,7 @@ class CH5MappedFileCollection(object):
         self.cellh5_files = cellh5_files
         self.time_lapse = {}
         self.cellh5_handles = {}
+        self.log = MODULE_LOGGER
         
         self.mapping = None
         if init:
@@ -1291,7 +1292,7 @@ class CH5MappedFileCollection(object):
                 time_lapse = mapped_ch5.current_pos.get_time_lapse()
                 if time_lapse is not None:
                     self.time_lapse[plate_name] = time_lapse / 60.0
-                    log.info("Found time lapse of plate '%s' = %5.3f min" % (plate_name, self.time_lapse[plate_name]))
+                    self.log.info("Found time lapse of plate '%s' = %5.3f min" % (plate_name, self.time_lapse[plate_name]))
                 else:
                     self.time_lapse[plate_name] = 0
                     
