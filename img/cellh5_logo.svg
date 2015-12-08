@@ -10,13 +10,13 @@
    xmlns:xlink="http://www.w3.org/1999/xlink"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   width="160"
-   height="160"
+   width="128"
+   height="128"
    id="svg2"
    version="1.1"
-   inkscape:version="0.48.1 "
-   sodipodi:docname="cellh5_logo_6_small.svg"
-   inkscape:export-filename="C:\Users\sommerc\Desktop\cellh5_logo_6_small.png"
+   inkscape:version="0.48.5 r10040"
+   sodipodi:docname="cellh5_logo.svg"
+   inkscape:export-filename="/home/ruho/imba/cellh5/img/cellh5_logo.png"
    inkscape:export-xdpi="144"
    inkscape:export-ydpi="144">
   <defs
@@ -189,6 +189,69 @@
        y1="-411.15451"
        x2="436.18839"
        y2="-438.39099" />
+    <filter
+       inkscape:label="Drop Shadow"
+       id="filter3141"
+       color-interpolation-filters="sRGB">
+      <feFlood
+         flood-opacity="0.5"
+         flood-color="rgb(0,0,0)"
+         result="flood"
+         id="feFlood3143" />
+      <feComposite
+         in="flood"
+         in2="SourceGraphic"
+         operator="in"
+         result="composite1"
+         id="feComposite3145" />
+      <feGaussianBlur
+         stdDeviation="2"
+         result="blur"
+         id="feGaussianBlur3147" />
+      <feOffset
+         dx="4"
+         dy="4"
+         result="offset"
+         id="feOffset3149" />
+      <feComposite
+         in="SourceGraphic"
+         in2="offset"
+         operator="over"
+         result="fbSourceGraphic"
+         id="feComposite3151" />
+      <feColorMatrix
+         result="fbSourceGraphicAlpha"
+         in="fbSourceGraphic"
+         values="0 0 0 -1 0 0 0 0 -1 0 0 0 0 -1 0 0 0 0 1 0"
+         id="feColorMatrix3153" />
+      <feFlood
+         id="feFlood3155"
+         flood-opacity="0.5"
+         flood-color="rgb(0,0,0)"
+         result="flood"
+         in="fbSourceGraphic" />
+      <feComposite
+         id="feComposite3157"
+         in2="fbSourceGraphic"
+         in="flood"
+         operator="in"
+         result="composite1" />
+      <feGaussianBlur
+         id="feGaussianBlur3159"
+         stdDeviation="2"
+         result="blur" />
+      <feOffset
+         id="feOffset3161"
+         dx="4"
+         dy="4"
+         result="offset" />
+      <feComposite
+         id="feComposite3163"
+         in2="offset"
+         in="fbSourceGraphic"
+         operator="over"
+         result="composite2" />
+    </filter>
   </defs>
   <sodipodi:namedview
      id="base"
@@ -197,16 +260,16 @@
      borderopacity="1.0"
      inkscape:pageopacity="0"
      inkscape:pageshadow="2"
-     inkscape:zoom="1.8101934"
-     inkscape:cx="218.11306"
-     inkscape:cy="4.5117942"
+     inkscape:zoom="2.9453125"
+     inkscape:cx="29.16272"
+     inkscape:cy="44.03689"
      inkscape:document-units="px"
      inkscape:current-layer="g3785"
      showgrid="false"
-     inkscape:window-width="1920"
-     inkscape:window-height="1138"
-     inkscape:window-x="1912"
-     inkscape:window-y="-8"
+     inkscape:window-width="1280"
+     inkscape:window-height="754"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
      inkscape:window-maximized="1"
      fit-margin-top="0"
      fit-margin-left="0"
@@ -228,7 +291,7 @@
      inkscape:label="Ebene 1"
      inkscape:groupmode="layer"
      id="layer1"
-     transform="translate(-354.9353,-384.97238)">
+     transform="translate(-354.9353,-416.97238)">
     <text
        transform="scale(1,-1)"
        xml:space="preserve"
@@ -252,25 +315,26 @@
          transform="translate(1.1249973,-18.782671)">
         <text
            xml:space="preserve"
-           style="font-size:40px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;line-height:0%;letter-spacing:0px;word-spacing:0px;fill:#ffffff;fill-opacity:1;stroke:none;font-family:Tunga;-inkscape-font-specification:Tunga"
-           x="349.13947"
-           y="527.79803"
+           style="font-size:26.16345596px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;line-height:0%;letter-spacing:0px;word-spacing:0px;fill:#ffffff;fill-opacity:1;stroke:none;filter:url(#filter3141);font-family:Tunga;-inkscape-font-specification:Tunga"
+           x="357.84625"
+           y="494.30389"
            id="text5256"
-           sodipodi:linespacing="0%"><tspan
-             style="font-size:112px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Tahoma;-inkscape-font-specification:Tahoma"
-             dx="0"
+           sodipodi:linespacing="0%"
+           transform="matrix(0.73802304,0,0,0.81946374,85.520969,117.09153)"><tspan
+             style="font-size:73.2576828px;font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:Droid Sans Georgian;-inkscape-font-specification:Droid Sans Georgian Bold"
+             dx="0 0"
              sodipodi:role="line"
              id="tspan5258"
-             x="349.13947"
-             y="527.79803"><tspan
-               style="font-size:112px;fill:#000000"
-               id="tspan3796">c</tspan><tspan
-               dx="-4.584094"
-               style="font-size:112px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;fill:#d30000;fill-opacity:1;font-family:Tahoma;-inkscape-font-specification:Tahoma"
+             x="357.84625"
+             y="494.30389"><tspan
+               style="font-size:73.2576828px;font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;fill:#000000;font-family:Droid Sans Georgian;-inkscape-font-specification:Droid Sans Georgian Bold"
+               id="tspan3796">.c</tspan><tspan
+               dx="-2.9983943"
+               style="font-size:73.2576828px;font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;fill:#d30000;fill-opacity:1;font-family:Droid Sans Georgian;-inkscape-font-specification:Droid Sans Georgian Bold"
                id="tspan5260">h</tspan><tspan
-               style="font-size:112px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;fill:#008000;font-family:Tahoma;-inkscape-font-specification:Tahoma"
+               style="font-size:73.2576828px;font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;fill:#008000;font-family:Droid Sans Georgian;-inkscape-font-specification:Droid Sans Georgian Bold"
                id="tspan5262"
-               dx="-10.496117">5</tspan></tspan></text>
+               dx="-6.8653674">5</tspan></tspan></text>
       </g>
     </g>
   </g>
