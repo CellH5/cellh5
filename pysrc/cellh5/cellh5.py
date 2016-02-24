@@ -465,7 +465,9 @@ class CH5Position(object):
                     [c, t, z, :, :]
 
     def get_gallery_image(self, index,
-                          object_='primary__primary', size=GALLERY_SIZE):
+                          object_='primary__primary', size=None):
+        if size is None:
+            size=GALLERY_SIZE 
         index = to_index_array(index)
         images = list()
 
@@ -522,9 +524,11 @@ class CH5Position(object):
         
         return img
 
-    def get_gallery_image_rgb(self, index, object_=('primary__primary',)):
+    def get_gallery_image_rgb(self, index, object_=('primary__primary',), size=None):
+        if size is None:
+            size=GALLERY_SIZE
         if len(object_) == 1:
-            img_ = self.get_gallery_image(index, object_[0])
+            img_ = self.get_gallery_image(index, object_[0], size=size)
             rgb_shape = img_.shape + (3,)
             img = numpy.zeros(rgb_shape, img_.dtype)
             for c in range(3): img[:, :, c] = img_
@@ -532,20 +536,23 @@ class CH5Position(object):
 
         for c in range(3):
             if c == 0:
-                img_ = self.get_gallery_image(index, object_[c])
+                img_ = self.get_gallery_image(index, object_[c], size=size)
                 rgb_shape = img_.shape + (3,)
                 img = numpy.zeros(rgb_shape, img_.dtype)
                 img[:, :, 0] = img_
             if 0 < c < len(object_):
-                img[:, :, c] = self.get_gallery_image(index, object_[c])
+                img[:, :, c] = self.get_gallery_image(index, object_[c], size=size)
 
         return img
 
-    def get_gallery_image_list(self, index, object_='primary__primary'):
+    def get_gallery_image_list(self, index, object_='primary__primary', size=None):
         image_list = []
         channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
+        
+        if size is None:
+            size=GALLERY_SIZE
 
 
         time_idxs = [self['object'][object_][ind]['time_idx'] for ind in index]
@@ -554,22 +561,25 @@ class CH5Position(object):
         for k in xrange(len(index)):
             time_idx = time_idxs[k]
             cen1 = center_idxs[k]
-            image = numpy.zeros((GALLERY_SIZE, GALLERY_SIZE), dtype=numpy.uint8)
+            image = numpy.zeros((size, size), dtype=numpy.uint8)
 
             tmp_img = self['image/channel'][channel_idx, time_idx, 0,
-                                 max(0, cen1[1] - GALLERY_SIZE / 2):min(image_width, cen1[1] + GALLERY_SIZE / 2),
-                                 max(0, cen1[0] - GALLERY_SIZE / 2):min(image_height, cen1[0] + GALLERY_SIZE / 2)]
+                                 max(0, cen1[1] - size / 2):min(image_width, cen1[1] + size / 2),
+                                 max(0, cen1[0] - size / 2):min(image_height, cen1[0] + size / 2)]
 
             image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
             image_list.append(image)
 
         return image_list
 
-    def get_gallery_image_generator(self, index, object_='primary__primary'):
+    def get_gallery_image_generator(self, index, object_='primary__primary', size=None):
         channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
         
+        if size is None:
+            size=GALLERY_SIZE
+            
         try:
             test_iter = iter(index)
         except TypeError, te:
@@ -578,11 +588,11 @@ class CH5Position(object):
         for ind in index:
             time_idx = self['object'][object_][ind]['time_idx']
             cen1 = self['feature'][object_]['center'][ind]
-            image = numpy.zeros((GALLERY_SIZE, GALLERY_SIZE, 3), dtype=numpy.uint8)
+            image = numpy.zeros((size, size, 3), dtype=numpy.uint8)
 
             tmp_img = self['image/channel'][channel_idx, time_idx, 0,
-                                 max(0, cen1[1] - GALLERY_SIZE / 2):min(image_width, cen1[1] + GALLERY_SIZE / 2),
-                                 max(0, cen1[0] - GALLERY_SIZE / 2):min(image_height, cen1[0] + GALLERY_SIZE / 2)]
+                                 max(0, cen1[1] - size / 2):min(image_width, cen1[1] + size / 2),
+                                 max(0, cen1[0] - size / 2):min(image_height, cen1[0] + size / 2)]
 
             for c in range(3):
                 image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1], c] = tmp_img
@@ -600,9 +610,11 @@ class CH5Position(object):
             
             yield image
 
-    def get_gallery_image_matrix(self, index, shape, object_='primary__primary'):
-        image = numpy.zeros((GALLERY_SIZE * shape[0],
-                             GALLERY_SIZE * shape[1], 3), dtype=numpy.uint8)
+    def get_gallery_image_matrix(self, index, shape, object_='primary__primary', size=None):
+        if size is None:
+            size=GALLERY_SIZE
+        image = numpy.zeros((size * shape[0],
+                             size * shape[1], 3), dtype=numpy.uint8)
         i, j = 0, 0
         img_gen = self.get_gallery_image_generator(index, object_)
 
@@ -612,10 +624,10 @@ class CH5Position(object):
                     img = img_gen.next()
                 except StopIteration:
                     break
-                a = i * GALLERY_SIZE
-                b = j * GALLERY_SIZE
-                c = a + GALLERY_SIZE
-                d = b + GALLERY_SIZE
+                a = i * size
+                b = j * size
+                c = a + size
+                d = b + size
 
                 if (c, d) > image.shape:
                     break
@@ -624,8 +636,8 @@ class CH5Position(object):
         return image
 
     def get_gallery_image_matrix_with_classification(self, index, shape, object_='primary__primary'):
-        image = numpy.zeros((GALLERY_SIZE * shape[0],
-                             GALLERY_SIZE * shape[1], 3), dtype=numpy.uint8)
+        image = numpy.zeros((size * shape[0],
+                             size * shape[1], 3), dtype=numpy.uint8)
         i, j = 0, 0
         img_gen = self.get_gallery_image_generator(index, object_)
         class_colors = self.get_class_color(index)
@@ -638,10 +650,10 @@ class CH5Position(object):
                     cnt += 1
                 except StopIteration:
                     break
-                a = i * GALLERY_SIZE
-                b = j * GALLERY_SIZE
-                c = a + GALLERY_SIZE
-                d = b + GALLERY_SIZE
+                a = i * size
+                b = j * size
+                c = a + size
+                d = b + size
 
                 if (c, d) > image.shape:
                     break
@@ -652,7 +664,9 @@ class CH5Position(object):
 
         return image
 
-    def get_gallery_image_contour(self, index, object_=('primary__primary',), color=None, scale=None):
+    def get_gallery_image_contour(self, index, object_=('primary__primary',), color=None, scale=None, size=None):
+        if size is None:
+            size=GALLERY_SIZE
         img = self.get_gallery_image_rgb(index, object_)
         if scale is not None:
             img = numpy.clip(img.astype(numpy.float32) * scale, 0, 255).astype(numpy.uint8)
@@ -673,7 +687,7 @@ class CH5Position(object):
                 col_tmp = hex2rgb(col)
                 for x, y in cr:
                     for c in range(3):
-                        img[y, x + i * GALLERY_SIZE, c] = col_tmp[c]
+                        img[y, x + i * size, c] = col_tmp[c]
         return img
 
     def get_class_label(self, index, object_='primary__primary'):
@@ -1173,8 +1187,11 @@ class CH5File(object):
         return img_gen
     
     @staticmethod
-    def gallery_image_matrix_layouter(img_gen, shape):
-        image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1]), dtype=numpy.uint8)
+    def gallery_image_matrix_layouter(img_gen, shape, size=None):
+        if size is None:
+            size=GALLERY_SIZE 
+            
+        image = numpy.zeros((size * shape[0], size * shape[1]), dtype=numpy.uint8)
         i, j = 0, 0    
         for i in range(shape[0]):
             for j in range(shape[1]):
@@ -1182,10 +1199,10 @@ class CH5File(object):
                     img = img_gen.next()
                 except StopIteration:
                     break
-                a = i * GALLERY_SIZE
-                b = j * GALLERY_SIZE
-                c = a + GALLERY_SIZE
-                d = b + GALLERY_SIZE
+                a = i * size
+                b = j * size
+                c = a + size
+                d = b + size
                 
                 if (c, d) > image.shape:
                     break
@@ -1193,8 +1210,10 @@ class CH5File(object):
         return image 
     
     @staticmethod
-    def gallery_image_matrix_layouter_rgb(img_gen, shape):
-        image = numpy.zeros((GALLERY_SIZE * shape[0], GALLERY_SIZE * shape[1],3), dtype=numpy.uint8)
+    def gallery_image_matrix_layouter_rgb(img_gen, shape, size=None):
+        if size is None:
+            size=GALLERY_SIZE 
+        image = numpy.zeros((size * shape[0], size * shape[1],3), dtype=numpy.uint8)
         i, j = 0, 0    
         for i in range(shape[0]):
             for j in range(shape[1]):
@@ -1202,10 +1221,10 @@ class CH5File(object):
                     img = img_gen.next()
                 except StopIteration:
                     break
-                a = i * GALLERY_SIZE
-                b = j * GALLERY_SIZE
-                c = a + GALLERY_SIZE
-                d = b + GALLERY_SIZE
+                a = i * size
+                b = j * size
+                c = a + size
+                d = b + size
                 
                 if (c, d) > image.shape:
                     break
