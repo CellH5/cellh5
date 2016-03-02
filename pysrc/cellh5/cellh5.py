@@ -834,7 +834,7 @@ class CH5Position(object):
     def get_event_items(self, output_second_branch=False):
         dset_event = self.get_object_table('event')
         events = []
-        for event_id in xrange(dset_event['obj_id'].max()):
+        for event_id in xrange(dset_event['obj_id'].max()+1):
             idx = numpy.where(dset_event['obj_id'] == event_id)
             idx1 = dset_event[idx]['idx1']
             idx2 = dset_event[idx]['idx2']
