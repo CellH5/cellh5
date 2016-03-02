@@ -33,7 +33,7 @@ from matplotlib.colors import hex2color
 from hmm_wrapper import HMMConstraint, HMMAgnosticEstimator, normalize, hmm 
 
 
-version_num = (1, 3, 0)
+version_num = (1, 3, 1)
 version = '.'.join([str(n) for n in version_num])
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 
