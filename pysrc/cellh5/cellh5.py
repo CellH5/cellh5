@@ -37,7 +37,7 @@ version_num = (1, 3, 1)
 version = '.'.join([str(n) for n in version_num])
 ICON_FILE = os.path.join(os.path.split(__file__)[0], "cellh5_icon.ico")
 
-GALLERY_SIZE = 150
+GALLERY_SIZE = 60
 
 import logging
 MODULE_LOGGER = logging.getLogger(__name__)
@@ -635,7 +635,9 @@ class CH5Position(object):
 
         return image
 
-    def get_gallery_image_matrix_with_classification(self, index, shape, object_='primary__primary'):
+    def get_gallery_image_matrix_with_classification(self, index, shape, object_='primary__primary', size=None):
+        if size is None:
+            size=GALLERY_SIZE
         image = numpy.zeros((size * shape[0],
                              size * shape[1], 3), dtype=numpy.uint8)
         i, j = 0, 0
