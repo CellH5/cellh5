@@ -86,6 +86,7 @@ class CH5ImageRegionDefinition(CH5PositionDescription):
 
 
 class CH5FileWriter(cellh5.CH5File):
+
     def __init__(self, filename, sister_file=None, plate_layout=None, mode="w"):
         self.filename = filename
         self._f = h5py.File(filename, mode)
@@ -282,6 +283,7 @@ class CH5RegionWriter(CH5ObjectWriter):
         self.dset.resize((self.offset,))
         super(CH5RegionWriter, self).finalize()
 
+
 class CH5FeatureCompoundWriter(CH5PositionWriterBase):
     init_size = 1000
     def __init__(self, object_name, obj_grp, parent_pos):
@@ -399,6 +401,7 @@ class CH5MasterFile(h5py.File):
         # do repacking
         pass
 
+
 class CH5ImageWideObjectWriter(CH5ObjectWriter):
     dtype = numpy.dtype([('object_idx', 'int32'),('time_idx', 'int32'),
                          ('channel_idx', 'int32'),('zsclice_idx', 'int32')])
@@ -419,7 +422,10 @@ class CH5ImageWideObjectWriter(CH5ObjectWriter):
 
     def write_definition(self):
         img_def_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.OBJECT)
-        def_dset = img_def_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(1,), dtype=numpy.dtype([('name', '|S512'), ('type', '|S512'), ('source1', '|S512'), ('source2', '|S512')]))
+        def_dset = img_def_grp.create_dataset(
+            os.path.split(self.dset.name)[1], shape=(1,),
+            dtype=numpy.dtype([('name', '|S512'), ('type', '|S512'),
+                               ('source1', '|S512'), ('source2', '|S512')]))
         def_dset[0] = [(self.name, 'image_xy', '', '')]
 
     def finalize(self):
@@ -429,9 +435,10 @@ class CH5ImageWideObjectWriter(CH5ObjectWriter):
 
 
 if __name__ == "__main__":
+
     filename = "test.ch5"
 
-    raw = (numpy.random.rand(2,10,1, 200, 300) * 255).astype(numpy.uint8)
+    raw = (numpy.random.rand(2,10,1, 200, 300) * 255).astype(numpy.uint32)
     seg = (numpy.random.rand(3,10,1, 200, 300) * 4065).astype(numpy.uint16)
     meta = {}
 

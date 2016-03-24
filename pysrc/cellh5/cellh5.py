@@ -234,6 +234,7 @@ def ch5open(filename, mode='r', cached=True):
     yield ch5
     ch5.close()
 
+
 class CH5Const(object):
     """Container class for constants"""
     # defaults for unpredicted objects, -1 one might be not a
@@ -244,6 +245,8 @@ class CH5Const(object):
     RELATION = 'relation'
 
     DEFINITION = "definition"
+    LAYOUT = "layout"
+    CLASSIFIERS = "classifiers"
 
     PREFIX = "sample/0"
 
