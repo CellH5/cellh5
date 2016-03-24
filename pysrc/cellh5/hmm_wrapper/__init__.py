@@ -14,14 +14,19 @@ __url__ = 'www.cellcognition.org'
 
 from os.path import join
 import numpy as np
-from sklearn import hmm
+try:
+    from sklearn import hmm
+    hmm.normalize = lambda A, axis=None: normalize(A, axis, eps=10e-99)
+except:
+    hmm = None
+    
 import lxml
 import lxml.objectify
 
 import os
 
 # sklearn hmm monkey patch 
-hmm.normalize = lambda A, axis=None: normalize(A, axis, eps=10e-99)
+
 
 np.set_printoptions(precision=2)
 EPS = 0.0
