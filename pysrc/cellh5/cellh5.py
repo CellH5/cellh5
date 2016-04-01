@@ -330,6 +330,14 @@ class CH5Position(object):
         self.grp_pos_path = grp_pos
         self.definitions = parent
 
+    @property
+    def filename(self):
+        """Returns the path of the current file no matter if the position
+        save in linked file or not.
+        """
+        path = self.coord.get_path()
+        return self.definitions[path].file.filename
+
     def __getitem__(self, key):
         path = "%s/%s" % (self.grp_pos_path, key)
         return self.definitions.get_file_handle()[path]
@@ -1089,7 +1097,11 @@ class CH5File(object):
             self._file_handle = filename
             self.filename = filename.filename
 
-        self.plate = self._get_group_members('/sample/0/plate/')[0]
+        try:
+            self.plate = self._get_group_members('/sample/0/plate/')[0]
+        except KeyError:
+            return
+
         self.wells = self._get_group_members('/sample/0/plate/%s/experiment/' % self.plate)
         self.positions = collections.OrderedDict()
         for w in sorted(self.wells):

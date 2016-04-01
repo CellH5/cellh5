@@ -87,11 +87,11 @@ class CH5ImageRegionDefinition(CH5PositionDescription):
 
 class CH5FileWriter(cellh5.CH5File):
 
-    def __init__(self, filename, sister_file=None, plate_layout=None, mode="w"):
-        self.filename = filename
-        self._f = h5py.File(filename, mode)
+    def __init__(self, filename, sister_file=None, plate_layout=None, mode="w",
+                 cached=False):
+        super(CH5FileWriter, self).__init__(filename, mode, cached)
+        self._f = self._file_handle
         self._init_basic_structure()
-        self._file_handle = self._f
 
     def __enter__(self):
         return self
