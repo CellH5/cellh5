@@ -274,8 +274,11 @@ class CH5PositionCoordinate(object):
         self.plate = plate
 
     def get_path(self):
-        return "/%s/%s/%s/%s/%s/%s/%s" % (CH5Const.PREFIX, CH5Const.PLATE, self.plate, CH5Const.WELL, self.well, CH5Const.SITE, str(self.site))
-
+        return "/%s/%s/%s/%s/%s/%s/%s" % (CH5Const.PREFIX,
+                                          CH5Const.PLATE,
+                                          self.plate, CH5Const.WELL,
+                                          self.well, CH5Const.SITE,
+                                          str(self.site))
 
 
 class CH5GroupCoordinate(object):
