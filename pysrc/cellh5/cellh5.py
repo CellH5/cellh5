@@ -70,6 +70,7 @@ def pandas_apply(df, func):
     else:
         return res
     
+    
 def pandas_ms_apply(df, func, n_cores=10):
     from multiprocessing import Pool
     """Helper function for pandas DataFrame, when dealing with entries, which are numpy multi-dim arrays.
@@ -412,6 +413,9 @@ class CH5Position(object):
     def has_object_entries(self, object_='primary__primary'):
         return len(self['object'][object_]) > 0
 
+    def get_object_count(self, object_='primary__primary'):
+        return len(self['object'][object_])
+    
     def get_object_features(self, object_='primary__primary', index=None):
         if index is not None and len(index) == 0:
             return []
