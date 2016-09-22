@@ -30,7 +30,7 @@ from collections import OrderedDict
 from contextlib import contextmanager
 
 from matplotlib.colors import hex2color
-from hmm_wrapper import HMMConstraint, HMMAgnosticEstimator, normalize, hmm 
+from hmm_wrapper import HMMConstraint, HMMAgnosticEstimator, normalize, hmm
 
 
 version_num = (1, 3, 1)
@@ -56,10 +56,10 @@ MODULE_LOGGER.addHandler(ch)
 def pandas_apply(df, func):
     """Helper function for pandas DataFrame, when dealing with entries, which are numpy multi-dim arrays.
        Note, pandas integrated apply fun will drive you nuts...
-       
+
        df: pandas DataFrame
        func: function expecting a row a Series over the columns of df
-       
+
        returns list of row results
     """
     res = []
@@ -69,26 +69,26 @@ def pandas_apply(df, func):
         return zip(*res)
     else:
         return res
-    
+
     
 def pandas_ms_apply(df, func, n_cores=10):
     from multiprocessing import Pool
     """Helper function for pandas DataFrame, when dealing with entries, which are numpy multi-dim arrays.
        Note, pandas integrated apply fun will drive you nuts...
-       
+
        IMPORTANT: differences to single core: pandas_apply
           1) func must live at the module level
           2) all extra args to func (e.g. used with partial) must be pickable
-       
+
        df: pandas DataFrame
        func: function expecting a row a Series over the columns of df
-       
+
        returns list of row results
     """
     data = []
     for _, row in df.iterrows():
         data.append(row)
-    
+
     pool = Pool(processes=n_cores)
     res = pool.map(func, data)
     pool.close()
@@ -101,7 +101,7 @@ def repack_cellh5(cellh5_folder, output_file=None, check_reg=r'^[A-Z]\d{2}_\d{2}
     """Copies a cellh5 folder well-based into one single postition file"""
     if output_file is None:
         output_file = '%s/_all_positions_with_data.ch5' % cellh5_folder
-  
+
     import glob, re
     PLATE_PREFIX = '/sample/0/plate/'
     WELL_PREFIX = PLATE_PREFIX + '%s/experiment/'
@@ -137,13 +137,13 @@ def repack_cellh5(cellh5_folder, output_file=None, check_reg=r'^[A-Z]\d{2}_\d{2}
                 print fname
                 raise
             fplate, fwell, fpos = get_plate_and_postion(fh)
-            
-            
+
+
             if new_plate_name is not None:
                 fplate_out = new_plate_name
             else:
                 fplate_out = fplate
-            print " copying", fplate_out, (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)    
+            print " copying", fplate_out, (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
             f.copy(fh[(POSITION_PREFIX + '%s') % (fplate, fwell, fpos)], (POSITION_PREFIX + '%s') % (fplate_out, fwell, fpos))
             fh.close()
             cnt += 1
@@ -235,6 +235,7 @@ def ch5open(filename, mode='r', cached=True):
     yield ch5
     ch5.close()
 
+
 class CH5Const(object):
     """Container class for constants"""
     # defaults for unpredicted objects, -1 one might be not a
@@ -243,26 +244,28 @@ class CH5Const(object):
 
     REGION = 'region'
     RELATION = 'relation'
-    
+
     DEFINITION = "definition"
-    
+    LAYOUT = "layout"
+    CLASSIFIERS = "classifiers"
+
     PREFIX = "sample/0"
-    
+
     PLATE = "plate"
     WELL = "experiment"
     SITE = "position"
-    
+
     OBJECT = "object"
     FEATURE = "feature"
     IMAGE = "image"
-    
+
     DEFAULT_IMAGE_ORDER = "ctzyx"
     RAW_IMAGE = "channel"
     LABEL_IMAGE = "region"
-    
+
     NOT_DEFINED = 'none'
-    
-    
+
+
 class CH5PositionCoordinate(object):
     """CH5 Position Coordinates, plate, well, site"""
     def __init__(self, plate, well, site):
@@ -270,11 +273,14 @@ class CH5PositionCoordinate(object):
         self.site = site
         self.well = well
         self.plate = plate
-        
+
     def get_path(self):
-        return "/%s/%s/%s/%s/%s/%s/%s" % (CH5Const.PREFIX, CH5Const.PLATE, self.plate, CH5Const.WELL, self.well, CH5Const.SITE, str(self.site))
-        
-        
+        return "/%s/%s/%s/%s/%s/%s/%s" % (CH5Const.PREFIX,
+                                          CH5Const.PLATE,
+                                          self.plate, CH5Const.WELL,
+                                          self.well, CH5Const.SITE,
+                                          str(self.site))
+
 
 class CH5GroupCoordinate(object):
     """CH5 Coordinates, sample, plate, well, position, region"""
@@ -328,16 +334,24 @@ class CH5Position(object):
         self.grp_pos_path = grp_pos
         self.definitions = parent
 
+    @property
+    def filename(self):
+        """Returns the path of the current file no matter if the position
+        save in linked file or not.
+        """
+        path = self.coord.get_path()
+        return self.definitions[path].file.filename
+
     def __getitem__(self, key):
         path = "%s/%s" % (self.grp_pos_path, key)
         return self.definitions.get_file_handle()[path]
-    
+
     def get_group(self, sub_group=None):
         if sub_group is None:
             return self.definitions.get_file_handle()[self.grp_pos_path]
         else:
             return self.definitions.get_file_handle()[self.grp_pos_path + "/" + sub_group]
-        
+
 
     def channel_color_by_region(self, region):
         """Return the the channel information."""
@@ -424,21 +438,21 @@ class CH5Position(object):
                 return self['feature'][object_]['object_features'].value
             else:
                 return self['feature'][object_]['object_features'][index, :]
-                
+
         else:
-            return []           
-        
-    def get_object_feature_by_name(self, name, object_='primary__primary'):   
+            return []
+
+    def get_object_feature_by_name(self, name, object_='primary__primary'):
         if len(self['feature'][object_][name]) > 0:
             return self['feature'] \
                    [object_] \
                    [name].value
         else:
-            return []     
-        
+            return []
+
     def get_time_of_frame(self, frame):
         return self['image/time_lapse']['timestamp_rel'][frame]
-                   
+
     def get_time_lapse(self):
         if 'time_lapse' in self['image']:
             time_stamps = self['image/time_lapse']['timestamp_rel']
@@ -447,7 +461,7 @@ class CH5Position(object):
         else:
             time_lapse = None
         return time_lapse
-    
+
     def get_time_lapse_per_frame(self):
         if 'time_lapse' in self['image']:
             time_stamps = self['image/time_lapse']['timestamp_rel']
@@ -455,7 +469,7 @@ class CH5Position(object):
         else:
             time_lapse = None
         return time_lapse
-    
+
     def get_object_idx(self, object_='primary__primary', frame=None):
         ot = self.get_object_table(object_)
         if frame is None:
@@ -471,7 +485,7 @@ class CH5Position(object):
     def get_gallery_image(self, index,
                           object_='primary__primary', size=None):
         if size is None:
-            size=GALLERY_SIZE 
+            size=GALLERY_SIZE
         index = to_index_array(index)
         images = list()
 
@@ -487,7 +501,7 @@ class CH5Position(object):
             tmp_img = self['image']['channel'][channel_idx, time_idx, 0,
                                                max(0, cen[1] - size_2):min(image_width, cen[1] + size_2),
                                                max(0, cen[0] - size_2):min(image_height, cen[0] + size_2)]
-            
+
             if tmp_img.shape != (size, size):
                 image = numpy.zeros((size, size), dtype=numpy.uint8)
                 image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1]] = tmp_img
@@ -498,7 +512,7 @@ class CH5Position(object):
         if len(index) > 1:
             return numpy.concatenate(images, axis=1)
         return images[0]
-    
+
     def get_gallery_image_with_class(self, index, object_=('primary__primary',), color=None):
         if len(object_) == 1:
             img_ = self.get_gallery_image(index, object_[0])
@@ -515,7 +529,7 @@ class CH5Position(object):
                     img[:, :, 0] = img_
                 if 0 < c < len(object_):
                     img[:, :, c] = self.get_gallery_image(index, object_[c])
-        
+
         if color is None:
             class_color = self.get_class_color(index)
         else:
@@ -525,7 +539,7 @@ class CH5Position(object):
         for c in range(3):
             img[:10, :10, c] = col_tmp[c]
 
-        
+
         return img
 
     def get_gallery_image_rgb(self, index, object_=('primary__primary',), size=None):
@@ -554,7 +568,7 @@ class CH5Position(object):
         channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
-        
+
         if size is None:
             size=GALLERY_SIZE
 
@@ -580,10 +594,10 @@ class CH5Position(object):
         channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
-        
+
         if size is None:
             size=GALLERY_SIZE
-            
+
         try:
             test_iter = iter(index)
         except TypeError, te:
@@ -600,7 +614,7 @@ class CH5Position(object):
 
             for c in range(3):
                 image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1], c] = tmp_img
-            
+
 #             crack = self.get_crack_contour(ind, object_)
 #             class_color = ['#FFFF00'] * len(crack)
 #             for i, (cr, col) in enumerate(zip(crack, class_color)):
@@ -610,8 +624,8 @@ class CH5Position(object):
 #                         y = min(y, GALLERY_SIZE-1)
 #                         x = min(x, GALLERY_SIZE-1)
 #                         image[y, x + i * GALLERY_SIZE, c] = col_tmp[c]
-            
-            
+
+
             yield image
 
     def get_gallery_image_matrix(self, index, shape, object_='primary__primary', size=None):
@@ -664,7 +678,7 @@ class CH5Position(object):
                 if (c, d) > image.shape:
                     break
                 for c in range(3): image[a:c, b:d, c] = img
-                
+
                 col_rgb = hex2rgb(color)
                 for c in range(3): image[a:a + 10, b:b + 10, c] = col_rgb[c]
 
@@ -713,7 +727,7 @@ class CH5Position(object):
                 pass
 
         return labels.reshape(index.shape)
-    
+
     def get_class_label_index(self, index, object_='primary__primary'):
         """return prediction indices """
         index = to_index_array(index)
@@ -725,7 +739,7 @@ class CH5Position(object):
         index = to_index_array(index)
         center_list = self.get_feature_table(object_, 'center')[index]
         return center_list
-    
+
     def get_orientation(self, index, object_='primary__primary'):
         index = to_index_array(index)
         angle_list = self.get_feature_table(object_, 'orientation')[index]['angle']
@@ -768,20 +782,20 @@ class CH5Position(object):
         label2color = OrderedDict()
         class_mapping = self.definitions.class_definition(object_)
         for cm in range(len(class_mapping)):
-            label2color[class_mapping["label"][cm]] = class_mapping["color"][cm] 
+            label2color[class_mapping["label"][cm]] = class_mapping["color"][cm]
         return [label2color[cl] for cl in class_labels]
 
     def class_name_def(self, class_labels, object_):
         label2name = OrderedDict()
         class_mapping = self.definitions.class_definition(object_)
         for cm in range(len(class_mapping)):
-            label2name[class_mapping["label"][cm]] = class_mapping["name"][cm] 
+            label2name[class_mapping["label"][cm]] = class_mapping["name"][cm]
         return [label2name[cl] for cl in class_labels]
 
     def object_feature_def(self, object_='primary__primary'):
         return map(lambda x: str(x[0]),
                    self.definitions.feature_definition['%s/object_features' % object_].value)
-        
+
     def get_object_table(self, object_):
         if len(self['object'][object_]) > 0:
             return self['object'][object_].value
@@ -804,7 +818,7 @@ class CH5Position(object):
 
         evtable = self.get_object_table('event')
         if len(evtable) == 0:
-            return numpy.array([]) 
+            return numpy.array([])
         event_ids = numpy.unique(evtable['obj_id'])
 
         if random is not None:
@@ -898,7 +912,7 @@ class CH5Position(object):
                 break
 
         return idx_list
-    
+
     def _track_backwards_single(self, end_idx, type_, max_length=None, object_="primary__primary"):
         track_on_feature = False
         if type_ == 'first':
@@ -930,36 +944,36 @@ class CH5Position(object):
             idx_list.append(idx)
             if max_length is not None and len(idx_list) > max_length - 1:
                 break
-        
+
         idx_list.reverse()
 
         return idx_list
-    
+
     def del_object_feature_data(self, feature_name, object_='primary__primary'):
         # Check file mode
         if self.definitions._file_handle.mode not in ('w', 'a', 'r+'):
             raise IOError('Error: Cannot write to CellH5 file, since it is opened read-only')
         path = 'feature/%s/' % object_
         feature_grp = self[path]
-        
+
         if feature_name in feature_grp:
             del feature_grp[feature_name]
-        
+
     def set_object_feature_data(self, feature_name, data, object_='primary__primary', overwrite=True):
         # Check file mode
         if self.definitions._file_handle.mode not in ('w', 'a', 'r+'):
             raise IOError('Error: Cannot write to CellH5 file, since it is opened read-only')
-        
+
         path = 'feature/%s/' % object_
         feature_grp = self[path]
-        
+
         if feature_name in feature_grp:
             if overwrite:
                 "Waring: %s already set in %s... overwrite" % (feature_name, path)
                 del feature_grp[feature_name]
             else:
                 IOError("Error: %s already set in %s... overwrite" % (feature_name, path))
-        
+
         try:
             feature_grp.create_dataset(feature_name, data=data)
         except:
@@ -967,7 +981,7 @@ class CH5Position(object):
             raise
 
     def track_first(self, start_idx, max_length=None, object_='primary__primary'):
-        """Track an object based on the tracking information to the end. 
+        """Track an object based on the tracking information to the end.
            In case of spits, take the first element randomly"""
         return self._track_single(start_idx, 'first', max_length=max_length, object_=object_)
 
@@ -975,10 +989,10 @@ class CH5Position(object):
         return self._track_single(start_idx, 'last', max_length=max_length)
 
     def track_biggest(self, start_idx, max_length=None):
-        """Track an object based on the tracking information to the end. 
+        """Track an object based on the tracking information to the end.
            In case of spits, take the biggest element"""
         return self._track_single(start_idx, 'biggest', max_length=max_length)
-    
+
     def track_backwards(self, end_idx, max_length=None):
         return self._track_backwards_single(end_idx, 'first', max_length=max_length)
 
@@ -1071,7 +1085,7 @@ class CH5CachedPosition(CH5Position):
     @memoize
     def get_class_color(self, class_labels, object_='primary__primary'):
         return super(CH5CachedPosition, self).get_class_color(class_labels, object_)
-    
+
     def get_time_lapse_per_frame(self, *args, **kwargs):
         return super(CH5CachedPosition, self).get_time_lapse_per_frame(*args, **kwargs)
 
@@ -1088,9 +1102,13 @@ class CH5File(object):
             self._file_handle = h5py.File(filename, mode)
         else:
             self._file_handle = filename
-            self.filename = filename.filename    
-        
-        self.plate = self._get_group_members('/sample/0/plate/')[0]
+            self.filename = filename.filename
+
+        try:
+            self.plate = self._get_group_members('/sample/0/plate/')[0]
+        except KeyError:
+            return
+
         self.wells = self._get_group_members('/sample/0/plate/%s/experiment/' % self.plate)
         self.positions = collections.OrderedDict()
         for w in sorted(self.wells):
@@ -1127,13 +1145,13 @@ class CH5File(object):
 
     def get_position(self, well, pos):
         return self._position_group[(well, str(pos))]
-    
+
     def has_position(self, well, pos):
         return (well, str(pos)) in self._position_group
 
     def get_file_handle(self):
         return self._file_handle
-    
+
     def get_definition_root(self):
         return self._file_handle[CH5Const.DEFINITION]
 
@@ -1185,22 +1203,22 @@ class CH5File(object):
     def get_object_feature_idx_by_name(self, object_, feature_name):
         object_feature_names = self.object_feature_def(object_)
         return list(object_feature_names).index(feature_name)
-    
+
     def gallery_image_matrix_gen(self, index_tpl, object_='primary__primary'):
-        gen_list = []      
+        gen_list = []
         for well, pos, index in index_tpl:
             ch5pos = self.get_position(well, pos)
             gen_list.append(ch5pos.get_gallery_image_generator(index, object_))
         img_gen = chain.from_iterable(gen_list)
         return img_gen
-    
+
     @staticmethod
     def gallery_image_matrix_layouter(img_gen, shape, size=None):
         if size is None:
-            size=GALLERY_SIZE 
-            
+            size=GALLERY_SIZE
+
         image = numpy.zeros((size * shape[0], size * shape[1]), dtype=numpy.uint8)
-        i, j = 0, 0    
+        i, j = 0, 0
         for i in range(shape[0]):
             for j in range(shape[1]):
                 try:
@@ -1211,18 +1229,18 @@ class CH5File(object):
                 b = j * size
                 c = a + size
                 d = b + size
-                
+
                 if (c, d) > image.shape:
                     break
-                image[a:c, b:d] = img  
-        return image 
-    
+                image[a:c, b:d] = img
+        return image
+
     @staticmethod
     def gallery_image_matrix_layouter_rgb(img_gen, shape, size=None):
         if size is None:
-            size=GALLERY_SIZE 
+            size=GALLERY_SIZE
         image = numpy.zeros((size * shape[0], size * shape[1],3), dtype=numpy.uint8)
-        i, j = 0, 0    
+        i, j = 0, 0
         for i in range(shape[0]):
             for j in range(shape[1]):
                 try:
@@ -1233,16 +1251,16 @@ class CH5File(object):
                 b = j * size
                 c = a + size
                 d = b + size
-                
+
                 if (c, d) > image.shape:
                     break
-                image[a:c, b:d,:] = img  
-        return image 
-    
+                image[a:c, b:d,:] = img
+        return image
+
     def get_gallery_image_matrix(self, index_tpl, shape, object_='primary__primary'):
         img_gen = self.gallery_image_matrix_gen(index_tpl=index_tpl, object_=object_)
         return CH5File.gallery_image_matrix_layouter(img_gen, shape)
-    
+
     def get_gallery_image_matrix_with_classification(self, index_tpl, shape, object_='primary__primary'):
         img_gen = self.gallery_image_matrix_gen(index_tpl=index_tpl, object_=object_)
         return CH5File.gallery_image_matrix_layouter(img_gen, shape)
@@ -1276,13 +1294,13 @@ class CH5MappedFile(CH5File):
                                                 for c, r in locations])]
 
         self.mapping.reset_index(inplace=True)
-        
+
     def check_mapping(self, remove=False):
         self.mapping["CellH5"] = self.mapping.apply(lambda x: self.has_position(x["Well"], x["Site"]), axis=1)
         if remove:
             self.mapping = self.mapping[self.mapping["CellH5"]]
             self.mapping.reset_index(inplace=True)
-        
+
     def _get_mapping_field_of_pos(self, well, pos, field):
         return self.mapping[(self.mapping['Well'] == str(well)) & \
              (self.mapping['Site'] == int(pos))][field].iloc[0]
@@ -1294,7 +1312,7 @@ class CH5MappedFile(CH5File):
         if treatment_column is None:
             treatment_column = ['siRNA ID', 'Gene Symbol']
         return self._get_mapping_field_of_pos(well, pos, treatment_column)
-    
+
 class CH5MappedFileCollection(object):
     """Several CellH5 files together with a mapping"""
     def __init__(self, name="CH5MappedFileCollection", mapping_files=None, cellh5_files=None,
@@ -1305,15 +1323,15 @@ class CH5MappedFileCollection(object):
         self.time_lapse = {}
         self.cellh5_handles = {}
         self.log = MODULE_LOGGER
-        
+
         self.mapping = None
         if init:
             mappings = []
             for plate_name, mapping_file in mapping_files.items():
                 if plate_name not in cellh5_files.keys():
                     raise RuntimeError("Plate name %s not found" % plate_name)
-                cellh5_file = cellh5_files[plate_name] 
-                
+                cellh5_file = cellh5_files[plate_name]
+
                 mapped_ch5 = CH5MappedFile(cellh5_file)
                 mapped_ch5.read_mapping(mapping_file, sites=sites, rows=rows, cols=cols, locations=locations, plate_name=plate_name)
 
@@ -1323,38 +1341,38 @@ class CH5MappedFileCollection(object):
                     self.log.info("Found time lapse of plate '%s' = %5.3f min" % (plate_name, self.time_lapse[plate_name]))
                 else:
                     self.time_lapse[plate_name] = 0
-                    
+
                 self.cellh5_handles[plate_name] = mapped_ch5
                 mappings.append(mapped_ch5.mapping)
-                
+
             self.mapping = pandas.concat(mappings, ignore_index=True)
             del mappings
-            
+
     def close(self):
         if self.cellh5_handles is not None:
             for v in self.cellh5_handles.values():
                 v.close()
-            
+
     def get_treatment(self, plate, well, site):
         return list(self.mapping[
-                                (self.mapping['Plate'] == plate) & 
-                                (self.mapping['Well'] == well) & 
+                                (self.mapping['Plate'] == plate) &
+                                (self.mapping['Well'] == well) &
                                 (self.mapping['Site'] == site)
                                 ][['siRNA ID', 'Gene Symbol']].iloc[0])
-        
+
     def get_ch5_position(self, plate, well, site):
         return self.cellh5_handles[plate].get_position(well, site)
-    
+
     def get_object_classificaiton_dict(self, prop="name", object_='primary__primary'):
         res = OrderedDict()
         data = self.cellh5_handles.values()[0].class_definition(object_)
         for i in range(len(data)):
             res[i] = data[prop][i]
         return res
-        
+
 ####################
 ### CH5 Analysis ###
-####################        
+####################
 
 class CH5Analysis(CH5MappedFileCollection):
     """Basic class used for common analysis task using CellH5, e. g. already contains PCA, etc"""
@@ -1362,12 +1380,12 @@ class CH5Analysis(CH5MappedFileCollection):
                        sites=None, rows=None, cols=None, locations=None, output_dir=None, init=True):
         CH5MappedFileCollection.__init__(self, name=name, mapping_files=mapping_files, cellh5_files=cellh5_files,
                        sites=sites, rows=rows, cols=cols, locations=locations, init=True)
-        
+
         self.output_dir = output_dir
         self.set_output_dir(output_dir)
-        
+
         self.log = MODULE_LOGGER
-        
+
     def set_output_dir(self, output_dir):
         if self.output_dir is None:
             debug = ""
@@ -1382,12 +1400,12 @@ class CH5Analysis(CH5MappedFileCollection):
             except:
                 pass
         self.log.info("Output Directory: " + self.output_dir)
-        
+
     def output(self, file_):
         file_ = self._str_sanatize(file_)
-        return os.path.join(self.output_dir, file_) 
-        
-    @staticmethod    
+        return os.path.join(self.output_dir, file_)
+
+    @staticmethod
     def _str_sanatize(input_str):
         input_str = input_str.replace(" ", "_")
         input_str = input_str.replace("/", "_")
@@ -1395,18 +1413,18 @@ class CH5Analysis(CH5MappedFileCollection):
         input_str = input_str.replace(")", "_")
         input_str = input_str.replace("(", "_")
         return input_str
-    
+
     def get_treatment(self, plate, w, p):
         return list(self.ch5map.mapping[
-                                (self.mapping['Plate'] == plate) & 
-                                (self.mapping['Well'] == w) & 
+                                (self.mapping['Plate'] == plate) &
+                                (self.mapping['Well'] == w) &
                                 (self.mapping['Site'] == p)
                                 ][['siRNA ID', 'Gene Symbol']].iloc[0])
-    
+
     def cluster_run(self, cluster_class, cluster_on=('neg', 'target', 'pos'), feature_set="PCA", max_samples=1000, data=None, **clusterargs):
         if data is None:
             data = self.get_data(cluster_on, feature_set)
-            
+
         self.cluster_class_on_all = cluster_class(**clusterargs)
         if data.shape[0] > max_samples:
             idx = range(data.shape[0])
@@ -1414,20 +1432,20 @@ class CH5Analysis(CH5MappedFileCollection):
             numpy.random.shuffle(idx)
             idx = idx[:max_samples]
             data = data[idx, :]
-        
+
         self.cluster_class_on_all.fit(data)
-        
+
         def _cluster_(xxx):
             if xxx["Object count"] > 0:
                 data = xxx[feature_set]
                 cluster = self.cluster_class_on_all.predict(data)
-                return cluster 
+                return cluster
             else:
                 return []
-        
+
         cluster = pandas_apply(self.mapping, _cluster_)
         self.mapping['Simple clustering'] = pandas.Series(cluster)
-        
+
     def pca_run(self, pca_dims=None, train_on=('neg', 'target', 'pos'), max_samples=10000, pca_cls=None, **pca_args):
         training_matrix = self.get_data(train_on)
         if training_matrix.shape[0] > max_samples:
@@ -1436,12 +1454,12 @@ class CH5Analysis(CH5MappedFileCollection):
             numpy.random.shuffle(idx)
             idx = idx[:max_samples]
             training_matrix = training_matrix[idx, :]
-        
-        
+
+
         if pca_cls is None:
             from sklearn.decomposition import PCA
             pca_cls = PCA
-        
+
         self.log.info('Compute PCA (%s): on matrix shape %r' % (str(pca_cls), training_matrix.shape))
         if pca_dims is None:
             pca_dims = 0.99
@@ -1452,32 +1470,32 @@ class CH5Analysis(CH5MappedFileCollection):
         else:
             # older sklearn version
             self.log.info('Compute PCA (%s): %d dimensions used' % (str(pca_cls), self.pca.n_components))
-        
+
         def _project_on_pca_(xxx):
             return self.pca.transform(xxx)
         res = pandas.Series(self.mapping['Object features'][self.mapping['Object count'] > 0].map(_project_on_pca_))
         self.mapping['PCA'] = res
-        
+
     def lasso_run(self, split, train_on=('neg', 'target', 'pos'), sample_size=20000):
         from sklearn.linear_model import LassoCV
         classi = self.get_column_as_matrix("Object classification label")
         data   = self.get_column_as_matrix("Object features")
-        
+
         a = data[classi < split, :]
         b = data[classi >= split, :]
-        
+
         x = numpy.r_[a[numpy.random.randint(0, len(a) , sample_size / 2), :],
                     b[numpy.random.randint(0, len(b) , sample_size / 2), :]]
-        
+
         y = numpy.ones((sample_size,))
         y[:sample_size/2] = 0
-        
+
         las = LassoCV(max_iter=10000)
         las.fit(x,y)
         plt.plot(self.all_features_idx, las.coef_, 'r')
         fs = numpy.abs(las.coef_)
         plt.savefig(self.output("lasso.png"))
-        
+
         fs_idx = numpy.argsort(fs, )
         fs_idx = fs_idx[::-1]
         feat_list = numpy.array(self.all_features)[fs_idx]
@@ -1485,20 +1503,20 @@ class CH5Analysis(CH5MappedFileCollection):
         feat_idx_list = numpy.array(self.all_features_idx)[fs_idx]
 #         for i, a,b in zip(feat_idx_list, fs, feat_list):
 #             print i, a, b
-            
+
         f_res =  ", ".join(map(lambda xxx: "'%s'" % xxx, list(feat_list[fs>0])))
         with open(self.output("lasso_features.txt"), 'wb') as ff:
             ff.write(f_res)
-        
-        
-        
 
-        
-        
-        
-        
-        
-         
+
+
+
+
+
+
+
+
+
     def read_feature(self, object_="primary__primary", time_frames=None, remove_feature=(), use_features=None,
                            read_classification=True, idx_selector_functor=None):
 
@@ -1507,24 +1525,24 @@ class CH5Analysis(CH5MappedFileCollection):
         features_keep = [na for na in range(len(all_features)) if na not in remove_feature]
         self.all_features = [all_features[na] for na in range(len(all_features)) if na not in remove_feature]
         self.all_features_idx = [na for na in range(len(all_features)) if na not in remove_feature]
-        
+
         if use_features is not None:
             features_keep = [f for f in features_keep if f in [self.all_features.index(name) for name in use_features]]
-        
+
         features = []
         classification = []
         counts = []
         c5_object_index = []
         c5_object_index2 = []
         c5_object_index_not = []
-        
+
         for i, row in self.mapping.iterrows():
             plate = row['Plate']
             well = row['Well']
             site = str(row['Site'])
             treatment = "%s %s" % (row['Gene Symbol'], row['siRNA ID'])
-            
-            ch5_pos = self.get_ch5_position(plate, well, site)            
+
+            ch5_pos = self.get_ch5_position(plate, well, site)
             all_times = ch5_pos.get_all_time_idx(object_)
             self.log.info('Reading %s %s %s %s for object %s using time %r' % (plate,well,site,treatment,object_,time_frames))
 
@@ -1535,26 +1553,26 @@ class CH5Analysis(CH5MappedFileCollection):
                 else:
                     time_idx = numpy.ones(len(all_times), dtype=numpy.bool)
                 idx_bool = time_idx
-                
+
                 # TODO
                 if idx_selector_functor is not None:
                     idx_bool = idx_selector_functor(ch5_pos, plate, treatment, self.output_dir)
-                
+
                 idx = numpy.nonzero(idx_bool)[0]
                 if len(idx) > 0:
                     feature_matrix = ch5_pos.get_object_features(object_=object_, index=tuple(idx))
                     feature_matrix = feature_matrix[:, features_keep]
-                    
+
                     if read_classification:
-                        classification_labels = ch5_pos.get_class_prediction(object_=object_)[idx_bool]['label_idx']   
+                        classification_labels = ch5_pos.get_class_prediction(object_=object_)[idx_bool]['label_idx']
                     else:
-                        classification_labels = []           
+                        classification_labels = []
                     object_count = len(feature_matrix)
                 else:
                     object_count = 0
             else:
                 object_count = 0
-                
+
             counts.append(object_count)
             if object_count > 0:
                 features.append(feature_matrix)
@@ -1568,8 +1586,8 @@ class CH5Analysis(CH5MappedFileCollection):
                 c5_object_index.append(numpy.zeros((0,)))
                 c5_object_index2.append(numpy.zeros((0,)))
                 c5_object_index_not.append(numpy.zeros((0,)))
-            
-            
+
+
         self.mapping['Object features'] = features
         self.mapping['Object count'] = counts
         self.mapping['CellH5 object index'] = c5_object_index
@@ -1578,10 +1596,10 @@ class CH5Analysis(CH5MappedFileCollection):
         self.mapping['Object classification label'] = classification
 
         self.check_standardaize_features()
-        
+
     def check_standardaize_features(self):
         all_data = self.get_data(('neg', 'target', 'pos'))
-        
+
         nans = numpy.isnan(all_data)
         if nans.any():
             print '*'*40
@@ -1592,7 +1610,7 @@ class CH5Analysis(CH5MappedFileCollection):
             print numpy.nonzero(nans.any(0))
             print '*'*40
             raise RuntimeError("NaNs in data")
-        
+
         infs = numpy.isinf(all_data)
         if infs.any():
             print '*'*40
@@ -1602,41 +1620,41 @@ class CH5Analysis(CH5MappedFileCollection):
             print "Axes 0 samples"
             print numpy.nonzero(infs.any(0))
             raise RuntimeError("INFS in data")
-        
+
         self.norm_mean = numpy.mean(all_data, 0)
         self.norm_stds = all_data.std(0)
-        
+
         if (self.norm_stds < 10e-9).any():
             raise RuntimeError("stds get low")
-        
+
         for matrix_i in  self.mapping[self.mapping["Object count"] > 0]["Object features"]:
             matrix_i -= self.norm_mean
-            matrix_i /= self.norm_stds    
-            
+            matrix_i /= self.norm_stds
+
     def get_column_as_matrix(self, column_name, get_index=False):
         sel = self.mapping["Object count"] > 0
         data = self.mapping[sel][column_name]
         res = numpy.concatenate(list(data))
-        if get_index: 
+        if get_index:
             lens = data.map(len)
             index = [[i]*l for i, l in zip(data.index, lens)]
             return res, numpy.array(list(chain.from_iterable(index)))
         return res
-    
+
     def get_data_sampled(self, in_group, in_classes, n_sample=10000, in_class_type = 'Object classification label', type_='Object features'):
         # Row selection
         assert sum(in_classes.values()) - 1 < 0.000001
         object_count_sel = self.mapping['Object count'] > 0
         in_group_sel = self.mapping['Group'].isin(in_group)
-        
+
         selection = numpy.logical_and(object_count_sel, in_group_sel)
         selected = self.mapping[selection].reset_index()
         res = numpy.concatenate(list(selected[type_]))
-        
+
         # Single cell selection
-        
+
         indicies = []
-        
+
         class_labels = numpy.concatenate(selected[in_class_type])
         for in_class, in_class_ratio in in_classes.items():
             i_samples = int(in_class_ratio * n_sample)
@@ -1645,35 +1663,35 @@ class CH5Analysis(CH5MappedFileCollection):
             if i_samples > len(samples):
                 raise RuntimeError("Not enough classes '%r' for sampled selection (want %d, available %d)" % (in_class, i_samples, len(samples)))
             indicies.append(samples[:i_samples])
-            
+
         indicies = numpy.concatenate(indicies)
-            
+
         return res[indicies, :]
-    
+
     def get_data(self, in_group, type_='Object features', in_classes=None, in_class_type='Object classification label', export_galleries=False):
         # Row selection
         object_count_sel = self.mapping['Object count'] > 0
         in_group_sel = self.mapping['Group'].isin(in_group)
-        
+
         selection = numpy.logical_and(object_count_sel, in_group_sel)
         selected = self.mapping[selection].reset_index()
         res = numpy.concatenate(list(selected[type_]))
-        
+
         # Single cell selection
-        
+
         if export_galleries:
             import vigra
             sl = numpy.concatenate(list(self.mapping[selection]['Object classification label']))
             plate   = self.mapping[selection][["Plate", "Well", "Site"]].as_matrix()
             oc   = list(self.mapping[selection]["Object count"])
             plate = numpy.concatenate([[plate[ii]]*oc[ii] for ii in xrange(len(plate))])
-        
+
             ch5_ind = numpy.concatenate(list(self.mapping[selection]['CellH5 object index 2']))
-            
+
             img = []
             bc = numpy.bincount(sl)
             bcf = (bc / float(bc.sum()) * 5000)
-            
+
             for sl_class in numpy.unique(sl):
                 entries = numpy.nonzero(sl==sl_class)[0]
                 numpy.random.shuffle(entries)
@@ -1685,7 +1703,7 @@ class CH5Analysis(CH5MappedFileCollection):
                     img.append(ch5pos.get_gallery_image_contour(ch5_ind[e]))
             img = CH5File.gallery_image_matrix_layouter_rgb(iter(img), (50,100))
             vigra.impex.writeImage(img.swapaxes(1,0), self.output("__training_set.png"))
-        
+
         if in_classes is not None:
             class_labels = numpy.concatenate(selected[in_class_type])
             single_selection = numpy.in1d(class_labels, in_classes)
@@ -1694,7 +1712,7 @@ class CH5Analysis(CH5MappedFileCollection):
         self.log.info('get_data for %r positions' % len(selected) + 'for treatment %r with training matrix shape %r' % (list(selected['siRNA ID'].unique()), res.shape))
 
         return res
-    
+
     def get_data_preclustered(self, in_group, type_='Object features', in_classes=None, in_class_type='Object classification label', k=2):
         from sklearn.mixture import GMM as GMM_SKL
         data = self.get_data(in_group, type_='Object features', in_classes=None, in_class_type='Object classification label')
@@ -1705,42 +1723,42 @@ class CH5Analysis(CH5MappedFileCollection):
         maj_label = numpy.argmax(tmp)
         self.log.info("Preclustering data: majority class: %3.2f" % (float(tmp[maj_label]) / len(data)))
         return data[c_pred==maj_label, :]
-        
-        
-    
-    
+
+
+
+
 
 class CH5FateAnalysis(CH5Analysis):
     """
     Implementation of Hidden Markov Model Smoothing of class transitions in detected events
     This class is used to pre-process temporal data to foster more precise mitotic timings,
-    fate categories (e.g. death in mitosis), and correlations to kinetics in a additional 
+    fate categories (e.g. death in mitosis), and correlations to kinetics in a additional
     channel / color
     """
-    def read_events(self, onset_frame=0, time_limits=(0, numpy.Inf), object_="primary__primary"):    
+    def read_events(self, onset_frame=0, time_limits=(0, numpy.Inf), object_="primary__primary"):
         event_ids_all = []
         event_labels_all = []
-        for _, (plate, well, site) in self.mapping[['Plate', 'Well', 'Site']].iterrows(): 
+        for _, (plate, well, site) in self.mapping[['Plate', 'Well', 'Site']].iterrows():
             self.log.info('Reading %s %s %s for object' % (plate, well, site))
-            ch5_pos = self.get_ch5_position(plate, well, site)    
+            ch5_pos = self.get_ch5_position(plate, well, site)
 
-            event_ids = ch5_pos.get_events()            
+            event_ids = ch5_pos.get_events()
             event_ids = [e for e in event_ids if ch5_pos.get_time_idx(time_limits[0] <= e[onset_frame]) <= time_limits[1]]
             event_ids_all.append(event_ids)
-            
+
             event_labels = [ch5_pos.get_class_label(e, object_=object_) for e in event_ids]
             event_labels_all.append(event_labels)
-            
+
         self.mapping["Event IDs"] = event_ids_all
         self.mapping["Event labels"] = event_labels_all
-        
-    
+
+
     def __str__(self):
         str_ =  "\nFound events"
         if "Event IDs" in self.mapping:
             str_+= " True\n"
         else:
-            str_+= " False\n"    
+            str_+= " False\n"
         str_+= "Found tracks (full trajectories from events)"
         if "Track IDs" in self.mapping:
             str_+= " True\n"
@@ -1754,32 +1772,32 @@ class CH5FateAnalysis(CH5Analysis):
             str_+= "%d\t%d\t%s\n" % (class_i, class_dict_label[class_i], class_dict[class_i])
         str_+= "Caution: Class index will be used for all processing\n\n"
         return str_
-                      
-    def track_events(self, object_="primary__primary"):        
+
+    def track_events(self, object_="primary__primary"):
         def _track_events_(xxx):
             plate = xxx["Plate"]
             well = xxx["Well"]
             site = xxx["Site"]
             ch5_pos = self.get_ch5_position(plate, well, site)
             self.log.info('Tracking events  %s %s %s' % (plate, well, site))
-            
+
             event_ids = xxx["Event IDs"]
             track_ids = []
             track_labels = []
-            for _, event_idx in enumerate(event_ids):   
+            for _, event_idx in enumerate(event_ids):
                 start_idx = event_idx[-1]
                 track = list(event_idx) + ch5_pos.track_first(start_idx, object_=object_)
                 class_labels = ch5_pos.get_class_label_index(track, object_=object_)
                 track_labels.append(class_labels)
                 track_ids.append(track)
-                
+
             return track_ids, track_labels
 
         track_ids, track_labels = pandas_apply(self.mapping, _track_events_)
-        
+
         self.mapping["Track IDs"] = pandas.Series(track_ids)
         self.mapping["Track Labels"] = pandas.Series(track_labels)
-                                    
+
     def setup_hmm(self, transmat, constraint_xml, eps=0.001):
         k_classes = transmat.shape[0]
         constraints = HMMConstraint(constraint_xml)
@@ -1787,36 +1805,36 @@ class CH5FateAnalysis(CH5Analysis):
         est = HMMAgnosticEstimator(k_classes, transmat, numpy.ones((k_classes, k_classes)), numpy.ones((k_classes, )) )
         est.constrain(constraints)
         self.hmm = hmm.MultinomialHMM(n_components=est.nstates, transmat=transmat, startprob=est.startprob, init_params="")
-        self.hmm._set_emissionprob(est.emis) 
-        
+        self.hmm._set_emissionprob(est.emis)
+
     def predict_hmm(self):
         def _hmm_predict_(xxx):
             plate = xxx["Plate"]
             well = xxx["Well"]
             site = xxx["Site"]
             self.log.info('HMM prediction %s %s %s' % (plate, well, site))
-            
+
             track_ids = xxx["Track IDs"]
             track_labels = xxx["Track Labels"]
-            
+
             hmm_labels_list = []
 
-            
-            for _, track_labels in enumerate(track_labels):               
-            
+
+            for _, track_labels in enumerate(track_labels):
+
                 class_labels = track_labels
                 if not isinstance(track_labels, (list,)):
-                    class_labels = list(track_labels)  
+                    class_labels = list(track_labels)
                 hmm_class_labels = self.hmm.predict(class_labels)
                 hmm_labels_list.append(hmm_class_labels)
 
             return hmm_labels_list, track_ids
 
         hmm_track_labels, hmm_track_ids = pandas_apply(self.mapping, _hmm_predict_)
-        
+
         self.mapping["HMM Track IDs"] = pandas.Series(hmm_track_ids)
         self.mapping["HMM Track Labels"] = pandas.Series(hmm_track_labels)
-        
+
     def print_tracks(self, track_name="HMM Track Labels", pattern="%d", ident=" "):
         if track_name not in self.mapping:
             RuntimeError("Tracks have not predicted yet. Use setup_hmm() and predict_hmm() first!")
@@ -1829,12 +1847,12 @@ class CH5FateAnalysis(CH5Analysis):
             print "*"*50
             for track_id, track in enumerate(track_labels):
                 print ident, "%03d:" % track_id, "".join(map(lambda xxx: pattern % xxx, track))
-                
+
     def report_to_csv(self, output_filename="report.txt", export_images=True, object_="primary__primary"):
         import csv
-        header = ['Plate', 'Well', 'Site', 'Type', 'Event_id', 'Length', 'Frame_first_appearance', 'Class_first_appearance', 
+        header = ['Plate', 'Well', 'Site', 'Type', 'Event_id', 'Length', 'Frame_first_appearance', 'Class_first_appearance',
                   'Frames', 'Time Lapse sec', 'Raw_classification', 'Hmm_classification']
-        
+
         with open(output_filename, 'wb') as fh:
             writer = csv.DictWriter(fh, header, delimiter="\t", lineterminator='\n')
             writer.writeheader()
@@ -1843,13 +1861,13 @@ class CH5FateAnalysis(CH5Analysis):
                 well = xxx["Well"]
                 site = xxx["Site"]
                 ch5_pos = self.get_ch5_position(plate, well, site)
-                
+
                 index_data = xxx["Track IDs"]
                 raw_data = xxx["Track Labels"]
                 hmm_data = xxx["HMM Track Labels"]
-                
+
                 assert len(index_data) == len(raw_data) == len(hmm_data)
-                
+
                 line_dict = {}
                 for e_id, (index, raw_class, hmm_class) in enumerate(zip(index_data, raw_data, hmm_data)):
                     frames = ch5_pos.get_time_idx2(index)
@@ -1860,10 +1878,10 @@ class CH5FateAnalysis(CH5Analysis):
                         start_index = back_track[0]
                     else:
                         start_index = index[0]
-                        
+
                     start_frame = ch5_pos.get_time_idx(start_index)
                     start_class = ch5_pos.get_class_name(start_index)
-                    
+
                     line_dict['Event_id'] = e_id
                     line_dict['Plate'] = plate
                     line_dict['Well'] = well
@@ -1876,29 +1894,29 @@ class CH5FateAnalysis(CH5Analysis):
                     line_dict['Time Lapse sec'] =  " ".join(map(str, time_lapse))
                     line_dict['Raw_classification'] = " ".join(map(str,raw_class))
                     line_dict['Hmm_classification'] = " ".join(map(str,hmm_class))
-                    
+
                     writer.writerow(line_dict)
-                    
+
                     if export_images:
                         import vigra
                         img = self.get_track_image(plate, well, site, e_id, object_=object_)
                         vigra.impex.writeImage(img.swapaxes(1,0), "%s_%s_%s_%d.png" % (plate, well, site, e_id))
-                    
+
     def get_track_image(self, plate, well, site, event_id, object_="primary__primary"):
         row = self.mapping[(self.mapping["Plate"] == plate) & (self.mapping["Well"] == well) & (self.mapping["Site"] == site)]
-        
+
         ids_1 = row["Track IDs"][0]
         hmm_labels = row["HMM Track Labels"][0]
-        
+
         ch5_pos = self.get_ch5_position(plate, well, site)
-        
+
         img_1 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(e_id, object_=(object_,)) for e_id in ids_1[event_id]], 1)
-        
+
         hmm_colors = [str(ch5_pos.definitions.class_definition()["color"][k]) for k in hmm_labels[event_id]]
         img_2 = numpy.concatenate([ch5_pos.get_gallery_image_with_class(e_id, object_=(object_,), color=hmm_colors[k]) for k, e_id in enumerate(ids_1[event_id])], 1)
-        
+
         return numpy.concatenate((img_1, img_2))
-             
+
 
 ##################
 ### Unit tests ###
@@ -1986,7 +2004,7 @@ class TestCH5Basic(CH5TestBase):
     def testObjectFeature(self):
         self.assertTrue('n2_avg' in  self.pos.object_feature_def())
         self.assertTrue(self.pos.get_object_features().shape[1] == 239)
-        
+
 class TestCH5Write(CH5TestBase):
     """Write unit tests"""
     def testSimpleWrite(self):
@@ -2001,10 +2019,10 @@ class TestCH5Examples(CH5TestBase):
     def testBackwardTracking(self):
         events = self.pos.get_events()
         ev = events[1]
-        ev2 = self.pos.track_backwards(ev[-1])[-len(ev)+1:] + [ev[-1]] 
+        ev2 = self.pos.track_backwards(ev[-1])[-len(ev)+1:] + [ev[-1]]
         for a,b in zip(ev,ev2):
             self.assertTrue(a==b)
-        
+
     def testGalleryMatrix(self):
         image = self.pos.get_gallery_image_matrix(range(20), (5, 6))
         import vigra
@@ -2101,7 +2119,7 @@ class TestCH5Examples(CH5TestBase):
         for event in events[:5]:
             image.append(self.pos.get_gallery_image(tuple(event)))
 
-    
+
 def run_single_test(cls, func):
     """Helper function to run a single test"""
     writing = unittest.TestSuite()
@@ -2112,4 +2130,3 @@ def run_single_test(cls, func):
 if __name__ == '__main__':
 #     run_single_test(TestCH5Write, 'testBackwardTracking')
     unittest.main()
-
