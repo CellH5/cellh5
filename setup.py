@@ -24,7 +24,7 @@ setup(name='cellh5',
       license = 'LGPL',
       url = 'http://cellh5.org',
       package_dir = {'hmm_wrapper': 'pysrc/cellh5/hmm_wrapper', '': 'pysrc'},
-      py_modules = ['cellh5', 'cellh5write'],
+      py_modules = ['cellh5.cellh5', 'cellh5.cellh5write'],
       packages=['hmm_wrapper'],
       package_data={'hmm_wrapper': ['hmm_constraint.xsd']},
       )
