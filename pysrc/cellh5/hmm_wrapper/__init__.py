@@ -15,7 +15,12 @@ __url__ = 'www.cellcognition.org'
 from os.path import join
 import numpy as np
 try:
-    from sklearn import hmm
+    try:
+        from sklearn import hmm
+    except ImportError:
+        # hmm has been split out into its own package `hmmlearn` in sklearn
+        # v0.17, so in case importing doesn't work we try with the new name:
+        from hmmlearn import hmm
     hmm.normalize = lambda A, axis=None: normalize(A, axis, eps=10e-99)
 except:
     hmm = None
