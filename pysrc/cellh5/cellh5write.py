@@ -20,10 +20,11 @@ import unittest
 import functools
 import collections
 
-from itertools import chain, izip
+from itertools import chain
 from collections import OrderedDict
 from contextlib import contextmanager
 
+# from . 
 import cellh5
 from cellh5 import CH5PositionCoordinate, CH5Const
 
@@ -242,7 +243,7 @@ class CH5ObjectWriter(CH5PositionWriterBase):
         super(CH5ObjectWriter, self).__init__(parent_pos)
         self.name = name
         self.obj_grp = obj_grp
-        if self.name in self.obj_grp.keys():
+        if self.name in list(self.obj_grp.keys()):
             self.dset = self.obj_grp[self.name]
             self.offset = len(self.dset)
         else:
@@ -307,7 +308,7 @@ class CH5FeatureCompoundWriter(CH5PositionWriterBase):
             feat_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.FEATURE)
             feat_obj_grp = feat_grp.require_group(self.object_name)
             def_dset = feat_obj_grp.create_dataset(os.path.split(self.dset.name)[1], shape=(len(self.dtype),), dtype=numpy.dtype([('name', '|S512')]))
-            def_dset[:] = numpy.array(zip(*self.dtype.descr)[0])
+            def_dset[:] = numpy.array(list(zip(*self.dtype.descr))[0])
         else:
             feat_grp = self.parent_pos.definitions.get_definition_root().require_group(CH5Const.FEATURE)
             feat_obj_grp = feat_grp.require_group(self.object_name)
@@ -341,7 +342,7 @@ class CH5FeatureMatrixWriter(CH5PositionWriterBase):
         self.obj_grp = obj_grp
 
 
-        if self.name in self.obj_grp.keys():
+        if self.name in list(self.obj_grp.keys()):
             self.dset = self.obj_grp[self.name]
             self.offset = self.dset.shape[0]
         else:
@@ -387,15 +388,15 @@ class CH5MasterFile(h5py.File):
         #self.require_group(path)
         try:
             self[path] = h5py.ExternalLink(subfile, path)
-        except RuntimeError, e:
-            print "Link to path '%s' already exists" % path
+        except RuntimeError as e:
+            print("Link to path '%s' already exists" % path)
 
         #self.require_group(CH5Const.DEFINITION)
         try:
             self[CH5Const.DEFINITION] = h5py.ExternalLink(subfile, CH5Const.DEFINITION)
-        except RuntimeError, e:
+        except RuntimeError as e:
             # link to definition is already there
-            print "Link to path '%s' already exists" % path
+            print("Link to path '%s' already exists" % path)
 
     def repack(self):
         # do repacking
@@ -520,4 +521,4 @@ if __name__ == "__main__":
     cfew.finalize()
 
     cfw.close()
-    print "the fin"
+    print("the fin")
