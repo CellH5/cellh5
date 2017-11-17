@@ -71,7 +71,7 @@ def pandas_apply(df, func):
     else:
         return res
 
-    
+
 def pandas_ms_apply(df, func, n_cores=10):
     from multiprocessing import Pool
     """Helper function for pandas DataFrame, when dealing with entries, which are numpy multi-dim arrays.
@@ -430,7 +430,7 @@ class CH5Position(object):
 
     def get_object_count(self, object_='primary__primary'):
         return len(self['object'][object_])
-    
+
     def get_object_features(self, object_='primary__primary', index=None):
         if index is not None and len(index) == 0:
             return []
@@ -491,12 +491,12 @@ class CH5Position(object):
         images = list()
 
         channel_idx = self.definitions.image_definition['region'] \
-            ['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
+            ['channel_idx'][self.definitions.image_definition['region']['region_name'] == ('region___%s' % object_).encode()][0]
 
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
         centers = self['feature'][object_]['center'][index.tolist()]
-        size_2 = size / 2
+        size_2 = int(size / 2)
         for i, cen in zip(index, centers):
             time_idx = self['object'][object_][i]['time_idx']
             tmp_img = self['image']['channel'][channel_idx, time_idx, 0,
@@ -592,7 +592,7 @@ class CH5Position(object):
         return image_list
 
     def get_gallery_image_generator(self, index, object_='primary__primary', size=None):
-        channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
+        channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == ('region___%s' % object_).encode()][0]
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
 
@@ -608,10 +608,10 @@ class CH5Position(object):
             time_idx = self['object'][object_][ind]['time_idx']
             cen1 = self['feature'][object_]['center'][ind]
             image = numpy.zeros((size, size, 3), dtype=numpy.uint8)
-
+            size_2 = int(size / 2)
             tmp_img = self['image/channel'][channel_idx, time_idx, 0,
-                                 max(0, cen1[1] - size / 2):min(image_width, cen1[1] + size / 2),
-                                 max(0, cen1[0] - size / 2):min(image_height, cen1[0] + size / 2)]
+                                 max(0, cen1[1] - size_2):min(image_width, cen1[1] + size_2),
+                                 max(0, cen1[0] - size_2):min(image_height, cen1[0] + size_2)]
 
             for c in range(3):
                 image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1], c] = tmp_img
@@ -783,18 +783,18 @@ class CH5Position(object):
         label2color = OrderedDict()
         class_mapping = self.definitions.class_definition(object_)
         for cm in range(len(class_mapping)):
-            label2color[class_mapping["label"][cm]] = class_mapping["color"][cm]
+            label2color[class_mapping["label"][cm]] = class_mapping["color"][cm].decode()
         return [label2color[cl] for cl in class_labels]
 
     def class_name_def(self, class_labels, object_):
         label2name = OrderedDict()
         class_mapping = self.definitions.class_definition(object_)
         for cm in range(len(class_mapping)):
-            label2name[class_mapping["label"][cm]] = class_mapping["name"][cm]
+            label2name[class_mapping["label"][cm]] = class_mapping["name"][cm].decode()
         return [label2name[cl] for cl in class_labels]
 
     def object_feature_def(self, object_='primary__primary'):
-        return [str(x[0]) for x in self.definitions.feature_definition['%s/object_features' % object_].value]
+        return [x[0].decode() for x in self.definitions.feature_definition['%s/object_features' % object_].value]
 
     def get_object_table(self, object_):
         if len(self['object'][object_]) > 0:
@@ -2043,7 +2043,7 @@ class TestCH5Examples(CH5TestBase):
         fig.savefig('img1.png', format='png')
         ax.imshow(tub[400:600, 400:600], cmap='gray')
 
-    # unittest.skip('ploting so many lines is very slow in matplotlib')
+    @unittest.skip('ploting so many lines is very slow in matplotlib (passed with python 3.6)')
     def testPrintTrackingTrace(self):
         """Show the cell movement over time by showing the trace of each cell
         colorcoded overlayed on of the first image
@@ -2079,7 +2079,6 @@ class TestCH5Examples(CH5TestBase):
 
         fig.savefig('tracking.png', format='png')
 
-    # unittest.skip('ploting so many lines is very slow in matplotlib')
     def testComputeTheMitoticIndex(self):
         """Read the classification results and compute the mitotic index"""
 
@@ -2101,7 +2100,7 @@ class TestCH5Examples(CH5TestBase):
         ax = fig.add_subplot(111)
 
         for i in range(1, n_classes):
-            ax.plot(mitotic_index[:, i], color=colors[i], label=names[i])
+            ax.plot(mitotic_index[:, i], color=colors[i].decode(), label=names[i])
 
         ax.set_xlabel('time')
         ax.set_ylabel('number of cells')
