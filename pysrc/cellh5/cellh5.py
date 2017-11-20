@@ -25,12 +25,13 @@ import datetime
 import functools
 import collections
 
-from itertools import chain, izip
+from itertools import chain
 from collections import OrderedDict
 from contextlib import contextmanager
 
 from matplotlib.colors import hex2color
 from hmm_wrapper import HMMConstraint, HMMAgnosticEstimator, normalize, hmm
+from functools import reduce
 
 
 version_num = (1, 3, 1)
@@ -65,12 +66,12 @@ def pandas_apply(df, func):
     res = []
     for i, row in df.iterrows():
         res.append(func(row))
-    if isinstance(res[0], (tuple,)):
-        return zip(*res)
+    if isinstance(res[0], tuple):
+        return list(zip(*res))
     else:
         return res
 
-    
+
 def pandas_ms_apply(df, func, n_cores=10):
     from multiprocessing import Pool
     """Helper function for pandas DataFrame, when dealing with entries, which are numpy multi-dim arrays.
@@ -92,8 +93,8 @@ def pandas_ms_apply(df, func, n_cores=10):
     pool = Pool(processes=n_cores)
     res = pool.map(func, data)
     pool.close()
-    if isinstance(res[0], (tuple,)):
-        return zip(*res)
+    if isinstance(res[0], tuple):
+        return list(zip(*res))
     else:
         return res
 
@@ -108,9 +109,9 @@ def repack_cellh5(cellh5_folder, output_file=None, check_reg=r'^[A-Z]\d{2}_\d{2}
     POSITION_PREFIX = WELL_PREFIX + '%s/position/'
 
     def get_plate_and_postion(hf_file):
-        plate = hf_file[PLATE_PREFIX].keys()[0]
-        well = hf_file[WELL_PREFIX % plate].keys()[0]
-        position = hf_file[POSITION_PREFIX % (plate, well)].keys()[0]
+        plate = list(hf_file[PLATE_PREFIX].keys())[0]
+        well = list(hf_file[WELL_PREFIX % plate].keys())[0]
+        position = list(hf_file[POSITION_PREFIX % (plate, well)].keys())[0]
         return plate, well, position
 
     flist = sorted(glob.glob('%s/*.ch5' % cellh5_folder))
@@ -133,8 +134,8 @@ def repack_cellh5(cellh5_folder, output_file=None, check_reg=r'^[A-Z]\d{2}_\d{2}
             # copy suff
             try:
                 fh = h5py.File(fname, 'r')
-            except IOError, e:
-                print fname
+            except IOError as e:
+                print(fname)
                 raise
             fplate, fwell, fpos = get_plate_and_postion(fh)
 
@@ -143,7 +144,7 @@ def repack_cellh5(cellh5_folder, output_file=None, check_reg=r'^[A-Z]\d{2}_\d{2}
                 fplate_out = new_plate_name
             else:
                 fplate_out = fplate
-            print " copying", fplate_out, (POSITION_PREFIX + '%s') % (fplate, fwell, fpos)
+            print(" copying", fplate_out, (POSITION_PREFIX + '%s') % (fplate, fwell, fpos))
             f.copy(fh[(POSITION_PREFIX + '%s') % (fplate, fwell, fpos)], (POSITION_PREFIX + '%s') % (fplate_out, fwell, fpos))
             fh.close()
             cnt += 1
@@ -160,9 +161,9 @@ def repack_cellh5_and_combine(cellh5_folder, cellh5_folder_2, rel_path_src, rel_
     POSITION_PREFIX = WELL_PREFIX + '%s/position/'
 
     def get_plate_and_postion(hf_file):
-        plate = hf_file[PLATE_PREFIX].keys()[0]
-        well = hf_file[WELL_PREFIX % plate].keys()[0]
-        position = hf_file[POSITION_PREFIX % (plate, well)].keys()[0]
+        plate = list(hf_file[PLATE_PREFIX].keys())[0]
+        well = list(hf_file[WELL_PREFIX % plate].keys())[0]
+        position = list(hf_file[POSITION_PREFIX % (plate, well)].keys())[0]
         return plate, well, position
 
     flist = sorted(glob.glob('%s/*.ch5' % cellh5_folder))
@@ -173,7 +174,7 @@ def repack_cellh5_and_combine(cellh5_folder, cellh5_folder_2, rel_path_src, rel_
     cnt = 0
     for fname in flist:
         if reg.search(os.path.split(fname)[1]) is not None:
-            print cnt, fname
+            print(cnt, fname)
             if cnt == 0:
                 # write definition
                 fh = h5py.File(fname, 'r')
@@ -307,7 +308,7 @@ class memoize(object):
         return functools.partial(self, obj)
 
     def __call__(self, *args, **kw):
-        key = (self.func, args, frozenset(kw.items()))
+        key = (self.func, args, frozenset(list(kw.items())))
 
         obj = args[0]
         if not hasattr(obj, "_cache"):
@@ -429,7 +430,7 @@ class CH5Position(object):
 
     def get_object_count(self, object_='primary__primary'):
         return len(self['object'][object_])
-    
+
     def get_object_features(self, object_='primary__primary', index=None):
         if index is not None and len(index) == 0:
             return []
@@ -490,13 +491,13 @@ class CH5Position(object):
         images = list()
 
         channel_idx = self.definitions.image_definition['region'] \
-            ['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
+            ['channel_idx'][self.definitions.image_definition['region']['region_name'] == ('region___%s' % object_).encode()][0]
 
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
         centers = self['feature'][object_]['center'][index.tolist()]
-        size_2 = size / 2
-        for i, cen in izip(index, centers):
+        size_2 = int(size / 2)
+        for i, cen in zip(index, centers):
             time_idx = self['object'][object_][i]['time_idx']
             tmp_img = self['image']['channel'][channel_idx, time_idx, 0,
                                                max(0, cen[1] - size_2):min(image_width, cen[1] + size_2),
@@ -576,7 +577,7 @@ class CH5Position(object):
         time_idxs = [self['object'][object_][ind]['time_idx'] for ind in index]
         center_idxs = [self['feature'][object_]['center'][ind] for ind in index]
 
-        for k in xrange(len(index)):
+        for k in range(len(index)):
             time_idx = time_idxs[k]
             cen1 = center_idxs[k]
             image = numpy.zeros((size, size), dtype=numpy.uint8)
@@ -591,7 +592,7 @@ class CH5Position(object):
         return image_list
 
     def get_gallery_image_generator(self, index, object_='primary__primary', size=None):
-        channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == 'region___%s' % object_][0]
+        channel_idx = self.definitions.image_definition['region']['channel_idx'][self.definitions.image_definition['region']['region_name'] == ('region___%s' % object_).encode()][0]
         image_width = self['image']['channel'].shape[3]
         image_height = self['image']['channel'].shape[4]
 
@@ -600,17 +601,17 @@ class CH5Position(object):
 
         try:
             test_iter = iter(index)
-        except TypeError, te:
+        except TypeError as te:
             index = [index]
 
         for ind in index:
             time_idx = self['object'][object_][ind]['time_idx']
             cen1 = self['feature'][object_]['center'][ind]
             image = numpy.zeros((size, size, 3), dtype=numpy.uint8)
-
+            size_2 = int(size / 2)
             tmp_img = self['image/channel'][channel_idx, time_idx, 0,
-                                 max(0, cen1[1] - size / 2):min(image_width, cen1[1] + size / 2),
-                                 max(0, cen1[0] - size / 2):min(image_height, cen1[0] + size / 2)]
+                                 max(0, cen1[1] - size_2):min(image_width, cen1[1] + size_2),
+                                 max(0, cen1[0] - size_2):min(image_height, cen1[0] + size_2)]
 
             for c in range(3):
                 image[(image.shape[0] - tmp_img.shape[0]):, :tmp_img.shape[1], c] = tmp_img
@@ -639,7 +640,7 @@ class CH5Position(object):
         for i in range(shape[0]):
             for j in range(shape[1]):
                 try:
-                    img = img_gen.next()
+                    img = next(img_gen)
                 except StopIteration:
                     break
                 a = i * size
@@ -665,7 +666,7 @@ class CH5Position(object):
         for i in range(shape[0]):
             for j in range(shape[1]):
                 try:
-                    img = img_gen.next()
+                    img = next(img_gen)
                     color = class_colors[cnt]
                     cnt += 1
                 except StopIteration:
@@ -749,7 +750,7 @@ class CH5Position(object):
         if not self.has_classification(object_):
             return
 
-        res = map(str, self.class_color_def(tuple(self.get_class_label(index, object_)), object_))
+        res = list(map(str, self.class_color_def(tuple(self.get_class_label(index, object_)), object_)))
         if len(res) == 1:
             return res[0]
         return res
@@ -773,7 +774,7 @@ class CH5Position(object):
         return tmp[inv_sort]
 
     def get_class_name(self, index, object_='primary__primary'):
-        res = map(str, self.class_name_def(tuple(self.get_class_label(index)), object_))
+        res = list(map(str, self.class_name_def(tuple(self.get_class_label(index)), object_)))
         if len(res) == 1:
             return res[0]
         return res
@@ -782,19 +783,18 @@ class CH5Position(object):
         label2color = OrderedDict()
         class_mapping = self.definitions.class_definition(object_)
         for cm in range(len(class_mapping)):
-            label2color[class_mapping["label"][cm]] = class_mapping["color"][cm]
+            label2color[class_mapping["label"][cm]] = class_mapping["color"][cm].decode()
         return [label2color[cl] for cl in class_labels]
 
     def class_name_def(self, class_labels, object_):
         label2name = OrderedDict()
         class_mapping = self.definitions.class_definition(object_)
         for cm in range(len(class_mapping)):
-            label2name[class_mapping["label"][cm]] = class_mapping["name"][cm]
+            label2name[class_mapping["label"][cm]] = class_mapping["name"][cm].decode()
         return [label2name[cl] for cl in class_labels]
 
     def object_feature_def(self, object_='primary__primary'):
-        return map(lambda x: str(x[0]),
-                   self.definitions.feature_definition['%s/object_features' % object_].value)
+        return [x[0].decode() for x in self.definitions.feature_definition['%s/object_features' % object_].value]
 
     def get_object_table(self, object_):
         if len(self['object'][object_]) > 0:
@@ -856,7 +856,7 @@ class CH5Position(object):
         dset_event = self.get_object_table('event')
         if len(dset_event)==0:
             return events
-        for event_id in xrange(dset_event['obj_id'].max()+1):
+        for event_id in range(dset_event['obj_id'].max()+1):
             idx = numpy.where(dset_event['obj_id'] == event_id)
             idx1 = dset_event[idx]['idx1']
             idx2 = dset_event[idx]['idx2']
@@ -977,7 +977,7 @@ class CH5Position(object):
         try:
             feature_grp.create_dataset(feature_name, data=data)
         except:
-            print "Error: Creation of %s in %s failed " % (feature_name, path)
+            print("Error: Creation of %s in %s failed " % (feature_name, path))
             raise
 
     def track_first(self, start_idx, max_length=None, object_='primary__primary'):
@@ -1097,7 +1097,7 @@ class CH5File(object):
     """CH5File object to open CH5 files"""
     def __init__(self, filename, mode='a', cached=True):
         self._cached = cached
-        if isinstance(filename, basestring):
+        if isinstance(filename, str):
             self.filename = filename
             self._file_handle = h5py.File(filename, mode)
         else:
@@ -1116,13 +1116,13 @@ class CH5File(object):
 
         self._position_group = {}
         self._coordinates = []
-        for well, positions in self.positions.iteritems():
+        for well, positions in self.positions.items():
             for pos in positions:
                 self._coordinates.append(CH5PositionCoordinate(self.plate, well, pos))
                 self._position_group[(well, pos)] = self._open_position(
                     self.plate, well, pos)
 
-        self.current_pos = self._position_group.values()[0]
+        self.current_pos = list(self._position_group.values())[0]
 
     def get_coordinates(self):
         return self._coordinates
@@ -1156,7 +1156,7 @@ class CH5File(object):
         return self._file_handle[CH5Const.DEFINITION]
 
     def iter_positions(self):
-        for well, positions in self.positions.items():
+        for well, positions in list(self.positions.items()):
             for pos in positions:
                 yield self._position_group[(well, pos)]
 
@@ -1164,7 +1164,7 @@ class CH5File(object):
         self.current_pos = self.get_position(well, pos)
 
     def _get_group_members(self, path):
-        return map(str, self._file_handle[path].keys())
+        return list(map(str, list(self._file_handle[path].keys())))
 
     @memoize
     def class_definition(self, object_="primary__primary"):
@@ -1198,7 +1198,7 @@ class CH5File(object):
             return False
 
     def object_feature_def(self, object_='primary__primary'):
-        return map(lambda x: str(x[0]), self.feature_definition['%s/object_features' % object_].value)
+        return [str(x[0]) for x in self.feature_definition['%s/object_features' % object_].value]
 
     def get_object_feature_idx_by_name(self, object_, feature_name):
         object_feature_names = self.object_feature_def(object_)
@@ -1222,7 +1222,7 @@ class CH5File(object):
         for i in range(shape[0]):
             for j in range(shape[1]):
                 try:
-                    img = img_gen.next()
+                    img = next(img_gen)
                 except StopIteration:
                     break
                 a = i * size
@@ -1244,7 +1244,7 @@ class CH5File(object):
         for i in range(shape[0]):
             for j in range(shape[1]):
                 try:
-                    img = img_gen.next()
+                    img = next(img_gen)
                 except StopIteration:
                     break
                 a = i * size
@@ -1327,8 +1327,8 @@ class CH5MappedFileCollection(object):
         self.mapping = None
         if init:
             mappings = []
-            for plate_name, mapping_file in mapping_files.items():
-                if plate_name not in cellh5_files.keys():
+            for plate_name, mapping_file in list(mapping_files.items()):
+                if plate_name not in list(cellh5_files.keys()):
                     raise RuntimeError("Plate name %s not found" % plate_name)
                 cellh5_file = cellh5_files[plate_name]
 
@@ -1350,7 +1350,7 @@ class CH5MappedFileCollection(object):
 
     def close(self):
         if self.cellh5_handles is not None:
-            for v in self.cellh5_handles.values():
+            for v in list(self.cellh5_handles.values()):
                 v.close()
 
     def get_treatment(self, plate, well, site):
@@ -1365,7 +1365,7 @@ class CH5MappedFileCollection(object):
 
     def get_object_classificaiton_dict(self, prop="name", object_='primary__primary'):
         res = OrderedDict()
-        data = self.cellh5_handles.values()[0].class_definition(object_)
+        data = list(self.cellh5_handles.values())[0].class_definition(object_)
         for i in range(len(data)):
             res[i] = data[prop][i]
         return res
@@ -1427,7 +1427,7 @@ class CH5Analysis(CH5MappedFileCollection):
 
         self.cluster_class_on_all = cluster_class(**clusterargs)
         if data.shape[0] > max_samples:
-            idx = range(data.shape[0])
+            idx = list(range(data.shape[0]))
             numpy.random.seed(43)
             numpy.random.shuffle(idx)
             idx = idx[:max_samples]
@@ -1449,7 +1449,7 @@ class CH5Analysis(CH5MappedFileCollection):
     def pca_run(self, pca_dims=None, train_on=('neg', 'target', 'pos'), max_samples=10000, pca_cls=None, **pca_args):
         training_matrix = self.get_data(train_on)
         if training_matrix.shape[0] > max_samples:
-            idx = range(training_matrix.shape[0])
+            idx = list(range(training_matrix.shape[0]))
             numpy.random.seed(43)
             numpy.random.shuffle(idx)
             idx = idx[:max_samples]
@@ -1504,7 +1504,7 @@ class CH5Analysis(CH5MappedFileCollection):
 #         for i, a,b in zip(feat_idx_list, fs, feat_list):
 #             print i, a, b
 
-        f_res =  ", ".join(map(lambda xxx: "'%s'" % xxx, list(feat_list[fs>0])))
+        f_res =  ", ".join(["'%s'" % xxx for xxx in list(feat_list[fs>0])])
         with open(self.output("lasso_features.txt"), 'wb') as ff:
             ff.write(f_res)
 
@@ -1521,7 +1521,7 @@ class CH5Analysis(CH5MappedFileCollection):
                            read_classification=True, idx_selector_functor=None):
 
         # TODO
-        all_features = self.cellh5_handles.values()[0].object_feature_def(object_)
+        all_features = list(self.cellh5_handles.values())[0].object_feature_def(object_)
         features_keep = [na for na in range(len(all_features)) if na not in remove_feature]
         self.all_features = [all_features[na] for na in range(len(all_features)) if na not in remove_feature]
         self.all_features_idx = [na for na in range(len(all_features)) if na not in remove_feature]
@@ -1602,23 +1602,23 @@ class CH5Analysis(CH5MappedFileCollection):
 
         nans = numpy.isnan(all_data)
         if nans.any():
-            print '*'*40
-            print "NaNs in data"
-            print "Axes 1 features"
-            print numpy.nonzero(nans.any(1))
-            print "Axes 0 samples"
-            print numpy.nonzero(nans.any(0))
-            print '*'*40
+            print('*'*40)
+            print("NaNs in data")
+            print("Axes 1 features")
+            print(numpy.nonzero(nans.any(1)))
+            print("Axes 0 samples")
+            print(numpy.nonzero(nans.any(0)))
+            print('*'*40)
             raise RuntimeError("NaNs in data")
 
         infs = numpy.isinf(all_data)
         if infs.any():
-            print '*'*40
-            print "INFs in data"
-            print "Axes 1 features"
-            print numpy.nonzero(infs.any(1))
-            print "Axes 0 samples"
-            print numpy.nonzero(infs.any(0))
+            print('*'*40)
+            print("INFs in data")
+            print("Axes 1 features")
+            print(numpy.nonzero(infs.any(1)))
+            print("Axes 0 samples")
+            print(numpy.nonzero(infs.any(0)))
             raise RuntimeError("INFS in data")
 
         self.norm_mean = numpy.mean(all_data, 0)
@@ -1656,7 +1656,7 @@ class CH5Analysis(CH5MappedFileCollection):
         indicies = []
 
         class_labels = numpy.concatenate(selected[in_class_type])
-        for in_class, in_class_ratio in in_classes.items():
+        for in_class, in_class_ratio in list(in_classes.items()):
             i_samples = int(in_class_ratio * n_sample)
             samples = numpy.nonzero(numpy.in1d(class_labels, in_class))[0]
             numpy.random.shuffle(samples)
@@ -1684,7 +1684,7 @@ class CH5Analysis(CH5MappedFileCollection):
             sl = numpy.concatenate(list(self.mapping[selection]['Object classification label']))
             plate   = self.mapping[selection][["Plate", "Well", "Site"]].as_matrix()
             oc   = list(self.mapping[selection]["Object count"])
-            plate = numpy.concatenate([[plate[ii]]*oc[ii] for ii in xrange(len(plate))])
+            plate = numpy.concatenate([[plate[ii]]*oc[ii] for ii in range(len(plate))])
 
             ch5_ind = numpy.concatenate(list(self.mapping[selection]['CellH5 object index 2']))
 
@@ -1823,7 +1823,7 @@ class CH5FateAnalysis(CH5Analysis):
             for _, track_labels in enumerate(track_labels):
 
                 class_labels = track_labels
-                if not isinstance(track_labels, (list,)):
+                if not isinstance(track_labels, list):
                     class_labels = list(track_labels)
                 hmm_class_labels = self.hmm.predict(class_labels)
                 hmm_labels_list.append(hmm_class_labels)
@@ -1843,10 +1843,10 @@ class CH5FateAnalysis(CH5Analysis):
             well = xxx["Well"]
             site = xxx["Site"]
             track_labels = xxx[track_name]
-            print "Plate '%s'\tWell '%s'\tSite '%s'" % (plate, well, site)
-            print "*"*50
+            print("Plate '%s'\tWell '%s'\tSite '%s'" % (plate, well, site))
+            print("*"*50)
             for track_id, track in enumerate(track_labels):
-                print ident, "%03d:" % track_id, "".join(map(lambda xxx: pattern % xxx, track))
+                print(ident, "%03d:" % track_id, "".join([pattern % xxx for xxx in track]))
 
     def report_to_csv(self, output_filename="report.txt", export_images=True, object_="primary__primary"):
         import csv
@@ -1926,7 +1926,7 @@ class CH5FateAnalysis(CH5Analysis):
 class CH5TestBase(unittest.TestCase):
     """Unit test base class"""
     def setUp(self):
-        data_filename = '../data/0038.ch5'
+        data_filename = '../../data/0038.ch5'
         if not os.path.exists(data_filename):
             raise IOError(("No CellH5 test data found in 'cellh5/data'."
                            " Please refer to the instructions in "
@@ -1963,7 +1963,7 @@ class TestCH5Basic(CH5TestBase):
     def testGallery3(self):
         event = self.pos.get_events()[42][0]
         tracks = self.pos.track_all(event)
-        w = numpy.array(map(len, tracks)).max() * GALLERY_SIZE
+        w = numpy.array(list(map(len, tracks))).max() * GALLERY_SIZE
         img = numpy.zeros((GALLERY_SIZE * len(tracks), w), dtype=numpy.uint8)
 
         for k, t in enumerate(tracks):
@@ -2024,7 +2024,7 @@ class TestCH5Examples(CH5TestBase):
             self.assertTrue(a==b)
 
     def testGalleryMatrix(self):
-        image = self.pos.get_gallery_image_matrix(range(20), (5, 6))
+        image = self.pos.get_gallery_image_matrix(list(range(20)), (5, 6))
         import vigra
         vigra.impex.writeImage(image.swapaxes(1, 0), 'img_matrix.png')
 
@@ -2043,7 +2043,7 @@ class TestCH5Examples(CH5TestBase):
         fig.savefig('img1.png', format='png')
         ax.imshow(tub[400:600, 400:600], cmap='gray')
 
-    # unittest.skip('ploting so many lines is very slow in matplotlib')
+    @unittest.skip('ploting so many lines is very slow in matplotlib (passed with python 3.6)')
     def testPrintTrackingTrace(self):
         """Show the cell movement over time by showing the trace of each cell
         colorcoded overlayed on of the first image
@@ -2079,7 +2079,6 @@ class TestCH5Examples(CH5TestBase):
 
         fig.savefig('tracking.png', format='png')
 
-    # unittest.skip('ploting so many lines is very slow in matplotlib')
     def testComputeTheMitoticIndex(self):
         """Read the classification results and compute the mitotic index"""
 
@@ -2094,15 +2093,14 @@ class TestCH5Examples(CH5TestBase):
 
         # compute mitotic index by counting the number cell per
         # class label over all times
-        mitotic_index = numpy.array(map(lambda x: [len(numpy.nonzero(x == class_idx)[0]) for class_idx in range(n_classes)],
-            [predictions[nucleus['time_idx'] == time_idx]['label_idx'] for time_idx in range(time_max)]))
+        mitotic_index = numpy.array([[len(numpy.nonzero(x == class_idx)[0]) for class_idx in range(n_classes)] for x in [predictions[nucleus['time_idx'] == time_idx]['label_idx'] for time_idx in range(time_max)]])
 
         # plot it
         fig = plt.figure()
         ax = fig.add_subplot(111)
 
         for i in range(1, n_classes):
-            ax.plot(mitotic_index[:, i], color=colors[i], label=names[i])
+            ax.plot(mitotic_index[:, i], color=colors[i].decode(), label=names[i])
 
         ax.set_xlabel('time')
         ax.set_ylabel('number of cells')
