@@ -12,7 +12,7 @@ CONTAINS
 
 * An **R** interface for CellH5.
 
-Please also see the partner project [CellCognition](www.cellcognition.org).
+Please also see the partner project [CellCognition](https://www.cellcognition-project.org/).
 
 DEPENDS
 -------
